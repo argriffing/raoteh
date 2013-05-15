@@ -1,0 +1,5 @@
+
+requires
+--------
+ * numpy
+ * networkx
