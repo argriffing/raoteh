@@ -1,0 +1,6 @@
+include MANIFEST.in
+include *.txt
+include setup.py
+# all source files
+recursive-include raoteh *
+global-exclude *.pyc *~ *.pyo
