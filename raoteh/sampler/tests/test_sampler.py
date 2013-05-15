@@ -7,12 +7,12 @@ import networkx as nx
 
 from numpy.testing import (run_module_suite, TestCase, assert_equal)
 
-import ._sampler
+from raoteh.sampler import _sampler
 
 
 class TestSampler(TestCase):
     
-    def test_sum():
+    def test_sum(self):
         assert_equal(_sampler.mysum(2, 3), 5)
 
 

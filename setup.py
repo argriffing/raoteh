@@ -34,7 +34,7 @@ def configuration(parent_package='', top_path=None):
             delegate_options_to_subpackages=True,
             quiet=True)
     config.add_subpackage('raoteh')
-    config.add_data_files('raoteh', '*.txt')
+    #config.add_data_files('raoteh', '*.txt')
     #config.get_version('raoteh/version.py')
     return config
 
