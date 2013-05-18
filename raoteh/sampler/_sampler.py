@@ -215,10 +215,11 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
                             a = P[node_state][s]['weight']
                             b = node_to_pmap[n][s]
                             nprob += a * b
+                        nprobs.append(nprob)
                     else:
-                        nprob = None
-                    nprobs.append(nprob)
-                if None not in nprobs:
+                        nprobs = None
+                        break
+                if nprobs is not None:
                     cprob = np.product(nprobs)
                     pmap[node_state] = cprob
             node_to_pmap[node] = pmap
