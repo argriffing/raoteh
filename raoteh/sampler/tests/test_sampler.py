@@ -6,7 +6,7 @@ import numpy as np
 import networkx as nx
 
 from numpy.testing import (run_module_suite, TestCase,
-        assert_equal, assert_allclose, assert_)
+        assert_equal, assert_allclose, assert_, assert_raises)
 
 from raoteh.sampler import _sampler
 
@@ -94,6 +94,57 @@ class TestSampler(TestCase):
 
             # The non-event nodes 13 and 14 should map to the same chunk.
             assert_equal(non_event_map[13], non_event_map[14])
+
+    def test_resample_states_path(self):
+
+        # Define a very sparse transition matrix as a path.
+        P = nx.DiGraph()
+        P.add_weighted_edges_from([
+            (0, 1, 1.0),
+            (1, 0, 0.5),
+            (1, 2, 0.5),
+            (2, 1, 0.5),
+            (2, 3, 0.5),
+            (3, 2, 1.0)])
+
+        # Define a very sparse tree as a path.
+        T = nx.Graph()
+        T.add_edges_from([
+            (0, 1),
+            (1, 2)])
+
+        # Two of the three vertices of the tree have known states.
+        # The intermediate state is unknown,
+        # No value of the intermediate state can possibly connect
+        # the states at the two endpoints of the path.
+        node_to_state = {0: 0, 2: 3}
+        assert_raises(
+                _sampler.SamplingInfeasibility,
+                _sampler.resample_states,
+                T, P, node_to_state)
+
+        # But if the path endpoints have states
+        # that allow the intermediate state to act as a bridge,
+        # then sampling is possible.
+        root_distn = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
+        node_to_state = {0: 0, 2: 2}
+        for root in T:
+            observed = _sampler.resample_states(
+                    T, P, node_to_state, root, root_distn)
+            expected = {0: 0, 1: 1, 2: 2}
+            assert_equal(observed, expected)
+
+        # Similarly if the root has a different distribution
+        # and the endpoints are different but still bridgeable
+        # by a single intermediate transitional state.
+        root_distn = {0: 0.1, 1: 0.2, 2: 0.3, 3: 0.4}
+        node_to_state = {0: 3, 2: 1}
+        for root in T:
+            observed = _sampler.resample_states(
+                    T, P, node_to_state, root, root_distn)
+            expected = {0: 3, 1: 2, 2: 1}
+            assert_equal(observed, expected)
+
 
 
 if __name__ == '__main__':
