@@ -15,7 +15,10 @@ __all__ = ['mysum']
 class SamplingError(Exception):
     pass
 
-class SamplingInfeasibility(Exception):
+class StructuralZeroProb(SamplingError):
+    pass
+
+class NumericalZeroProb(SamplingError):
     pass
 
 
@@ -197,7 +200,7 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         else:
             pmap = {}
             for node_state in P:
-                cprob = 1.0
+                nprobs = []
                 for n in successors[node]:
 
                     # Get the list of possible child node states.
@@ -206,11 +209,18 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
                     # and also by the possibility
                     # that the state of the child node is already known.
                     valid_states = set(P[node_state]) & set(node_to_pmap[n])
-                    nprob = 0.0
-                    for s in valid_states:
-                        nprob += P[node_state][s]['weight'] * node_to_pmap[n][s]
-                    cprob *= nprob
-                pmap[node_state] = cprob
+                    if valid_states:
+                        nprob = 0.0
+                        for s in valid_states:
+                            a = P[node_state][s]['weight']
+                            b = node_to_pmap[n][s]
+                            nprob += a * b
+                    else:
+                        nprob = None
+                    nprobs.append(nprob)
+                if None not in nprobs:
+                    cprob = np.product(nprobs)
+                    pmap[node_state] = cprob
             node_to_pmap[node] = pmap
 
     # Sample the node states, beginning at the root.
@@ -222,7 +232,7 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     if len(node_to_pmap[root]) == 1:
         root_state = get_first_element(node_to_pmap[root])
         if not node_to_pmap[root][root_state]:
-            raise SamplingInfeasibility(
+            raise NumericalZeroProb(
                     'the only feasible state at the root '
                     'gives a subtree probability of zero')
     else:
@@ -231,13 +241,13 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         prior_distn = root_distn
         states = list(set(prior_distn) & set(node_to_pmap[root]))
         if not states:
-            raise SamplingInfeasibility('no root is feasible')
+            raise StructuralZeroProb('no root is feasible')
         weights = []
         for s in states:
             weights.append(prior_distn[s] * node_to_pmap[node][s])
         weight_sum = sum(weights)
         if not weight_sum:
-            raise SamplingInfeasibility('numerical problem at the root')
+            raise NumericalZeroProb('numerical problem at the root')
         probs = np.array(weights, dtype=float) / weight_sum
         sampled_state = np.random.choice(states, p=probs)
         root_state = sampled_state
@@ -253,6 +263,11 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         # Get the parent node and its state.
         parent_node = predecessors[node]
         parent_state = node_to_sampled_state[parent_node]
+        
+        # Check that the parent state has transitions.
+        if parent_state not in P:
+            raise StructuralZeroProb(
+                    'no transition from the parent state is possible')
 
         # Sample the state of a non-root node.
         # A state is possible if it is reachable in one step from the
@@ -260,13 +275,13 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         # and if it gives a subtree probability that is not structurally zero.
         states = list(set(P[parent_state]) & set(node_to_pmap[node]))
         if not states:
-            raise SamplingInfeasibility('found a non-root infeasibility')
+            raise StructuralZeroProb('found a non-root infeasibility')
         weights = []
         for s in states:
             weights.append(P[parent_state][s]['weight'] * node_to_pmap[node][s])
         weight_sum = sum(weights)
         if not weight_sum:
-            raise SamplingInfeasibility('numerical problem at a non-root node')
+            raise NumericalZeroProb('numerical problem at a non-root node')
         probs = np.array(weights, dtype=float) / weight_sum
         sampled_state = np.random.choice(states, p=probs)
         node_to_sampled_state[node] = sampled_state

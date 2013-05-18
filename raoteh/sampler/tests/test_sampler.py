@@ -119,7 +119,7 @@ class TestSampler(TestCase):
         # the states at the two endpoints of the path.
         node_to_state = {0: 0, 2: 3}
         assert_raises(
-                _sampler.SamplingInfeasibility,
+                _sampler.StructuralZeroProb,
                 _sampler.resample_states,
                 T, P, node_to_state)
 
@@ -144,6 +144,28 @@ class TestSampler(TestCase):
                     T, P, node_to_state, root, root_distn)
             expected = {0: 3, 1: 2, 2: 1}
             assert_equal(observed, expected)
+
+    def test_resample_states_infeasible(self):
+
+        # Do not allow any transitions.
+        P = nx.DiGraph()
+
+        # Define a very sparse tree as a path.
+        T = nx.Graph()
+        T.add_edges_from([
+            (0, 1),
+            (1, 2)])
+
+        # Sampling is not possible.
+        # Check that the correct exception is raised.
+        root_distn = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
+        node_to_state = {0: 0, 2: 2}
+        for root in T:
+            assert_raises(
+                    _sampler.StructuralZeroProb,
+                    _sampler.resample_states,
+                    T, P, node_to_state, root, root_distn)
+        
 
 
 
