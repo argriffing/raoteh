@@ -110,10 +110,10 @@ def remove_redundant_nodes(T, redundant_nodes):
         if b not in redundant_nodes:
             if a in redundant_nodes:
                 T_out.add_edge(info['ancestor'], b,
-                        weight=info['weight'] + weight,
-                        state=info['state'])
+                        weight=weight, state=state)
             else:
-                T_out.add_edge(a, b, weight=weight, state=state)
+                T_out.add_edge(a, b,
+                        weight=weight, state=state)
         else:
             if a not in redundant_nodes:
                 info = dict(ancestor=a, state=state, weight=weight)

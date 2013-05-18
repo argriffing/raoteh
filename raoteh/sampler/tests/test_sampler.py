@@ -166,13 +166,14 @@ class TestGraphTransform(TestCase):
             # The non-event nodes 13 and 14 should map to the same chunk.
             assert_equal(non_event_map[13], non_event_map[14])
 
-    def test_remove_redundant_nodes(self):
+    def test_remove_redundant_nodes_small_example(self):
         T = nx.Graph()
         T.add_edge(0, 1, state=0, weight=1)
         T.add_edge(1, 2, state=0, weight=1)
-        redundant_nodes = set()
+        redundant_nodes = {1}
         T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
-
+        assert_equal(set(T_out), set(T) - redundant_nodes)
+        assert_equal(T_out[0][2]['weight'], 2)
 
 if __name__ == '__main__':
     run_module_suite()
