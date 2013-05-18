@@ -52,6 +52,13 @@ def get_edge_bisected_graph(G):
 
 def remove_redundant_nodes(T, redundant_nodes):
     """
+    Returns a tree with the specified redundant nodes removed.
+
+    The removal respects edge 'weight' and edge 'state'.
+    Currently only nodes of degree two can be removed.
+    The 'state' of both edges adjacent to such a node must be the same.
+    The returned tree will have the same weighted tree size
+    as the original tree.
 
     Parameters
     ----------
@@ -59,11 +66,63 @@ def remove_redundant_nodes(T, redundant_nodes):
         tree
     expendable_nodes : set of nodes
         candidates for removal
-    """
-    T = nx.Graph()
-    for foo in bar:
-        pass
 
+    Returns
+    -------
+    T_out : networkx graph
+        tree with redundant nodes removed
+
+    """
+    T_out = nx.Graph()
+
+    # Pick a root with only one neighbor.
+    degrees = T.degree()
+    tips = set(n for n, d in degrees.items() if d == 1)
+    root = get_first_element(tips)
+
+    # Check the root.
+    if root in redundant_nodes:
+        raise Exception(
+                'currently only degree 2 nodes may be considered redundant')
+
+    # Set up some bookkeeping.
+    successors = nx.dfs_successors(T, root)
+
+    # Build the new tree, tracking the info and skipping the extra nodes.
+    rnode_to_info = {}
+    for a, b in nx.bfs_edges(T, root):
+
+        # Get the data associated with the current edge.
+        weight = T[a][b]['weight']
+        state = T[a][b]['state']
+
+        # If the first node is redundant then get its info,
+        # check the state, and update the weight.
+        if a in redundant_nodes:
+            info = rnode_to_info[a]
+            if info['state'] != state:
+                raise Exception('edge state mismatch')
+            weight += info['weight']
+
+        # If b is not redundant, then an edge will be added.
+        # If b is redundant then redundant edge info will be
+        # initialized or extended.
+        if b not in redundant_nodes:
+            if a in redundant_nodes:
+                T_out.add_edge(info['ancestor'], b,
+                        weight=info['weight'] + weight,
+                        state=info['state'])
+            else:
+                T_out.add_edge(a, b, weight=weight, state=state)
+        else:
+            if a not in redundant_nodes:
+                info = dict(ancestor=a, state=state, weight=weight)
+            else:
+                info['weight'] = weight
+            rnode_to_info[b] = info
+
+    # Return the new tree as a networkx graph.
+    return T_out
 
 
 def get_chunk_tree(T, event_nodes, root=None):
