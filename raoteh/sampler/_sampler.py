@@ -4,12 +4,10 @@ Rao-Teh sampler.
 """
 from __future__ import division, print_function, absolute_import
 
-from collections import defaultdict
-
 import numpy as np
 import networkx as nx
 
-__all__ = ['mysum']
+__all__ = []
 
 
 class SamplingError(Exception):
@@ -22,122 +20,11 @@ class NumericalZeroProb(SamplingError):
     pass
 
 
-# This is for checking the plumbing.
-def mysum(*args):
-    return sum(args)
-
 
 def get_first_element(elements):
     for x in elements:
         return x
 
-
-def get_edge_bisected_graph(G):
-    """
-
-    Parameters
-    ----------
-    G : weighted undirected networkx graph
-        Input graph whose edges are to be bisected in the output.
-
-    Returns
-    -------
-    G_out : weighted undirected networkx graph
-        Every edge in the original tree will correspond to two edges
-        in the bisected tree.
-
-    Notes
-    -----
-    Weights in the output graph will be adjusted accordingly.
-    Nodes in the original graph are assumed to be integers.
-    Nodes in the output graph will be a superset of the nodes
-    in the original graph, and the newly added nodes representing
-    degree-two points will have greater values than the max of the
-    node values in the input graph.
-
-    """
-    max_node = max(G)
-    G_out = nx.Graph()
-    for i, (a, b, data) in enumerate(G.edges(data=True)):
-        full_weight = data['weight']
-        half_weight = 0.5 * full_weight
-        mid = max_node + i + 1
-        G_out.add_edge(a, mid, weight=half_weight)
-        G_out.add_edge(mid, b, weight=half_weight)
-    return G_out
-
-
-def get_chunk_tree(T, event_nodes, root=None):
-    """
-    Construct a certain kind of dual graph.
-
-    Parameters
-    ----------
-    T : undirected acyclic networkx graph
-        Input tree graph with integer nodes.
-    event_nodes : set of integers
-        This subset of nodes in the input graph
-        will have bijective correspondence to edges in the output graph.
-
-    Returns
-    -------
-    chunk_tree : undirected unweighted acyclic networkx graph
-        A kind of dual tree with new nodes and edges.
-    non_event_node_map : dict
-        A map from each non-event node in the original graph
-        to a node in the output graph.
-    event_node_map : dict
-        A map from each event node in the original graph
-        to a pair of adjacent nodes in the output graph.
-
-    Notes
-    -----
-    Edges in the output chunk graph correspond bijectively to event nodes
-    in the original graph.
-
-    """
-
-    # Partition the input nodes into event and non-event nodes.
-    non_event_nodes = set(T) - set(event_nodes)
-
-    # Initialize the outputs.
-    chunk_tree = nx.Graph()
-    non_event_node_map = {}
-    event_node_map = {}
-
-    # Populate the outputs,
-    # traversing the input graph in preorder from an arbitrary non-event root.
-    next_chunk = 0
-    if root is None:
-        root = get_first_element(non_event_nodes)
-    non_event_node_map[root] = next_chunk
-    chunk_tree.add_node(next_chunk)
-    next_chunk += 1
-    for a, b in nx.bfs_edges(T, root):
-
-        # Get the chunk associated with the parent node.
-        if a in non_event_nodes:
-            parent_chunk = non_event_node_map[a]
-        elif a in event_nodes:
-            grandparent_chunk, parent_chunk = event_node_map[a]
-        else:
-            raise Exception('internal error')
-
-        # If the child node is an event node,
-        # then begin a new chunk and add an edge to the output graph.
-        # Otherwise update the output maps but do not modify the output graph.
-        if b in event_nodes:
-            chunk_edge = (parent_chunk, next_chunk)
-            event_node_map[b] = chunk_edge
-            chunk_tree.add_edge(*chunk_edge)
-            next_chunk += 1
-        elif b in non_event_nodes:
-            non_event_node_map[b] = parent_chunk
-        else:
-            raise Exception('internal error')
-
-    # Return the outputs.
-    return chunk_tree, non_event_node_map, event_node_map
 
 
 def resample_states(T, P, node_to_state, root=None, root_distn=None):
@@ -292,19 +179,24 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
 
 
 
-def get_feasible_history(rate_matrix, tip_states, tree):
+def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
     """
     Find an arbitrary feasible history.
 
     Parameters
     ----------
-    rate_matrix : weighted directed networkx graph
-        This is a potentially sparse rate matrix.
-    tip_states : dict
-        Maps tip vertex ids to states.
-    tree : weighted undirected networkx graph
-        A representation of a tree.  Following networks convention,
-        the distance along an edge is its 'weight'.
+    T : weighted undirected acyclic networkx graph
+        This is the original tree.
+    P : weighted directed networkx graph
+        A sparse transition matrix assumed to be identical for all edges.
+        The weights are transition probabilities.
+    node_to_state : dict
+        A map from nodes to states.
+        Nodes with unknown states do not correspond to keys in this map.
+    root : integer, optional
+        Root of the tree.
+    root_distn : dict, optional
+        Map from root state to probability.
 
     Returns
     -------
@@ -324,5 +216,80 @@ def get_feasible_history(rate_matrix, tip_states, tree):
     meaningful distribution.
 
     """
-    pass
+
+    # Bookkeeping.
+    non_event_nodes = set(T)
+
+    # Repeatedly split edges until no structural error is raised.
+    events_per_edge = 0
+    k = None
+    while True:
+
+        # If the number of events per edge is already as large
+        # as the number of states, then no feasible solution exists.
+        # For this conclusion to be valid,
+        # self-transitions (as in uniformization) must be allowed,
+        # otherwise strange things can happen because of periodicity.
+        if events_per_edge > len(P):
+            raise StructuralZeroProb('failed to find a feasible history')
+
+        # Increment some stuff and bisect edges if appropriate.
+        if k is None:
+            k = 0
+        else:
+            T = get_edge_bisected_graph(T)
+            events_per_edge += 2**k
+            k += 1
+
+        # Construct the chunk tree.
+        event_nodes = set(T) - non_event_nodes
+        chunk_tree, non_event_map, event_map = get_chunk_tree(
+                T, event_nodes, root=root)
+
+        # Try to map known states onto chunk tree nodes.
+        # This may fail if multiple nodes with different known states
+        # map onto the same chunk tree node,
+        # which may happen if some edges have no uniformized events.
+        chunk_node_to_state = {}
+        try:
+            for node, state in node_to_state.items():
+                chunk_node = non_event_map[node]
+                if chunk_node in chunk_node_to_state:
+                    if chunk_node_to_state[chunk_node] != state:
+                        raise StructuralZeroProb('chunk state collision')
+                else:
+                    chunk_node_to_state[chunk_node] = state
+        except StructuralZeroProb as e:
+            continue
+
+        # Try to sample states on the chunk tree.
+        # This may fail if not enough uniformized events have been placed
+        # on the edges.
+        try:
+            chunk_node_to_sampled_state = resample_states(
+                    chunk_tree, P, chunk_node_to_state,
+                    root=root, root_distn=root_distn)
+        except StructuralZeroProb as e:
+            continue
+
+        # Map states onto edges of the tree.
+        for a, b in T.edges():
+            if a in node_to_state:
+                T[a][b]['state'] = node_to_state[a]
+            elif b in node_to_state:
+                T[a][b]['state'] = node_to_state[b]
+            else:
+                a_chunk = set(event_map[a])
+                b_chunk = set(event_map[b])
+                chunk_nodes = list(a_chunk & b_chunk)
+                if len(chunk_nodes) != 1:
+                    raise Exception('internal error')
+                chunk_node = chunk_nodes[0]
+                T[a][b]['state'] = chunk_node_to_state[chunk_node]
+
+        # Remove event nodes that are self-transitions.
+
+    # Return the new tree, with states mapped onto edges,
+    # and possibly with some additional degree-2 nodes.
+    return T
 
