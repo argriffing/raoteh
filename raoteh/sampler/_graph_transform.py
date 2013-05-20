@@ -80,10 +80,10 @@ def remove_redundant_nodes(T, redundant_nodes):
     tips = set(n for n, d in degrees.items() if d == 1)
     root = get_first_element(tips)
 
-    # Check the root.
-    if root in redundant_nodes:
-        raise Exception(
-                'currently only degree 2 nodes may be considered redundant')
+    # Check that the caller is not trying to remove nodes
+    # that have unweighted degree other than degree 2.
+    if any(degrees[n] != 2 for n in redundant_nodes):
+        raise Exception('only degree 2 nodes may be considered redundant')
 
     # Set up some bookkeeping.
     successors = nx.dfs_successors(T, root)

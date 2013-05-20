@@ -166,14 +166,45 @@ class TestGraphTransform(TestCase):
             # The non-event nodes 13 and 14 should map to the same chunk.
             assert_equal(non_event_map[13], non_event_map[14])
 
-    def test_remove_redundant_nodes_small_example(self):
+    def test_remove_redundant_nodes_short_path(self):
+
+        # Define a short path with one redundant
+        # and one non-redundant internal node.
         T = nx.Graph()
         T.add_edge(0, 1, state=0, weight=1)
         T.add_edge(1, 2, state=0, weight=1)
+        T.add_edge(2, 3, state=1, weight=1)
+
+        # Try removing a redundant node.
         redundant_nodes = {1}
         T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
         assert_equal(set(T_out), set(T) - redundant_nodes)
         assert_equal(T_out[0][2]['weight'], 2)
+
+        # Fail at removing a non-redundant node.
+        redundant_nodes = {2}
+        assert_raises(
+                Exception,
+                _graph_transform.remove_redundant_nodes,
+                T, redundant_nodes)
+
+    def test_remove_redundant_nodes_small_tree(self):
+
+        # Define a short path with one redundant
+        # and one non-redundant internal node.
+        T = nx.Graph()
+        T.add_edge(0, 1, state=0, weight=1)
+        T.add_edge(0, 2, state=0, weight=1)
+        T.add_edge(0, 3, state=0, weight=1)
+
+        # None of the nodes are considered redundant in the current
+        # implementation, because each node is of degree 1 or 3.
+        for redundant_nodes in ({0}, {1}, {2}, {3}):
+            assert_raises(
+                    Exception,
+                    _graph_transform.remove_redundant_nodes,
+                    T, redundant_nodes)
+
 
 if __name__ == '__main__':
     run_module_suite()
