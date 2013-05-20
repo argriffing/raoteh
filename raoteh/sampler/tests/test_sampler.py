@@ -21,6 +21,41 @@ def powerset(iterable):
             itertools.combinations(s, r) for r in range(len(s)+1))
 
 
+def get_test_transition_matrix():
+    # This returns a sparse transition matrix for testing.
+    # It uses an hack for the node indices, because I want to keep integers.
+    # This transition graph looks kind of like the following ascii art.
+    #
+    # 41 --- 42 --- 43 --- 44
+    #  |      |      |      |
+    # 31 --- 32 --- 33 --- 34
+    #  |      |      |      |
+    # 21 --- 22 --- 23 --- 24
+    #  |      |      |      |
+    # 11 --- 12 --- 13 --- 14
+    #
+    P = nx.DiGraph()
+    weighted_edges = []
+    for i in (1, 2, 3, 4):
+        for j in (1, 2, 3, 4):
+            source = i*10 + j
+            sinks = []
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    ni = i + di
+                    nj = j + dj
+                    if not (di and dj):
+                        if (1 <= ni <= 4) and (1 <= nj <= 4):
+                            sink = ni*10 + nj
+                            sinks.append(sink)
+            nsinks = len(sinks)
+            weight = 1 / float(nsinks)
+            for sink in sinks:
+                weighted_edges.append((source, sink, weight))
+    P.add_weighted_edges_from(weighted_edges)
+    return P
+
+
 class TestNodeStateSampler(TestCase):
 
     def test_resample_states_short_path(self):
@@ -194,7 +229,7 @@ class TestEdgeStateSampler(TestCase):
         # Define the event nodes.
         # These are the degree-two nodes for which the adjacent edges
         # are allowed to differ from each other.
-        event_nodes = {20, 21, 30, 31, 32}
+        event_nodes = {10, 20, 21, 30, 31, 32}
         non_event_nodes = set(T) - event_nodes
 
         # Check that the correct internal states are sampled,
@@ -228,6 +263,60 @@ class TestEdgeStateSampler(TestCase):
             assert_equal(T_aug[30][31]['state'], 1)
             assert_equal(T_aug[31][32]['state'], 2)
             assert_equal(T_aug[32][33]['state'], 3)
+
+    def test_resample_edge_states_unknown_degree_three(self):
+        # This test uses a more complicated transition matrix.
+
+        # This transition matrix is on a 4x4 grid.
+        P = get_test_transition_matrix()
+
+        # Define a very sparse tree.
+        T = nx.Graph()
+        T.add_weighted_edges_from([
+
+            # first branch
+            (0, 10, 1.0),
+            (10, 11, 1.0),
+            (11, 12, 1.0),
+
+            # second branch
+            (0, 20, 2.0),
+            (20, 21, 2.0),
+            (21, 22, 2.0),
+            (22, 23, 2.0),
+
+            # third branch
+            (0, 30, 1.0),
+            (30, 31, 1.0),
+            (31, 32, 1.0),
+            (32, 33, 1.0),
+            ])
+
+        # Define the known states
+        node_to_state = {
+                12 : 11,
+                23 : 14,
+                33 : 41}
+
+        # Define the event nodes.
+        # These are the degree-two nodes for which the adjacent edges
+        # are allowed to differ from each other.
+        event_nodes = {10, 11, 20, 21, 22, 30, 31, 32}
+        non_event_nodes = set(T) - event_nodes
+
+        # Sample the edges states.
+        T_aug = _sampler.resample_edge_states(
+                T, P, node_to_state, event_nodes)
+        
+        # The unweighted and weighted tree size should be unchanged.
+        assert_equal(T.size(), T_aug.size())
+        assert_allclose(
+                T.size(weight='weight'), T_aug.size(weight='weight'))
+
+        # The origin node must have state 22.
+        assert_equal(T_aug[0][10]['state'], 22)
+        assert_equal(T_aug[0][20]['state'], 22)
+        assert_equal(T_aug[0][30]['state'], 22)
 
 
 class TestGraphTransform(TestCase):

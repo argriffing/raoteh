@@ -270,10 +270,10 @@ def resample_edge_states(T, P, node_to_state, event_nodes,
         else:
             if a in non_event_map:
                 chunk_node = non_event_map[a]
-                state = chunk_node_to_known_state[chunk_node]
+                state = chunk_node_to_sampled_state[chunk_node]
             elif b in non_event_map:
                 chunk_node = non_event_map[b]
-                state = chunk_node_to_known_state[chunk_node]
+                state = chunk_node_to_sampled_state[chunk_node]
             else:
                 a_chunks = set(event_map[a])
                 b_chunks = set(event_map[b])
