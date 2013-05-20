@@ -7,6 +7,9 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 import networkx as nx
 
+from raoteh.sampler import _graph_transform
+
+
 __all__ = []
 
 
@@ -26,9 +29,9 @@ def get_first_element(elements):
         return x
 
 
-
 def resample_states(T, P, node_to_state, root=None, root_distn=None):
     """
+    This function applies to a tree for which nodes will be assigned states.
 
     Parameters
     ----------
@@ -178,6 +181,112 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     return node_to_sampled_state
 
 
+def resample_edge_states(T, P, node_to_state, event_nodes,
+        root=None, root_distn=None):
+    """
+    This function applies to a tree for which edges will be assigned states.
+
+    After the edge states have been sampled,
+    some of the nodes will possibly have become redundant.
+    If this is the case, it is the responsibility of the caller
+    to remove these redundant nodes.
+    This function should not modify the original tree.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        This is the original tree.
+    P : weighted directed networkx graph
+        A sparse transition matrix assumed to be identical for all edges.
+        The weights are transition probabilities.
+    node_to_state : dict
+        A map from nodes to states.
+        Nodes with unknown states do not correspond to keys in this map.
+    event_nodes : set of integers
+        States of edges adjacent to these nodes are allowed to not be the same
+        as each other.  For nodes that are not event nodes,
+        the adjacent edge states must all be the same as each other.
+    root : integer, optional
+        Root of the tree.
+    root_distn : dict, optional
+        Map from root state to probability.
+
+    Returns
+    -------
+    T_out : weighted undirected networkx graph
+        A copy of the original tree, with each edge annoted with a state.
+
+    """
+
+    # Bookkeeping.
+    non_event_nodes = set(T) - event_nodes
+
+    # Input validation.
+    if set(event_nodes) & set(node_to_state):
+        raise ValueError('event nodes cannot have known states')
+    if root is not None:
+        if root not in non_event_nodes:
+            raise ValueError('the root must be a non-event node')
+
+    # Construct the chunk tree using the provided root.
+    chunk_tree, non_event_map, event_map = _graph_transform.get_chunk_tree(
+            T, event_nodes, root=root)
+
+    # Try to map known states onto chunk tree nodes.
+    # This may fail if multiple nodes with different known states
+    # map onto the same chunk tree node,
+    # which may happen if some edges have no uniformized events.
+    chunk_node_to_known_state = {}
+    for node, state in node_to_state.items():
+        chunk_node = non_event_map[node]
+        if chunk_node in chunk_node_to_known_state:
+            if chunk_node_to_known_state[chunk_node] != state:
+                raise StructuralZeroProb('chunk state collision')
+        else:
+            chunk_node_to_known_state[chunk_node] = state
+
+    # Try to sample states on the chunk tree.
+    # This may fail if not enough uniformized events have been placed
+    # on the edges.
+    if root is not None:
+        chunk_root = non_event_map[root]
+        chunk_root_distn = root_distn
+    else:
+        chunk_root = None
+        chunk_root_distn = None
+    chunk_node_to_sampled_state = resample_states(
+            chunk_tree, P, chunk_node_to_known_state,
+            root=chunk_root, root_distn=chunk_root_distn)
+
+    # Copy the original tree before adding states to the edges.
+    T = T.copy()
+
+    # Map states onto edges of the tree.
+    for a, b in T.edges():
+        if a in node_to_state:
+            T[a][b]['state'] = node_to_state[a]
+        elif b in node_to_state:
+            T[a][b]['state'] = node_to_state[b]
+        else:
+            if a in non_event_map:
+                chunk_node = non_event_map[a]
+                state = chunk_node_to_known_state[chunk_node]
+            elif b in non_event_map:
+                chunk_node = non_event_map[b]
+                state = chunk_node_to_known_state[chunk_node]
+            else:
+                a_chunks = set(event_map[a])
+                b_chunks = set(event_map[b])
+                chunk_nodes = list(a_chunks & b_chunks)
+                if len(chunk_nodes) != 1:
+                    raise Exception('internal error')
+                chunk_node = chunk_nodes[0]
+                state = chunk_node_to_sampled_state[chunk_node]
+            T[a][b]['state'] = state
+
+    # Return the new tree.
+    return T
+
 
 def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
     """
@@ -214,6 +323,7 @@ def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
     -----
     The returned history is not sampled according to any particularly
     meaningful distribution.
+    It is up to the caller to remove redundant self-transitions.
 
     """
 
@@ -241,55 +351,14 @@ def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
             events_per_edge += 2**k
             k += 1
 
-        # Construct the chunk tree.
+        # Get the event nodes.
         event_nodes = set(T) - non_event_nodes
-        chunk_tree, non_event_map, event_map = get_chunk_tree(
-                T, event_nodes, root=root)
 
-        # Try to map known states onto chunk tree nodes.
-        # This may fail if multiple nodes with different known states
-        # map onto the same chunk tree node,
-        # which may happen if some edges have no uniformized events.
-        chunk_node_to_state = {}
+        # Try to sample edge states.
         try:
-            for node, state in node_to_state.items():
-                chunk_node = non_event_map[node]
-                if chunk_node in chunk_node_to_state:
-                    if chunk_node_to_state[chunk_node] != state:
-                        raise StructuralZeroProb('chunk state collision')
-                else:
-                    chunk_node_to_state[chunk_node] = state
-        except StructuralZeroProb as e:
-            continue
-
-        # Try to sample states on the chunk tree.
-        # This may fail if not enough uniformized events have been placed
-        # on the edges.
-        try:
-            chunk_node_to_sampled_state = resample_states(
-                    chunk_tree, P, chunk_node_to_state,
+            return resample_edge_states(
+                    T, P, node_to_state, event_nodes,
                     root=root, root_distn=root_distn)
         except StructuralZeroProb as e:
-            continue
-
-        # Map states onto edges of the tree.
-        for a, b in T.edges():
-            if a in node_to_state:
-                T[a][b]['state'] = node_to_state[a]
-            elif b in node_to_state:
-                T[a][b]['state'] = node_to_state[b]
-            else:
-                a_chunk = set(event_map[a])
-                b_chunk = set(event_map[b])
-                chunk_nodes = list(a_chunk & b_chunk)
-                if len(chunk_nodes) != 1:
-                    raise Exception('internal error')
-                chunk_node = chunk_nodes[0]
-                T[a][b]['state'] = chunk_node_to_state[chunk_node]
-
-        # Remove event nodes that are self-transitions.
-
-    # Return the new tree, with states mapped onto edges,
-    # and possibly with some additional degree-2 nodes.
-    return T
+            pass
 

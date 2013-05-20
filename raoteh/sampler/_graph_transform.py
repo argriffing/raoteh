@@ -136,6 +136,8 @@ def get_chunk_tree(T, event_nodes, root=None):
     event_nodes : set of integers
         This subset of nodes in the input graph
         will have bijective correspondence to edges in the output graph.
+    root : integer, optional
+        Tree root.
 
     Returns
     -------
@@ -158,6 +160,12 @@ def get_chunk_tree(T, event_nodes, root=None):
     # Partition the input nodes into event and non-event nodes.
     non_event_nodes = set(T) - set(event_nodes)
 
+    # Initialize the root.
+    if root is None:
+        root = get_first_element(non_event_nodes)
+    if root not in non_event_nodes:
+        raise ValueError('the root must be a non-event node')
+
     # Initialize the outputs.
     chunk_tree = nx.Graph()
     non_event_node_map = {}
@@ -166,8 +174,6 @@ def get_chunk_tree(T, event_nodes, root=None):
     # Populate the outputs,
     # traversing the input graph in preorder from an arbitrary non-event root.
     next_chunk = 0
-    if root is None:
-        root = get_first_element(non_event_nodes)
     non_event_node_map[root] = next_chunk
     chunk_tree.add_node(next_chunk)
     next_chunk += 1

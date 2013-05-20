@@ -21,7 +21,7 @@ def powerset(iterable):
             itertools.combinations(s, r) for r in range(len(s)+1))
 
 
-class TestSampler(TestCase):
+class TestNodeStateSampler(TestCase):
 
     def test_resample_states_short_path(self):
 
@@ -109,7 +109,7 @@ class TestSampler(TestCase):
             (2, 3, 0.5),
             (3, 2, 1.0)])
 
-        # Define a very sparse tree as a path.
+        # Define a very sparse tree.
         T = nx.Graph()
         T.add_edges_from([
             (0, 10),
@@ -143,7 +143,92 @@ class TestSampler(TestCase):
                     31 : 2,
                     32 : 3}
             assert_equal(observed, expected)
-        
+
+
+class TestEdgeStateSampler(TestCase):
+
+    def test_resample_edge_states_separated_regions(self):
+        # This test is analogous to the corresponding node state test.
+
+        # Define a very sparse transition matrix as a path.
+        # To avoid periodicity it allows self transitions.
+        P = nx.DiGraph()
+        P.add_weighted_edges_from([
+            (0, 0, 0.5),
+            (1, 1, 0.5),
+            (2, 2, 0.5),
+            (3, 3, 0.5),
+            (0, 1, 0.5),
+            (1, 0, 0.25),
+            (1, 2, 0.25),
+            (2, 1, 0.25),
+            (2, 3, 0.25),
+            (3, 2, 0.5)])
+
+        # Define a very sparse tree.
+        T = nx.Graph()
+        T.add_weighted_edges_from([
+            (0, 10, 1.0),
+            (0, 20, 1.0),
+            (0, 30, 1.0),
+            (10, 11, 2.0),
+            (11, 12, 2.0),
+            (12, 13, 2.0),
+            (13, 14, 2.0),
+            (14, 15, 2.0),
+            (15, 16, 2.0),
+            (20, 21, 1.0),
+            (21, 22, 1.0),
+            (30, 31, 1.0),
+            (31, 32, 1.0),
+            (32, 33, 1.0)])
+
+        # Define the known states
+        root_distn = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
+        node_to_state = {
+                0 : 0,
+                16 : 0,
+                22 : 2,
+                33 : 3}
+
+        # Define the event nodes.
+        # These are the degree-two nodes for which the adjacent edges
+        # are allowed to differ from each other.
+        event_nodes = {20, 21, 30, 31, 32}
+        non_event_nodes = set(T) - event_nodes
+
+        # Check that the correct internal states are sampled,
+        # regardless of the root choice.
+        for root in non_event_nodes:
+
+            # Sample the edges states.
+            T_aug = _sampler.resample_edge_states(
+                    T, P, node_to_state, event_nodes,
+                    root=root, root_distn=root_distn)
+            
+            # The unweighted and weighted tree size should be unchanged.
+            assert_equal(T.size(), T_aug.size())
+            assert_allclose(
+                    T.size(weight='weight'), T_aug.size(weight='weight'))
+
+            # The edges along the long path should all have state 0
+            # because this path does not include any event nodes.
+            long_path_nodes = (10, 11, 12, 13, 14, 15, 16)
+            long_path_edges = zip(long_path_nodes[:-1], long_path_nodes[1:])
+            for a, b in long_path_edges:
+                assert_equal(T_aug[a][b]['state'], 0)
+            
+            # Check the edge states along the short branch.
+            assert_equal(T_aug[0][20]['state'], 0)
+            assert_equal(T_aug[20][21]['state'], 1)
+            assert_equal(T_aug[21][22]['state'], 2)
+
+            # Check the edge states along the medium length branch.
+            assert_equal(T_aug[0][30]['state'], 0)
+            assert_equal(T_aug[30][31]['state'], 1)
+            assert_equal(T_aug[31][32]['state'], 2)
+            assert_equal(T_aug[32][33]['state'], 3)
+
 
 class TestGraphTransform(TestCase):
 
