@@ -347,7 +347,7 @@ def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
         if k is None:
             k = 0
         else:
-            T = get_edge_bisected_graph(T)
+            T = _graph_transform.get_edge_bisected_graph(T)
             events_per_edge += 2**k
             k += 1
 
