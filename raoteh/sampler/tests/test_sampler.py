@@ -238,6 +238,29 @@ class TestGraphTransform(TestCase):
                     _graph_transform.remove_redundant_nodes,
                     T, redundant_nodes)
 
+    def test_remove_redundant_nodes_medium_tree(self):
+
+        # Define a tree.
+        T = nx.Graph()
+        T.add_edge(0, 10, state=0, weight=1.1)
+        T.add_edge(0, 20, state=0, weight=1.2)
+        T.add_edge(0, 30, state=0, weight=1.3)
+        T.add_edge(20, 21, state=0, weight=1.4)
+        T.add_edge(30, 31, state=0, weight=1.5)
+        T.add_edge(31, 32, state=0, weight=1.6)
+
+        # Get the original weighted size.
+        # This is the sum of weights of all edges.
+        original_size = T.size(weight='weight')
+
+        # Try removing all valid combinations of redundant nodes.
+        for redundant_node_tuple in powerset((20, 30, 31)):
+            redundant_nodes = set(redundant_node_tuple)
+            T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
+            assert_equal(set(T_out), set(T) - redundant_nodes)
+            assert_allclose(T_out.size(weight='weight'), original_size)
+
+
 
 if __name__ == '__main__':
     run_module_suite()
