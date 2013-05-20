@@ -23,7 +23,7 @@ def powerset(iterable):
 
 class TestSampler(TestCase):
 
-    def test_resample_states_path(self):
+    def test_resample_states_short_path(self):
 
         # Define a very sparse transition matrix as a path.
         P = nx.DiGraph()
@@ -93,6 +93,56 @@ class TestSampler(TestCase):
                     _sampler.StructuralZeroProb,
                     _sampler.resample_states,
                     T, P, node_to_state, root, root_distn)
+
+    def test_resample_states_separated_regions(self):
+        # This test includes multiple regions of nodes with unknown states,
+        # where the regions are separated from each other by nodes
+        # with known states.
+
+        # Define a very sparse transition matrix as a path.
+        P = nx.DiGraph()
+        P.add_weighted_edges_from([
+            (0, 1, 1.0),
+            (1, 0, 0.5),
+            (1, 2, 0.5),
+            (2, 1, 0.5),
+            (2, 3, 0.5),
+            (3, 2, 1.0)])
+
+        # Define a very sparse tree as a path.
+        T = nx.Graph()
+        T.add_edges_from([
+            (0, 10),
+            (0, 20),
+            (0, 30),
+            (10, 11),
+            (20, 21),
+            (30, 31),
+            (31, 32)])
+
+        # Define the known states
+        root_distn = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
+        node_to_state = {
+                0 : 0,
+                11 : 2,
+                21 : 2,
+                32 : 3}
+
+        # Check that the correct internal states are sampled,
+        # regardless of the root choice.
+        for root in T:
+            observed = _sampler.resample_states(
+                    T, P, node_to_state, root, root_distn)
+            expected = {
+                    0 : 0,
+                    10 : 1,
+                    11 : 2,
+                    20 : 1,
+                    21 : 2,
+                    30 : 1,
+                    31 : 2,
+                    32 : 3}
+            assert_equal(observed, expected)
         
 
 class TestGraphTransform(TestCase):
