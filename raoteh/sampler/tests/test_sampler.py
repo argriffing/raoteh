@@ -2,6 +2,8 @@
 """
 from __future__ import division, print_function, absolute_import
 
+import itertools
+
 import numpy as np
 import networkx as nx
 
@@ -9,6 +11,14 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises)
 
 from raoteh.sampler import _sampler, _graph_transform
+
+
+# This is an official itertools recipe.
+def powerset(iterable):
+    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    s = list(iterable)
+    return itertools.chain.from_iterable(
+            itertools.combinations(s, r) for r in range(len(s)+1))
 
 
 class TestSampler(TestCase):
@@ -187,6 +197,29 @@ class TestGraphTransform(TestCase):
                 Exception,
                 _graph_transform.remove_redundant_nodes,
                 T, redundant_nodes)
+
+    def test_remove_redundant_nodes_long_path(self):
+
+        # Define a path with multiple consecutive redundant internal nodes.
+        T = nx.Graph()
+        T.add_edge(0, 1, state=0, weight=1.1)
+        T.add_edge(1, 2, state=0, weight=1.2)
+        T.add_edge(2, 3, state=1, weight=1.3)
+        T.add_edge(3, 4, state=1, weight=1.4)
+        T.add_edge(4, 5, state=1, weight=1.5)
+        T.add_edge(5, 6, state=1, weight=1.6)
+        T.add_edge(6, 7, state=1, weight=1.7)
+
+        # Get the original weighted size.
+        # This is the sum of weights of all edges.
+        original_size = T.size(weight='weight')
+
+        # Try removing all valid combinations of redundant nodes.
+        for redundant_node_tuple in powerset((1, 3, 4, 5, 6)):
+            redundant_nodes = set(redundant_node_tuple)
+            T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
+            assert_equal(set(T_out), set(T) - redundant_nodes)
+            assert_allclose(T_out.size(weight='weight'), original_size)
 
     def test_remove_redundant_nodes_small_tree(self):
 
