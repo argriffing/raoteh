@@ -69,7 +69,7 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
         total_rates[a] = rate_out
 
     # Initialize omega as the uniformization rate.
-    omega = uniformization_factor * max(n_to_rate_out.values())
+    omega = uniformization_factor * max(total_rates.values())
 
     # Construct a uniformized transition matrix from the rate matrix
     # and the uniformization rate.
@@ -78,7 +78,7 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
         weight = 1.0 - total_rates[a] / omega
         P.add_edge(a, a, weight=weight)
         for b in Q[a]:
-            weight = Q[a][b] / omega
+            weight = Q[a][b]['weight'] / omega
             P.add_edge(a, b, weight=weight)
 
     # Define the uniformized poisson rates for Rao-Teh resampling.

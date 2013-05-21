@@ -2,6 +2,8 @@
 """
 from __future__ import division, print_function, absolute_import
 
+import itertools
+
 import numpy as np
 import networkx as nx
 
@@ -9,7 +11,6 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises)
 
 from raoteh.sampler import _sampler
-
 
 
 def get_first_element(elements):
@@ -384,6 +385,51 @@ class TestResamplePoisson(TestCase):
         # The resampled tree should have the same weighted size.
         T_aug = _sampler.resample_poisson(T, poisson_rates)
         assert_allclose(T.size(weight='weight'), T_aug.size(weight='weight'))
+
+
+class TestRaoTehSampler(TestCase):
+
+    def test_gen_histories(self):
+
+        # Define a tree with branch lengths.
+        T = nx.Graph()
+        T.add_edge(0, 12, weight=1.0)
+        T.add_edge(0, 23, weight=2.0)
+        T.add_edge(0, 33, weight=1.0)
+
+        # Define a rate matrix.
+        Q = nx.DiGraph()
+        Q.add_edge(0, 1, weight=4)
+        Q.add_edge(0, 2, weight=2)
+        Q.add_edge(1, 0, weight=1)
+        Q.add_edge(1, 2, weight=2)
+        Q.add_edge(2, 1, weight=1)
+        Q.add_edge(2, 0, weight=2)
+
+        # Define some leaf states.
+        node_to_state = {12:1, 23:2, 33:2}
+
+        # Generate a few histories.
+        nhistories = 10
+        for T_sample in itertools.islice(
+                _sampler.gen_histories(T, Q, node_to_state), nhistories):
+
+            # Check that the weighted size is constant.
+            assert_allclose(
+                    T.size(weight='weight'), T_sample.size(weight='weight'))
+
+            # Check that for each node in the initial tree,
+            # all adjacent edges in the augmented tree have the same state.
+            # Furthermore if the state of the node in the initial tree is known,
+            # check that the adjacent edges share this known state.
+            for a in T:
+                states = set()
+                for b in T_sample.neighbors(a):
+                    states.add(T_sample[a][b]['state'])
+                assert_equal(len(states), 1)
+                state = get_first_element(states)
+                if a in node_to_state:
+                    assert_equal(node_to_state[a], state)
 
 
 if __name__ == '__main__':
