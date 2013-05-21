@@ -162,6 +162,50 @@ def resample_poisson(T, state_to_rate, root=None):
     return T_out
 
 
+def construct_node_to_pmap(T, P, node_to_state, root):
+    """
+    A helper function for resample_states.
+
+    """
+
+    # Bookkeeping structures related to tree traversal.
+    successors = nx.dfs_successors(T, root)
+
+    # For each node, get a sparse map from state to subtree probability.
+    node_to_pmap = {}
+    for node in nx.dfs_postorder_nodes(T, root):
+        if node in node_to_state:
+            node_state = node_to_state[node]
+            node_to_pmap[node] = {node_state : 1.0}
+        else:
+            pmap = {}
+            for node_state in P:
+                nprobs = []
+                for n in successors[node]:
+
+                    # Get the list of possible child node states.
+                    # These are limited by sparseness of the matrix of
+                    # transitions from the parent state,
+                    # and also by the possibility
+                    # that the state of the child node is already known.
+                    valid_states = set(P[node_state]) & set(node_to_pmap[n])
+                    if valid_states:
+                        nprob = 0.0
+                        for s in valid_states:
+                            a = P[node_state][s]['weight']
+                            b = node_to_pmap[n][s]
+                            nprob += a * b
+                        nprobs.append(nprob)
+                    else:
+                        nprobs = None
+                        break
+                if nprobs is not None:
+                    cprob = np.product(nprobs)
+                    pmap[node_state] = cprob
+            node_to_pmap[node] = pmap
+    return node_to_pmap
+
+
 def resample_states(T, P, node_to_state, root=None, root_distn=None):
     """
     This function applies to a tree for which nodes will be assigned states.
@@ -200,8 +244,7 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     if root is None:
         root = get_first_element(node_to_state)
 
-    # Bookkeeping structures related to tree traversal.
-    successors = nx.dfs_successors(T, root)
+    # Bookkeeping structure related to tree traversal.
     predecessors = nx.dfs_predecessors(T, root)
 
     # A bookkeeping structure related to state sampling.
@@ -215,37 +258,7 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         P_for_sampling[source] = (sinks, probs)
 
     # For each node, get a sparse map from state to subtree probability.
-    node_to_pmap = {}
-    for node in nx.dfs_postorder_nodes(T, root):
-        if node in node_to_state:
-            node_state = node_to_state[node]
-            node_to_pmap[node] = {node_state : 1.0}
-        else:
-            pmap = {}
-            for node_state in P:
-                nprobs = []
-                for n in successors[node]:
-
-                    # Get the list of possible child node states.
-                    # These are limited by sparseness of the matrix of
-                    # transitions from the parent state,
-                    # and also by the possibility
-                    # that the state of the child node is already known.
-                    valid_states = set(P[node_state]) & set(node_to_pmap[n])
-                    if valid_states:
-                        nprob = 0.0
-                        for s in valid_states:
-                            a = P[node_state][s]['weight']
-                            b = node_to_pmap[n][s]
-                            nprob += a * b
-                        nprobs.append(nprob)
-                    else:
-                        nprobs = None
-                        break
-                if nprobs is not None:
-                    cprob = np.product(nprobs)
-                    pmap[node_state] = cprob
-            node_to_pmap[node] = pmap
+    node_to_pmap = construct_node_to_pmap(T, P, node_to_state, root)
 
     # Sample the node states, beginning at the root.
     node_to_sampled_state = {}
@@ -272,8 +285,11 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         weight_sum = sum(weights)
         if not weight_sum:
             raise NumericalZeroProb('numerical problem at the root')
-        probs = np.array(weights, dtype=float) / weight_sum
-        sampled_state = np.random.choice(states, p=probs)
+        if len(states) == 1:
+            sampled_state = states[0]
+        else:
+            probs = np.array(weights, dtype=float) / weight_sum
+            sampled_state = np.random.choice(states, p=probs)
         root_state = sampled_state
     node_to_sampled_state[root] = root_state
 
@@ -306,8 +322,11 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         weight_sum = sum(weights)
         if not weight_sum:
             raise NumericalZeroProb('numerical problem at a non-root node')
-        probs = np.array(weights, dtype=float) / weight_sum
-        sampled_state = np.random.choice(states, p=probs)
+        if len(states) == 1:
+            sampled_state = states[0]
+        else:
+            probs = np.array(weights, dtype=float) / weight_sum
+            sampled_state = np.random.choice(states, p=probs)
         node_to_sampled_state[node] = sampled_state
 
     # Return the map of sampled states.

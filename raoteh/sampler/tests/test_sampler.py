@@ -11,6 +11,10 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises)
 
 from raoteh.sampler import _sampler
+from raoteh.sampler._conditional_expectation import (
+        get_jukes_cantor_rate_matrix,
+        get_jukes_cantor_probability,
+        get_jukes_cantor_interaction)
 
 
 def get_first_element(elements):
@@ -431,6 +435,47 @@ class TestRaoTehSampler(TestCase):
                 if a in node_to_state:
                     assert_equal(node_to_state[a], state)
 
+    def test_jukes_cantor_conditional_expectation(self):
+        # Compare Monte Carlo conditional expectations to the true values.
+
+        # Define the initial state, final state, and elapsed time.
+        a = 0
+        b = 0
+        #t = 2.5
+        t = 0.5
+        n = 4
+
+        # Define the tree, which in this case is only a path.
+        T = nx.Graph()
+        T.add_edge(0, 1, weight=t)
+        node_to_state = {0:a, 1:b}
+
+        # Define the Jukes-Cantor rate matrix.
+        Q = get_jukes_cantor_rate_matrix(n)
+
+        # Do some Monte Carlo sampling.
+        observed_dwell_times = np.zeros(n, dtype=float)
+        nhistories = 10000
+        for T_sample in itertools.islice(
+                _sampler.gen_histories(T, Q, node_to_state), nhistories):
+
+            # Accumulate the amount of time spent in each state.
+            for na, nb in T_sample.edges():
+                edge = T_sample[na][nb]
+                state = edge['state']
+                weight = edge['weight']
+                observed_dwell_times[state] += weight
+
+        # Compare to the expected dwell times.
+        expected_dwell_times = np.zeros(n, dtype=float)
+        for i in range(n):
+            interaction = get_jukes_cantor_interaction(a, b, i, i, t, n)
+            probability = get_jukes_cantor_probability(a, b, t, n)
+            expected_dwell_times[i] = nhistories * interaction / probability
+
+        print(observed_dwell_times)
+        print(expected_dwell_times)
+        raise Exception
 
 if __name__ == '__main__':
     run_module_suite()
