@@ -42,6 +42,6 @@ def get_jukes_cantor_interaction(a, b, c, d, t, n=4):
     elif a == c and d == b:
         x = (n-1)*(n-1)*t*p - pm1*2*(n-1)*(n-1)/n
     else:
-        x = -(n-1)*t*p - pm1*(n-1)*(n-1)/n
+        x = -(n-1)*t*p - pm1*(n-2)*(n-1)/n
     return (t + x) / (n*n)
 

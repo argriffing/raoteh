@@ -440,8 +440,7 @@ class TestRaoTehSampler(TestCase):
 
         # Define the initial state, final state, and elapsed time.
         a = 0
-        b = 0
-        #t = 2.5
+        b = 1
         t = 0.5
         n = 4
 
@@ -455,7 +454,7 @@ class TestRaoTehSampler(TestCase):
 
         # Do some Monte Carlo sampling.
         observed_dwell_times = np.zeros(n, dtype=float)
-        nhistories = 10000
+        nhistories = 1000
         for T_sample in itertools.islice(
                 _sampler.gen_histories(T, Q, node_to_state), nhistories):
 
@@ -466,13 +465,14 @@ class TestRaoTehSampler(TestCase):
                 weight = edge['weight']
                 observed_dwell_times[state] += weight
 
-        # Compare to the expected dwell times.
+        # Compute the expected dwell times.
         expected_dwell_times = np.zeros(n, dtype=float)
         for i in range(n):
             interaction = get_jukes_cantor_interaction(a, b, i, i, t, n)
             probability = get_jukes_cantor_probability(a, b, t, n)
             expected_dwell_times[i] = nhistories * interaction / probability
 
+        # Compare to the expected dwell times.
         print(observed_dwell_times)
         print(expected_dwell_times)
         raise Exception
