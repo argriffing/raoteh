@@ -4,6 +4,8 @@ Rao-Teh sampler.
 """
 from __future__ import division, print_function, absolute_import
 
+import random
+
 import numpy as np
 import networkx as nx
 
@@ -23,10 +25,141 @@ class NumericalZeroProb(SamplingError):
     pass
 
 
-
 def get_first_element(elements):
     for x in elements:
         return x
+
+
+def gen_histories(T, Q, node_to_state, uniformization_factor=2):
+    """
+    Yield history samples on trees.
+
+    Edges of the yielded trees will be augmented
+    with weights and states.
+    The weighted size of each yielded tree should be the same
+    as the weighted size of the input tree.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree.
+    Q : directed weighted networkx graph
+        A sparse rate matrix.
+    node_to_state : dict
+        A map from nodes to states.
+        Nodes with unknown states do not correspond to keys in this map.
+    uniformization_factor : float
+        A value greater than 1.
+
+    """
+
+    # Validate some input.
+    if uniformization_factor <= 1:
+        raise ValueError('the uniformization factor must be greater than 1')
+    for a, b in Q.edges():
+        if a == b:
+            raise ValueError('the rate matrix should have no loops')
+    
+    # Get the total rate away from each state.
+    total_rates = {}
+    for a in Q:
+        rate_out = 0.0
+        for b in Q[a]:
+            rate_out += Q[a][b]['weight']
+        total_rates[a] = rate_out
+
+    # Initialize omega as the uniformization rate.
+    omega = uniformization_factor * max(n_to_rate_out.values())
+
+    # Construct a uniformized transition matrix from the rate matrix
+    # and the uniformization rate.
+    P = nx.DiGraph()
+    for a in Q:
+        weight = 1.0 - total_rates[a] / omega
+        P.add_edge(a, a, weight=weight)
+        for b in Q[a]:
+            weight = Q[a][b] / omega
+            P.add_edge(a, b, weight=weight)
+
+    # Define the uniformized poisson rates for Rao-Teh resampling.
+    poisson_rates = dict((a, omega - q) for a, q in total_rates.items())
+
+    # Define the initial set of nodes.
+    initial_nodes = set(T)
+
+    # Construct an initial feasible history,
+    # possibly with redundant event nodes.
+    T = get_feasible_history(T, P, node_to_state)
+
+    # Generate histories using Rao-Teh sampling.
+    while True:
+
+        # Identify and remove the non-original redundant nodes.
+        all_rnodes = _graph_transform.get_redundant_degree_two_nodes(T)
+        expendable_rnodes = all_rnodes - initial_nodes
+        T = _graph_transform.remove_redundant_nodes(T, expendable_rnodes)
+
+        # Yield the sampled history on the tree.
+        yield T
+
+        # Resample poisson events.
+        T = resample_poisson(T, poisson_rates)
+
+        # Resample edge states.
+        event_nodes = set(T) - initial_nodes
+        T = resample_edge_states(T, P, node_to_state, event_nodes)
+
+
+def resample_poisson(T, state_to_rate, root=None):
+    """
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree whose edges are annotated with states.
+    state_to_rate : dict
+        Map the state to the expected number of poisson events
+        per edge weight.
+    root : integer, optional
+        Root of the tree.
+
+    Returns
+    -------
+    T_out : weighted undirected acyclic networkx graph
+        Weighted tree without state annotation.
+
+    """
+
+    # If no root was specified then pick one arbitrarily.
+    if root is None:
+        root = get_first_element(T)
+
+    # Define the next node.
+    next_node = max(T) + 1
+
+    # Build the list of weighted edges.
+    weighted_edges = []
+    for a, b in nx.bfs_edges(T, root):
+        weight = T[a][b]['weight']
+        state = T[a][b]['state']
+        rate = state_to_rate[state]
+        prev_node = a
+        total_dwell = 0.0
+        while True:
+            dwell = random.expovariate(rate)
+            if total_dwell + dwell > weight:
+                break
+            total_dwell += dwell
+            mid_node = next_node
+            next_node += 1
+            weighted_edges.append((prev_node, mid_node, dwell))
+            prev_node = mid_node
+        weighted_edges.append((prev_node, b, weight - total_dwell))
+
+    # Return the resampled tree with poisson events on the edges.
+    T_out = nx.Graph()
+    T_out.add_weighted_edges_from(weighted_edges)
+    return T_out
 
 
 def resample_states(T, P, node_to_state, root=None, root_distn=None):

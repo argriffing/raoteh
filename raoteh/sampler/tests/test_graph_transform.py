@@ -139,8 +139,13 @@ class TestGraphTransform(TestCase):
         # This is the sum of weights of all edges.
         original_size = T.size(weight='weight')
 
+        # Check the set of redundant nodes.
+        all_redundant_nodes = {1, 3, 4, 5, 6}
+        obs_nodes = _graph_transform.get_redundant_degree_two_nodes(T)
+        assert_equal(all_redundant_nodes, obs_nodes)
+
         # Try removing all valid combinations of redundant nodes.
-        for redundant_node_tuple in powerset((1, 3, 4, 5, 6)):
+        for redundant_node_tuple in powerset(all_redundant_nodes):
             redundant_nodes = set(redundant_node_tuple)
             T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
             assert_equal(set(T_out), set(T) - redundant_nodes)

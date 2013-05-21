@@ -2,6 +2,7 @@
 """
 from __future__ import division, print_function, absolute_import
 
+import numpy as np
 import networkx as nx
 
 from numpy.testing import (run_module_suite, TestCase,
@@ -366,6 +367,23 @@ class TestFeasibleHistorySampler(TestCase):
                     assert_(bc in P[ab])
                     assert_(P[ab][bc]['weight'] > 0)
 
+
+class TestResamplePoisson(TestCase):
+
+    def test_resample_poisson(self):
+
+        # Define a tree.
+        T = nx.Graph()
+        T.add_edge(0, 12, weight=1.0, state=2)
+        T.add_edge(0, 23, weight=2.0, state=2)
+        T.add_edge(0, 33, weight=1.0, state=2)
+
+        # Define some random poisson rates.
+        poisson_rates = dict(zip(range(4), np.random.random(size=4)))
+        
+        # The resampled tree should have the same weighted size.
+        T_aug = _sampler.resample_poisson(T, poisson_rates)
+        assert_allclose(T.size(weight='weight'), T_aug.size(weight='weight'))
 
 
 if __name__ == '__main__':

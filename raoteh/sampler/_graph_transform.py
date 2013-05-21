@@ -50,6 +50,37 @@ def get_edge_bisected_graph(G):
     return G_out
 
 
+def get_redundant_degree_two_nodes(T):
+    """
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        Edges are annotated with states.
+
+    Returns
+    -------
+    redundant_nodes : set of integers
+        Set of degree 2 nodes for which adjacent edges have identical states.
+
+    Notes
+    -----
+    This function does not take into account any property of the nodes
+    themselves, other than the number of edges they are adjacent to
+    and the states of these adjacent edges.
+    In particular, it doesn't distinguish event nodes vs. non-event nodes.
+
+    """
+    redundant_nodes = set()
+    for a in T:
+        degree = len(T[a])
+        if degree == 2:
+            state_set = set(T[a][b]['state'] for b in T[a])
+            if len(state_set) == 1:
+                redundant_nodes.add(a)
+    return redundant_nodes
+
+
 def remove_redundant_nodes(T, redundant_nodes):
     """
     Returns a tree with the specified redundant nodes removed.
