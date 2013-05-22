@@ -3,11 +3,13 @@ Likelihood calculations for testing the Rao-Teh sampler.
 
 MJP means Markov jump process.
 This may or may not be the same as continuous time Markov process.
+
 """
 from __future__ import division, print_function, absolute_import
 
 from collections import defaultdict
 
+import numpy as np
 import networkx as nx
 
 
@@ -109,4 +111,191 @@ def get_history_statistics(T, root=None):
 
     # Return the statistics.
     return root_state, dwell_times, transition_counts
+
+
+def get_tolerance_micro_rate_matrix(rate_off, rate_on, rate_absorb):
+    """
+    Compute a rate matrix.
+
+    The rate matrix can be used to compute transition probabilities
+    and conditional expectations of dwell times and transition counts.
+
+    Parameters
+    ----------
+    rate_off : float
+        Rate from the 'on' state to the 'off' state.
+    rate_on : float
+        Rate from the 'off' state to the 'on' state.
+    rate_absorb : float
+        Rate from the 'on' state to the 'absorbing' state.
+
+    Returns
+    -------
+    Q : shape (3, 3) ndarray of floats
+        This is a continuous time rate matrix as a numpy ndarray.
+        The state order is ('off', 'on', 'absorbed').
+
+    """
+    Q = np.array([
+        [-rate_on, rate_on, 0],
+        [rate_off, -(rate_off + rate_absorb), rate_absorb],
+        [0, 0, 0]], dtype=float)
+    return Q
+
+
+def get_tolerance_substrate(
+        T, part, state_to_part, node_to_tolerance_state_in):
+    """
+    Get a substrate for a tolerance class of interest.
+
+    Parameters
+    ----------
+    T : weighted undirected networkx tree
+        The primary process history on a tree.
+    part : integer
+        The tolerance class of interest.
+    state_to_part : dict
+        Maps the primary state to the tolerance class.
+
+    Returns
+    -------
+    T_out : weighted undirected networkx tree
+        The annotated history.
+        Each edge is annotated with a weight and an absorption rate
+        and potentially a tolerance state.
+        Many edges are likely to have unknown tolerance states
+        and will therefore not appear in the map.
+    node_to_tolerance_state : dict
+        Maps nodes in the annotated history to tolerance states.
+        Many nodes are likely to have unknown tolerance states
+        and will therefore not appear in the map.
+        This will include the tolerance map provided by the input dict,
+        and it will also include tolerance states for nodes
+        that are adjacent to edges whose primary state belongs
+        to the tolerance class of interest.
+
+    """
+    pass
+
+
+def get_dynamic_blink_thread_log_likelihood(
+        part, partition, distn, dg, G_dag,
+        rate_on, rate_off):
+    """
+    This uses more-clever-than-brute force likelihood calculation.
+    In particular it uses dynamic programming or memoization or whatever.
+    @param part: the part of the partition defining the current blink thred
+    @param partition: a map from primary state to part
+    @param distn: map from primary state to equilibrium probability
+    @param dg: sparse primary state rate matrix as weighted directed networkx
+    @param G_dag: directed phylogenetic tree with blen and state edge values
+    @param rate_on: a blink rate
+    @param rate_off: a blink rate
+    @return: log likelihood
+    """
+
+    # Beginning at the leaves and working toward the root,
+    # compute subtree likelihoods conditional on each blink state.
+    v_to_b_to_lk = defaultdict(dict)
+
+    # Initialize the likelihood map of each leaf vertex.
+    leaf_set = set(v for v in G_dag if G_dag.degree(v) == 1)
+    for leaf in leaf_set:
+
+        # These likelihoods are allowed to be 1 even when
+        # the leaf blink state conflicts with the primary state at the leaf,
+        # because the conflicts will be handled at the edge level
+        # rather than at the vertex level.
+        v_to_b_to_lk[leaf][0] = 1.0
+        v_to_b_to_lk[leaf][1] = 1.0
+
+    # Work towards the root.
+    for v in reversed(nx.topological_sort(G_dag)):
+        if v in leaf_set:
+            continue
+
+        # prepare to multiply by likelihoods for each successor branch
+        v_to_b_to_lk[v][0] = 1.0
+        v_to_b_to_lk[v][1] = 1.0
+        for succ in G_dag.successors(v):
+
+            # Get the primary state of this segment,
+            # and get its corresponding partition part.
+            pri_state = G_dag[v][succ]['state']
+            blen = G_dag[v][succ]['blen']
+            pri_part = partition[part]
+
+            # Get the conditional rate of turning off the blinking.
+            # This is zero if the primary state corresponds to the
+            # blink thread state, and otherwise it is rate_off.
+            if partition[pri_state] == part:
+                conditional_rate_off = 0.0
+            else:
+                conditional_rate_off = rate_off
+
+            # Get the conditional rate of turning on the blinking.
+            # This is always rate_on.
+            conditional_rate_on = rate_on
+
+            # Get the absorption rate.
+            # This is the sum of primary transition rates
+            # into the part that corresponds to the current blink thread state.
+            rate_absorb = 0.0
+            for sink in dg.successors(pri_state):
+                rate = dg[pri_state][sink]['weight']
+                if partition[sink] == part:
+                    rate_absorb += rate
+
+            # Construct the micro rate matrix and transition matrix.
+            P_micro = mmpp.get_mmpp_block(
+                    conditional_rate_on,
+                    conditional_rate_off,
+                    rate_absorb,
+                    blen,
+                    )
+            """
+            Q_micro_slow = get_micro_rate_matrix(
+                    conditional_rate_off, conditional_rate_on, rate_absorb)
+            P_micro_slow = scipy.linalg.expm(Q_micro_slow * blen)[:2, :2]
+            if not np.allclose(P_micro, P_micro_slow):
+                raise Exception((P_micro, P_micro_slow))
+            """
+
+            # Get the likelihood using the v_to_b_to_lk map.
+            lk_branch = {}
+            lk_branch[0] = 0.0
+            lk_branch[1] = 0.0
+            for ba, bb in product((0, 1), repeat=2):
+                lk_transition = 1.0
+                if partition[pri_state] == part:
+                    if not (ba and bb):
+                        lk_transition *= 0.0
+                lk_transition *= P_micro[ba, bb]
+                lk_rest = v_to_b_to_lk[succ][bb]
+                lk_branch[ba] += lk_transition * lk_rest
+
+            # Multiply by the likelihood associated with this branch.
+            v_to_b_to_lk[v][0] *= lk_branch[0]
+            v_to_b_to_lk[v][1] *= lk_branch[1]
+
+    # get the previously arbitrarily chosen phylogenetic root vertex
+    root = nx.topological_sort(G_dag)[0]
+
+    # get the primary state at the root
+    root_successor = G_dag.successors(root)[0]
+    initial_primary_state = G_dag[root][root_successor]['state']
+
+    # The initial distribution contributes to the likelihood.
+    if partition[initial_primary_state] == part:
+        initial_proportion_off = 0.0
+        initial_proportion_on = 1.0
+    else:
+        initial_proportion_off = rate_off / float(rate_on + rate_off)
+        initial_proportion_on = rate_on / float(rate_on + rate_off)
+    path_likelihood = 0.0
+    path_likelihood += initial_proportion_off * v_to_b_to_lk[root][0]
+    path_likelihood += initial_proportion_on * v_to_b_to_lk[root][1]
+
+    # Report the log likelihood.
+    return math.log(path_likelihood)
 
