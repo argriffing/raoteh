@@ -135,6 +135,41 @@ def get_history_statistics(T, root=None):
     return root_state, dwell_times, transition_counts
 
 
+def get_restricted_likelihood(T, root, root_distn, node_to_allowed_states):
+    """
+    Compute a likelihood.
+
+    This is a general likelihood calculator for piecewise
+    homegeneous Markov jump processes on tree-structured domains.
+    At each node in the tree, the set of possible states may be restricted.
+    Lack of state restriction at a node corresponds to missing data;
+    a common example of such missing data would be missing states
+    at internal nodes in a tree.
+    Alternatively, a node could have a completely specified state,
+    as could be the case if the state of the process is completely
+    known at the tips of the tree.
+    More generally, a node could be restricted to an arbitrary set of states.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices.
+    root : integer
+        The root node.
+    root_distn : dict
+        A finite distribution over root states.
+    node_to_allowed_states : dict
+        A map from a node to a set of allowed states.
+
+    Returns
+    -------
+    likelihood : float
+        The likelihood.
+
+    """
+    pass
+
+
 def get_tolerance_micro_rate_matrix(rate_off, rate_on, rate_absorb):
     """
     Compute a rate matrix.
@@ -259,14 +294,13 @@ def get_tolerance_substrate(
 
 
 def get_dynamic_blink_thread_log_likelihood(
-        part, partition, distn, dg, G_dag,
+        part, partition, dg, G_dag,
         rate_on, rate_off):
     """
     This uses more-clever-than-brute force likelihood calculation.
     In particular it uses dynamic programming or memoization or whatever.
     @param part: the part of the partition defining the current blink thred
     @param partition: a map from primary state to part
-    @param distn: map from primary state to equilibrium probability
     @param dg: sparse primary state rate matrix as weighted directed networkx
     @param G_dag: directed phylogenetic tree with blen and state edge values
     @param rate_on: a blink rate
