@@ -9,7 +9,7 @@ import random
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform
+from raoteh.sampler import _graph_transform, _likelihood
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
 
@@ -154,46 +154,22 @@ def construct_node_to_pmap(T, P, node_to_state, root):
     A helper function for resample_states.
 
     """
+    # Construct the augmented tree by annotating each edge with P.
+    T_aug = nx.Graph()
+    for a, b in T.edges():
+        T_aug.add_edge(a, b, P=P)
 
-    # Bookkeeping structures related to tree traversal.
-    successors = nx.dfs_successors(T, root)
+    # Construct the map from node to allowed state set.
+    node_to_allowed_states = {}
+    all_states = set(P)
+    for restricted_node, state in node_to_state.items():
+        node_to_allowed_states[restricted_node] = {state}
+    for unrestricted_node in set(T) - set(node_to_state):
+        node_to_allowed_states[unrestricted_node] = all_states
 
-    # For each node, get a sparse map from state to subtree probability.
-    node_to_pmap = {}
-    for node in nx.dfs_postorder_nodes(T, root):
-        if node in node_to_state:
-
-            # XXX this case might be wrong, or could use further testing
-            # XXX when the node is not a leaf of the tree
-            node_state = node_to_state[node]
-            node_to_pmap[node] = {node_state : 1.0}
-        else:
-            pmap = {}
-            for node_state in P:
-                nprobs = []
-                for n in successors[node]:
-
-                    # Get the list of possible child node states.
-                    # These are limited by sparseness of the matrix of
-                    # transitions from the parent state,
-                    # and also by the possibility
-                    # that the state of the child node is already known.
-                    valid_states = set(P[node_state]) & set(node_to_pmap[n])
-                    if valid_states:
-                        nprob = 0.0
-                        for s in valid_states:
-                            a = P[node_state][s]['weight']
-                            b = node_to_pmap[n][s]
-                            nprob += a * b
-                        nprobs.append(nprob)
-                    else:
-                        nprobs = None
-                        break
-                if nprobs is not None:
-                    cprob = np.product(nprobs)
-                    pmap[node_state] = cprob
-            node_to_pmap[node] = pmap
-    return node_to_pmap
+    # Return the node to pmap dict.
+    return _likelihood.construct_node_to_restricted_pmap(
+            T_aug, root, node_to_allowed_states)
 
 
 def resample_states(T, P, node_to_state, root=None, root_distn=None):
@@ -256,19 +232,26 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     # Treat the root separately.
     # If only one state is possible at the root, then we do not have to sample.
     # Otherwise consult the map from root states to probabilities.
-    if len(node_to_pmap[root]) == 1:
-        root_state = get_first_element(node_to_pmap[root])
-        if not node_to_pmap[root][root_state]:
+    root_pmap = node_to_pmap[root]
+    if not root_pmap:
+        raise StructuralZeroProb('no state is feasible at the root')
+    elif len(root_pmap) == 1:
+        root_state = get_first_element(root_pmap)
+        if not root_pmap[root_state]:
             raise NumericalZeroProb(
                     'the only feasible state at the root '
                     'gives a subtree probability of zero')
     else:
         if root_distn is None:
-            raise ValueError('expected a distribution over states at the root')
+            raise ValueError(
+                    'expected a prior distribution over the '
+                    '%d possible states at the root' % len(root_pmap))
         prior_distn = root_distn
-        states = list(set(prior_distn) & set(node_to_pmap[root]))
+        states = list(set(prior_distn) & set(root_pmap))
         if not states:
-            raise StructuralZeroProb('no root is feasible')
+            raise StructuralZeroProb(
+                    'after accounting for the prior distribution at the root, '
+                    'no root state is feasible')
         weights = []
         for s in states:
             weights.append(prior_distn[s] * node_to_pmap[node][s])

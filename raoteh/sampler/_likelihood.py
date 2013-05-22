@@ -169,8 +169,8 @@ def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
     node_to_pmap = {}
     for node in nx.dfs_postorder_nodes(T, root):
         valid_node_states = node_to_allowed_states[node]
-        if not successors[node]:
-            node_to_pmap = dict((s, 1.0) for s in valid_node_states)
+        if node not in successors:
+            node_to_pmap[node] = dict((s, 1.0) for s in valid_node_states)
         else:
             pmap = {}
             for node_state in valid_node_states:
@@ -181,6 +181,12 @@ def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
 
                     # Define the transition matrix according to the edge.
                     P = T[node][n]['P']
+
+                    # Check that a transition away from the parent state
+                    # is possible along this edge.
+                    if node_state not in P:
+                        structural_failure = True
+                        break
 
                     # Get the list of possible child node states.
                     # These are limited by sparseness of the matrix of
