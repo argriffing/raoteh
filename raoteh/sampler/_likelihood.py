@@ -2,7 +2,10 @@
 Likelihood calculations for testing the Rao-Teh sampler.
 
 MJP means Markov jump process.
-This may or may not be the same as continuous time Markov process.
+Functions associated with a more complicated process are also available,
+where the more complicated process multiplexes multiple binary tolerance states
+together with a primary process in a way that has a complicated
+conditional dependence structure.
 
 """
 from __future__ import division, print_function, absolute_import
@@ -17,11 +20,29 @@ __all__ = []
 
 
 def get_first_element(elements):
+    """
+    Returns the first element of an iterable.
+    """
     for x in elements:
         return x
 
 
 def get_arbitrary_tip(T, degrees=None):
+    """
+
+    Parameters
+    ----------
+    T : undirected networkx graph with integer nodes
+        An input graph.
+    degrees : dict, optional
+        Maps nodes to degree.
+
+    Returns
+    -------
+    tip : integer
+        An arbitrary degree-1 node.
+
+    """
     if degrees is None:
         degrees = T.degree()
     tips = (n for n, d in degrees.items() if d == 1)
@@ -104,10 +125,11 @@ def get_history_statistics(T, root=None):
             c = get_first_element(successors[b])
             sa = T[a][b]['state']
             sb = T[b][c]['state']
-            if transition_counts.has_edge(sa, sb):
-                transition_counts[sa][sb]['weight'] += 1
-            else:
-                transition_counts.add_edge(sa, sb, weight=1)
+            if sa != sb:
+                if transition_counts.has_edge(sa, sb):
+                    transition_counts[sa][sb]['weight'] += 1
+                else:
+                    transition_counts.add_edge(sa, sb, weight=1)
 
     # Return the statistics.
     return root_state, dwell_times, transition_counts
@@ -144,38 +166,96 @@ def get_tolerance_micro_rate_matrix(rate_off, rate_on, rate_absorb):
 
 
 def get_tolerance_substrate(
-        T, part, state_to_part, node_to_tolerance_state_in):
+        Q, state_to_part, T, part, node_to_tolerance_in, root=None):
     """
     Get a substrate for a tolerance class of interest.
 
+    This is a helper function for computing likelihoods and expectations
+    for a complicated continuous time process with an unmanageably
+    large state space which must be handled cleverly according
+    to certain conditional independences.
+
     Parameters
     ----------
-    T : weighted undirected networkx tree
-        The primary process history on a tree.
-    part : integer
-        The tolerance class of interest.
+    Q : directed networkx graph
+        A sparse rate matrix
+        for which edge weights are interpreted as instantaneous rates.
     state_to_part : dict
         Maps the primary state to the tolerance class.
+    T : weighted undirected networkx tree
+        The primary process history on a tree.
+        Each edge is annotated with a weight and with a primary process state.
+        The edge weight is interpreted as a distance or length.
+    part : integer
+        The tolerance class of interest.
+    node_to_tolerance_in : dict
+        Maps some nodes to known tolerance states.
+        May be empty if no tolerance states are known.
+        Some nodes may be adjacent to edges with known tolerance states;
+        the tolerance states of these nodes can be deduced,
+        but they are not required to be included in this map.
 
     Returns
     -------
     T_out : weighted undirected networkx tree
         The annotated history.
-        Each edge is annotated with a weight and an absorption rate
-        and potentially a tolerance state.
-        Many edges are likely to have unknown tolerance states
-        and will therefore not appear in the map.
-    node_to_tolerance_state : dict
+        Each edge is annotated with a weight
+        and optionally an absorption rate and optionally a tolerance state.
+        Many edges are likely to have unknown tolerance states.
+    node_to_tolerance_out : dict
         Maps nodes in the annotated history to tolerance states.
-        Many nodes are likely to have unknown tolerance states
-        and will therefore not appear in the map.
-        This will include the tolerance map provided by the input dict,
-        and it will also include tolerance states for nodes
-        that are adjacent to edges whose primary state belongs
-        to the tolerance class of interest.
+        Nodes with unknown tolerance states will not appear in the map.
+        This map will include all entries of the tolerance map
+        provided by the input dict, and it will also include
+        tolerance states for nodes that are adjacent to edges
+        whose primary state belongs to the tolerance class of interest.
 
     """
-    pass
+    # Pick a root with only one neighbor if no root was specified.
+    if root is None:
+        root = get_arbitrary_tip(T)
+
+    # Build the output tree, edge by edge,
+    # and populate the map from node to known tolerance state.
+    node_to_tolerance_out = dict(node_to_tolerance_in)
+    T_out = nx.Graph()
+    for a, b in nx.bfs_edges(T, root):
+
+        # Get the weight and the primary process state associated with the edge.
+        state = T[a][b]['state']
+        weight = T[a][b]['weight']
+        
+        # Add the edge, annotated with the weight.
+        T_out.add_edge(a, b, weight=weight)
+
+        # If the primary process state of the edge
+        # belongs to the tolerance class of interest,
+        # then the tolerance state along the edge
+        # and at both edge endpoints must be 1.
+        if state_to_part[state] == part:
+
+            # Set the edge tolerance state.
+            T_out[a][b]['tolerance'] = 1
+
+            # Set the node tolerance states.
+            for node in (a, b):
+                if node in node_to_tolerance_out:
+                    if node_to_tolerance_out[node] != 1:
+                        raise ValueError('incompatible tolerance state')
+                node_to_tolerance_out[node] = 1
+
+        # The absorption rate along this edge will be the sum of rates
+        # from the edge state to states in the target tolerance class.
+        # If the absorption rate is structurally zero
+        # because no such transitions are allowed,
+        # then do not add the absorption rate to the annotation.
+        sbs = [sb for sb in Q[state] if state_to_part[state] == part]
+        if sbs:
+            absorption_rate = sum(Q[state][sb] for sb in sbs)
+            T_out[a][b]['absorption'] = absorption_rate
+
+    # Return the annotated networkx tree and the node to tolerance state map.
+    return T_out, node_to_tolerance_out
 
 
 def get_dynamic_blink_thread_log_likelihood(
