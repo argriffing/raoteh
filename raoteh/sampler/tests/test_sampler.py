@@ -8,7 +8,8 @@ import numpy as np
 import networkx as nx
 
 from numpy.testing import (run_module_suite, TestCase,
-        assert_equal, assert_allclose, assert_, assert_raises)
+        assert_equal, assert_allclose, assert_, assert_raises,
+        decorators)
 
 from raoteh.sampler import _sampler
 from raoteh.sampler._conditional_expectation import (
@@ -435,6 +436,7 @@ class TestRaoTehSampler(TestCase):
                 if a in node_to_state:
                     assert_equal(node_to_state[a], state)
 
+    @decorators.skipif(True, 'benchmark monte carlo conditional expectation')
     def test_jukes_cantor_conditional_expectation(self):
         # Compare Monte Carlo conditional expectations to the true values.
 
