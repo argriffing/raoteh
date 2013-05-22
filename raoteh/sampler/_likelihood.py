@@ -15,16 +15,11 @@ from collections import defaultdict
 import numpy as np
 import networkx as nx
 
+from raoteh.sampler._util import (
+        StructuralZeroProb, NumericalZeroProb, get_first_element)
+
 
 __all__ = []
-
-
-def get_first_element(elements):
-    """
-    Returns the first element of an iterable.
-    """
-    for x in elements:
-        return x
 
 
 def get_arbitrary_tip(T, degrees=None):
@@ -135,7 +130,91 @@ def get_history_statistics(T, root=None):
     return root_state, dwell_times, transition_counts
 
 
-def get_restricted_likelihood(T, root, root_distn, node_to_allowed_states):
+def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
+    """
+    For each node, construct the map from state to subtree likelihood.
+
+    This function allows each node to be restricted to its own
+    arbitrary set of allowed states.
+    Applications include likelihood calculation,
+    calculations of conditional expectations, and conditional state sampling.
+    Some care is taken to distinguish between values that are zero
+    because of structural reasons as opposed to values that are zero
+    for numerical reasons.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices.
+        The annotation uses the P attribute,
+        and the transition matrices are themselves represented by
+        networkx directed graphs with transition probabilities
+        as the weight attribute of the edge.
+    root : integer
+        The root node.
+    node_to_allowed_states : dict
+        A map from a node to a set of allowed states.
+
+    Returns
+    -------
+    node_to_pmap : dict
+        A map from a node to a map from a state to a subtree likelihood.
+
+    """
+
+    # Bookkeeping structures.
+    successors = nx.dfs_successors(T, root)
+
+    # For each node, get a sparse map from state to subtree probability.
+    node_to_pmap = {}
+    for node in nx.dfs_postorder_nodes(T, root):
+        valid_node_states = node_to_allowed_states[node]
+        if not successors[node]:
+            node_to_pmap = dict((s, 1.0) for s in valid_node_states)
+        else:
+            pmap = {}
+            for node_state in valid_node_states:
+
+                # Check for a structural subtree failure given this node state.
+                structural_failure = False
+                for n in successors[node]:
+
+                    # Define the transition matrix according to the edge.
+                    P = T[node][n]['P']
+
+                    # Get the list of possible child node states.
+                    # These are limited by sparseness of the matrix of
+                    # transitions from the parent state,
+                    # and also by the possibility
+                    # that the state of the child node is restricted.
+                    valid_states = set(P[node_state]) & set(node_to_pmap[n])
+                    if not valid_states:
+                        structural_failure = True
+                        break
+
+                # If there is no structural failure,
+                # then add the subtree probability to the node state pmap.
+                if not structural_failure:
+                    cprob = 1.0
+                    for n in successors[node]:
+                        P = T[node][n]['P']
+                        valid_states = set(P[node_state]) & set(node_to_pmap[n])
+                        nprob = 0.0
+                        for s in valid_states:
+                            a = P[node_state][s]['weight']
+                            b = node_to_pmap[n][s]
+                            nprob += a * b
+                        cprob *= nprob
+                    pmap[node_state] = cprob
+
+            # Add the map from state to subtree likelihood.
+            node_to_pmap[node] = pmap
+
+    # Return the map from node to the map from state to subtree likelihood.
+    return node_to_pmap
+
+
+def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
     """
     Compute a likelihood.
 
@@ -149,6 +228,9 @@ def get_restricted_likelihood(T, root, root_distn, node_to_allowed_states):
     as could be the case if the state of the process is completely
     known at the tips of the tree.
     More generally, a node could be restricted to an arbitrary set of states.
+    The first three args are used to construct a map from each node
+    to a map from the state to the subtree likelihood,
+    and the last arg defines the initial conditions at the root.
 
     Parameters
     ----------
@@ -156,10 +238,10 @@ def get_restricted_likelihood(T, root, root_distn, node_to_allowed_states):
         A tree whose edges are annotated with transition matrices.
     root : integer
         The root node.
-    root_distn : dict
-        A finite distribution over root states.
     node_to_allowed_states : dict
         A map from a node to a set of allowed states.
+    root_distn : dict
+        A finite distribution over root states.
 
     Returns
     -------
@@ -167,7 +249,13 @@ def get_restricted_likelihood(T, root, root_distn, node_to_allowed_states):
         The likelihood.
 
     """
-    pass
+    node_to_pmap = construct_node_to_restricted_pmap(
+            T, root, node_to_allowed_states)
+    root_pmap = node_to_pmap[root]
+    feasible_root_states = set(root_distn) & set(root_pmap)
+    if not feasible_root_states:
+        raise StructuralZeroProb('no root state is feasible')
+    return sum(root_distn[s] * root_pmap[s] for s in feasible_root_states)
 
 
 def get_tolerance_micro_rate_matrix(rate_off, rate_on, rate_absorb):

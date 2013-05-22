@@ -10,24 +10,11 @@ import numpy as np
 import networkx as nx
 
 from raoteh.sampler import _graph_transform
+from raoteh.sampler._util import (
+        StructuralZeroProb, NumericalZeroProb, get_first_element)
 
 
 __all__ = []
-
-
-class SamplingError(Exception):
-    pass
-
-class StructuralZeroProb(SamplingError):
-    pass
-
-class NumericalZeroProb(SamplingError):
-    pass
-
-
-def get_first_element(elements):
-    for x in elements:
-        return x
 
 
 def gen_histories(T, Q, node_to_state, uniformization_factor=2):
@@ -175,6 +162,9 @@ def construct_node_to_pmap(T, P, node_to_state, root):
     node_to_pmap = {}
     for node in nx.dfs_postorder_nodes(T, root):
         if node in node_to_state:
+
+            # XXX this case might be wrong, or could use further testing
+            # XXX when the node is not a leaf of the tree
             node_state = node_to_state[node]
             node_to_pmap[node] = {node_state : 1.0}
         else:

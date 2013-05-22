@@ -6,13 +6,11 @@ from __future__ import division, print_function, absolute_import
 
 import networkx as nx
 
+from raoteh.sampler._util import (
+        StructuralZeroProb, NumericalZeroProb, get_first_element)
+
+
 __all__ = []
-
-
-
-def get_first_element(elements):
-    for x in elements:
-        return x
 
 
 def get_edge_bisected_graph(G):
