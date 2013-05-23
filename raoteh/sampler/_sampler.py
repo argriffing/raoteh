@@ -9,7 +9,7 @@ import random
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform, _likelihood
+from raoteh.sampler import _graph_transform, _mjp
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
 
@@ -168,7 +168,7 @@ def construct_node_to_pmap(T, P, node_to_state, root):
         node_to_allowed_states[unrestricted_node] = all_states
 
     # Return the node to pmap dict.
-    return _likelihood.construct_node_to_restricted_pmap(
+    return _mjp.construct_node_to_restricted_pmap(
             T_aug, root, node_to_allowed_states)
 
 
