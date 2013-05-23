@@ -10,32 +10,11 @@ import numpy as np
 import networkx as nx
 
 from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb, get_first_element)
+        StructuralZeroProb, NumericalZeroProb,
+        get_first_element, get_arbitrary_tip)
 
 
 __all__ = []
-
-
-def get_arbitrary_tip(T, degrees=None):
-    """
-
-    Parameters
-    ----------
-    T : undirected networkx graph with integer nodes
-        An input graph.
-    degrees : dict, optional
-        Maps nodes to degree.
-
-    Returns
-    -------
-    tip : integer
-        An arbitrary degree-1 node.
-
-    """
-    if degrees is None:
-        degrees = T.degree()
-    tips = (n for n, d in degrees.items() if d == 1)
-    return get_first_element(tips)
 
 
 def get_history_dwell_times(T):
