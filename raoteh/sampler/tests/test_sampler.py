@@ -12,6 +12,8 @@ from numpy.testing import (run_module_suite, TestCase,
         decorators)
 
 from raoteh.sampler import _sampler
+from raoteh.sampler._util import (
+                StructuralZeroProb, NumericalZeroProb, get_first_element)
 from raoteh.sampler._conditional_expectation import (
         get_jukes_cantor_rate_matrix,
         get_jukes_cantor_probability,
@@ -84,7 +86,7 @@ class TestNodeStateSampler(TestCase):
         # the states at the two endpoints of the path.
         node_to_state = {0: 0, 2: 3}
         assert_raises(
-                _sampler.StructuralZeroProb,
+                StructuralZeroProb,
                 _sampler.resample_states,
                 T, P, node_to_state)
 
@@ -127,7 +129,7 @@ class TestNodeStateSampler(TestCase):
         node_to_state = {0: 0, 2: 2}
         for root in T:
             assert_raises(
-                    _sampler.StructuralZeroProb,
+                    StructuralZeroProb,
                     _sampler.resample_states,
                     T, P, node_to_state, root, root_distn)
 

@@ -387,9 +387,86 @@ def get_tolerance_substrate(
     return T_out, node_to_tolerance_out
 
 
-def get_dynamic_blink_thread_log_likelihood(
-        part, partition, dg, G_dag,
-        rate_on, rate_off):
+def get_tolerance_class_likelihood(
+        Q, state_to_part, T, part, node_to_tolerance_in,
+        rate_off, rate_on):
+    """
+    Compute a likelihood associated with a tolerance class.
+
+    This proceeds in several steps.
+    The first step is to construct a tolerance substrate
+    that encodes properties of the tolerance class with respect
+    to the underlying primary process history.
+
+    Parameters
+    ----------
+    foo
+
+    Returns
+    -------
+    bar
+
+    """
+    # Define the prior distribution on the tolerance state at the root.
+    # The location of the root does not matter for this purpose,
+    # because the binary tolerance process is time-reversible.
+    # This is sparsely defined to allow extreme rates.
+    root_prior = {}
+    total_rate = rate_off + rate_on
+    if (rate_off < 0) or (rate_off < 0) or (total_rate <= 0):
+        raise ValueError(
+                'the tolerance rate_on and rate_off must both be nonzero '
+                'and at least one of them must be positive')
+    if rate_off:
+        root_prior[0] = rate_off / total_rate
+    if rate_on:
+        root_prior[1] = rate_on / total_rate
+
+    # Get a tree with edges annotated
+    # with tolerance state (if known and constant along the edge)
+    # and with absorption rate (if any).
+    # The tolerance states of the nodes are further specified
+    # to be consistent with edges that have known constant tolerance state.
+    T_tol, node_to_tolerance = get_tolerance_substrate(
+            Q, state_to_part, T, part, node_to_tolerance_in)
+
+    # Construct the map from nodes to allowed states.
+    # This implicitly includes the restriction
+    # that the absorbing tolerance state 2 is disallowed.
+    node_to_allowed_states = {}
+    for node, tolerance in node_to_tolerance.items():
+        node_to_allowed_states = {tolerance}
+    for node in set(T) - set(node_to_tolerance):
+        node_to_allowed_states = {0, 1}
+
+    # Construct yet another tree with annotated edges.
+    # This one will have a transition matrix on each edge.
+    #XXX under construction
+
+    # Get the likelihood from the augmented tree and the root distribution.
+    likelihood = get_restricted_likelihood(
+            T_aug, root, node_to_allowed_states, root_distn)
+
+    # Return the likelihood.
+    return likelihood
+
+
+
+#XXX under construction (or destruction)
+def get_blink_thread_likelihood(
+        Q, state_to_part, T, part, node_to_tolerance_in, root=None):
+
+    #def get_dynamic_blink_thread_log_likelihood(
+            #part, partition, dg, G_dag,
+            #rate_on, rate_off):
+
+    T_aug = get_tolerance_substrate(
+            Q, state_to_part, T, part, node_to_tolerance_in, root=None)
+
+    #XXX old content after this...
+    #def get_dynamic_blink_thread_log_likelihood(
+            #part, partition, dg, G_dag,
+            #rate_on, rate_off):
     """
     This uses more-clever-than-brute force likelihood calculation.
     In particular it uses dynamic programming or memoization or whatever.
@@ -507,3 +584,18 @@ def get_dynamic_blink_thread_log_likelihood(
     # Report the log likelihood.
     return math.log(path_likelihood)
 
+
+#XXX under construction
+def foo():
+
+    # add the log likelihood contribution of the primary thread
+    ll = get_primary_log_likelihood(distn, dg, G_dag)
+    log_likelihood += ll
+    if args.verbose:
+        print 'll contribution of primary process:', ll
+    # add the log likelihood contribution of the blink threads
+    ll = 0.0
+    for part in range(nparts):
+        ll += get_dynamic_blink_thread_log_likelihood(
+                part, partition, distn, dg, G_dag,
+                args.rate_on, args.rate_off)
