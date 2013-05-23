@@ -67,7 +67,7 @@ def get_history_dwell_times(T):
     return dict(dwell_times)
 
 
-def get_history_statistics(T, root=None):
+def get_history_root_state_and_transitions(T, root=None):
     """
 
     Parameters
@@ -82,17 +82,10 @@ def get_history_statistics(T, root=None):
     -------
     root_state : integer
         The state at the root.
-    dwell_times : dict
-        Map from the state to the total dwell time on the tree.
     transition_counts : directed weighted networkx graph
         A networkx graph that tracks the number of times
         each transition type appears in the history.
 
-    Notes
-    -----
-    These statistics are sufficient to compute the Markov jump process
-    likelihood for the sampled history.
-        
     """
 
     # Bookkeeping.
@@ -109,9 +102,6 @@ def get_history_statistics(T, root=None):
         raise ValueError('the root does not have a well defined state')
     root_state = root_states[0]
 
-    # Get the dwell times.
-    dwell_times = get_history_dwell_times(T)
-
     # Count the state transitions.
     transition_counts = nx.DiGraph()
     successors = nx.dfs_successors(T, root)
@@ -127,7 +117,42 @@ def get_history_statistics(T, root=None):
                     transition_counts.add_edge(sa, sb, weight=1)
 
     # Return the statistics.
-    return root_state, dwell_times, transition_counts
+    return root_state, transition_counts
+
+
+def get_history_statistics(T, root=None):
+    """
+
+    Parameters
+    ----------
+    T : undirected weighted networkx tree with edges annotated with states
+        A sampled history of states and substitution times on the tree.
+    root : integer, optional
+        The root of the tree.
+        If not specified, an arbitrary root will be used.
+
+    Returns
+    -------
+    dwell_times : dict
+        Map from the state to the total dwell time on the tree.
+        This does not depend on the root.
+    root_state : integer
+        The state at the root.
+    transition_counts : directed weighted networkx graph
+        A networkx graph that tracks the number of times
+        each transition type appears in the history.
+        The counts depend on the root.
+
+    Notes
+    -----
+    These statistics are sufficient to compute the Markov jump process
+    likelihood for the sampled history.
+        
+    """
+    dwell_times = get_history_dwell_times(T)
+    root_state, transitions = get_history_root_state_and_transitions(
+            T, root=root)
+    return dwell_times, root_state, transitions
 
 
 def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
@@ -241,7 +266,7 @@ def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
     Parameters
     ----------
     T : undirected acyclic networkx graph
-        A tree whose edges are annotated with transition matrices.
+        A tree whose edges are annotated with transition matrices P.
     root : integer
         The root node.
     node_to_allowed_states : dict
@@ -389,7 +414,7 @@ def get_tolerance_substrate(
 
 def get_tolerance_class_likelihood(
         Q, state_to_part, T, part, node_to_tolerance_in,
-        rate_off, rate_on):
+        rate_off, rate_on, root=None):
     """
     Compute a likelihood associated with a tolerance class.
 
@@ -400,13 +425,44 @@ def get_tolerance_class_likelihood(
 
     Parameters
     ----------
-    foo
+    Q : directed networkx graph
+        A sparse rate matrix
+        for which edge weights are interpreted as instantaneous rates.
+    state_to_part : dict
+        Maps the primary state to the tolerance class.
+    T : weighted undirected networkx tree
+        The primary process history on a tree.
+        Each edge is annotated with a weight and with a primary process state.
+        The edge weight is interpreted as a distance or length.
+    part : integer
+        The tolerance class of interest.
+    node_to_tolerance_in : dict
+        Maps some nodes to known tolerance states.
+        May be empty if no tolerance states are known.
+        Some nodes may be adjacent to edges with known tolerance states;
+        the tolerance states of these nodes can be deduced,
+        but they are not required to be included in this map.
+    rate_off : float
+        Transition rate from tolerance state 1 to tolerance state 0.
+    rate_on : float
+        Transition rate from tolerance state 0 to tolerance state 1.
+    root : integer, optional
+        The root of the tree.
+        The root should not matter, because the process is time-reversible.
+        But it can be optionally specified to facilitate testing.
 
     Returns
     -------
-    bar
+    likelihood : float
+        The likelihood for the tolerance class of interest.
 
     """
+    # Pick an arbitrary root.
+    # Because this particular conditional process is time-reversible,
+    # there is no constraint on which nodes are allowed to be roots.
+    if root is None:
+        root = get_first_element(T)
+
     # Define the prior distribution on the tolerance state at the root.
     # The location of the root does not matter for this purpose,
     # because the binary tolerance process is time-reversible.
@@ -441,7 +497,37 @@ def get_tolerance_class_likelihood(
 
     # Construct yet another tree with annotated edges.
     # This one will have a transition matrix on each edge.
-    #XXX under construction
+    T_aug = nx.Graph()
+    for a, b in nx.bfs_edges(T_tol, root):
+        edge = T_tol[a][b]
+        weight = edge['weight']
+
+        # Define the rates required for the tolerance rate matrix.
+        local_rate_on = rate_on
+        local_rate_off = rate_off
+        local_absorption_rate = 0.0
+        if 'tolerance' in edge:
+            const_tolerance = edge['tolerance']
+            if const_tolerance == 0:
+                local_rate_on = 0.0
+            elif const_tolerance == 1:
+                local_rate_off = 0.0
+            else:
+                raise ValueError('unknown tolerance state')
+        if 'absorption' in edge:
+            local_absorption_rate = edge['absorption']
+
+        # Construct the tolerance rate matrix as a dense ndarray.
+        # Then convert it to a transition matrix using expm.
+        # Then convert the transition matrix to a networkx digraph.
+        R_local = get_tolerance_micro_rate_matrix(
+                local_rate_off, local_rate_on, local_absorption_rate)
+        P_local_ndarray = scipy.linalg.expm(weight * R_local)
+        P_local_nx = nx.DiGraph()
+        for i in range(3):
+            for j in range(3):
+                P_local_nx.add_edge(i, j, weight=P_local_ndarray[i, j])
+        T_aug.add_edge(a, b, P=P_local)
 
     # Get the likelihood from the augmented tree and the root distribution.
     likelihood = get_restricted_likelihood(
@@ -450,6 +536,72 @@ def get_tolerance_class_likelihood(
     # Return the likelihood.
     return likelihood
 
+
+def get_tolerance_process_log_likelihood(Q, T, root_distn, root=None):
+    """
+
+    The direct contribution of the primary process is through its
+    state distribution at the root, and its transitions.
+
+    Parameters
+    ----------
+    Q : networkx graph
+        Primary process state transition rate matrix.
+    T : networkx tree
+        Primary process history.
+    root_distn : dict
+        A prior distribution over the primary process root states.
+    root : integer, optional
+        A node that does not represent a primary state transition.
+        If a root is not provided, a root will be picked arbitrarily
+        among the tips of the tree.
+
+    Returns
+    -------
+    likelihood : float
+        The likelihood of the compound primary and tolerance process.
+
+    """
+    # Initialize the log likelihood.
+    log_likelihood = 0.0
+
+    # Get the root state and the transitions of the primary process.
+    root_state, transitions = get_history_root_state_and_transitions(
+            T, root=root)
+
+    # For the primary process, get the total rate away from each state.
+    total_rates = {}
+    for a in Q:
+        rate_out = 0.0
+        for b in Q[a]:
+            rate_out += Q[a][b]['weight']
+        total_rates[a] = rate_out
+
+    # Construct a transition matrix conditional on a state change.
+    P = nx.DiGraph()
+    for a in Q:
+        for b in Q[a]:
+            weight = Q[a][b]['weight'] / rate_out[a]
+            P.add_edge(a, b, weight=weight)
+
+    # Add the log likelihood contribution of the primary thread.
+    log_likelihood += np.log(root_distn[root_state])
+    for a, b in transitions.edges():
+        ntrans = transitions[a][b]['weight']
+        ptrans = P[a][b]['weight']
+        log_likelihood += scipy.special.xlogy(ntrans, ptrans)
+
+    # Add the log likelihood contribution of the process
+    # associated with each tolerance class.
+    #XXX under construction
+    for tolerance_class in foo:
+        ll = get_tolerance_class_likelihood(
+                Q, state_to_part, T, part, node_to_tolerance_in,
+                rate_off, rate_on, root=root)
+        log_likelihood += np.log(ll)
+
+    # Return the log likelihood for the entire process.
+    return log_likelihood
 
 
 #XXX under construction (or destruction)
@@ -584,18 +736,3 @@ def get_blink_thread_likelihood(
     # Report the log likelihood.
     return math.log(path_likelihood)
 
-
-#XXX under construction
-def foo():
-
-    # add the log likelihood contribution of the primary thread
-    ll = get_primary_log_likelihood(distn, dg, G_dag)
-    log_likelihood += ll
-    if args.verbose:
-        print 'll contribution of primary process:', ll
-    # add the log likelihood contribution of the blink threads
-    ll = 0.0
-    for part in range(nparts):
-        ll += get_dynamic_blink_thread_log_likelihood(
-                part, partition, distn, dg, G_dag,
-                args.rate_on, args.rate_off)
