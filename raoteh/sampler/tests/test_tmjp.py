@@ -204,12 +204,6 @@ class TestFullyAugmentedLikelihood(TestCase):
 
             direct_ll_initrans = ll_initial + ll_transitions
             direct_ll_dwell = ll_dwell
-            #print('direct log likelihood contributions:')
-            #print('initial:', ll_initial)
-            #print('transitions:', ll_transitions)
-            #print('initial plus transitions:', ll_initial + ll_transitions)
-            #print('dwell:', ll_dwell)
-            #print()
 
             # Compute the log likelihood through sufficient statistics.
 
@@ -305,16 +299,6 @@ class TestFullyAugmentedLikelihood(TestCase):
             # Compare the two log likelihood calculations.
             assert_allclose(direct_ll_initrans, clever_ll_initrans)
             assert_allclose(direct_ll_dwell, clever_ll_dwell)
-
-            #print('clever log likelihood contributions:')
-            #print('initial plus transitions:', ll_initrans)
-            #print('dwell:', ll_dwell)
-            #print()
-
-            #print()
-
-
-        #raise Exception('raise an exception to print some stuff')
 
 
 if __name__ == '__main__':
