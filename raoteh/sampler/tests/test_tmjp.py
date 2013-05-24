@@ -14,7 +14,7 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises,
         decorators)
 
-import scipy.special
+from scipy import special
 
 from raoteh.sampler import _sampler
 from raoteh.sampler._util import (
@@ -164,6 +164,9 @@ class TestFullyAugmentedLikelihood(TestCase):
         T.add_edge(3, 4, weight=0.4)
         T.add_edge(3, 5, weight=0.5)
 
+        # Summarize the total tree length.
+        total_tree_length = sum(T[a][b]['weight'] for a, b in T.edges())
+
         # Randomly assign compound leaf states.
         choices = list(compound_distn)
         node_to_compound_state = dict(
@@ -188,7 +191,7 @@ class TestFullyAugmentedLikelihood(TestCase):
             # Construct a transition matrix conditional on a state change.
             P = get_conditional_transition_matrix(Q_compound, total_rates)
 
-            # Compute the likelihood of the history.
+            # Directly compute the log likelihood of the history.
             log_likelihood = 0.0
             log_likelihood += np.log(compound_distn[root_state])
             for compound_state, dwell_time in dwell_times.items():
@@ -196,11 +199,103 @@ class TestFullyAugmentedLikelihood(TestCase):
             for a, b in transitions.edges():
                 ntrans = transitions[a][b]['weight']
                 ptrans = P[a][b]['weight']
-                log_likelihood += scipy.special.xlogy(ntrans, ptrans)
+                log_likelihood += special.xlogy(ntrans, ptrans)
+            direct_log_likelihood = log_likelihood
 
-            print('log_likelihood:', log_likelihood)
+            print('directly computed log_likelihood:', direct_log_likelihood)
 
-            #XXX compute the log likelihood using sufficient statistics
+            # Compute the log likelihood through sufficient statistics.
+
+            # Get the number of tolerance gains
+            # plus the number of initial tolerances,
+            # and the number of tolerance losses
+            # plus the number of initial lack-of-tolerances.
+            ngains_stat = 0
+            nlosses_stat = 0
+            for tol in compound_to_tolerances[root_state]:
+                if tol == 1:
+                    ngains_stat += 1
+                elif tol == 0:
+                    ngains_stat += 1
+                else:
+                    raise Exception('invalid root tolerance state')
+            for a, b in transitions.edges():
+                if a == b:
+                    continue
+                ntransitions = transitions[a][b]['weight']
+                prim_a = compound_to_primary[a]
+                prim_b = compound_to_primary[b]
+                tols_a = compound_to_tolerances[a]
+                tols_b = compound_to_tolerances[b]
+                tols_diff = [y-x for x, y in zip(tols_a, tols_b)]
+                ndiffs = sum(1 for x in tols_diff if x)
+                if prim_a == prim_b:
+                    if ndiffs == 0:
+                        raise Exception(
+                                'expected each non-self transition '
+                                'to have either a primary state change '
+                                'or a tolerance state change')
+                    elif ndiffs > 1:
+                        raise Exception(
+                                'expected at most one tolerance state '
+                                'difference but observed %d' % ndiffs)
+                    elif ndiffs != 1:
+                        raise Exception('internal error')
+                    signed_hdist = sum(tols_diff)
+                    if signed_hdist == 1:
+                        ngains_stat += ntransitions
+                    elif signed_hdist == -1:
+                        nlosses_stat += ntransitions
+                    else:
+                        raise Exception('invalid tolerance process transition')
+
+            # Get the total amount of time spent in tolerated states,
+            # summed over each tolerance class.
+            tolerance_duration_stat = 0.0
+            for compound_state, dwell_time in dwell_times.items():
+                ntols = sum(compound_to_tolerances[compound_state])
+                tolerance_duration_stat += dwell_time * ntols
+
+            # Initialize the log likelihood for this more clever approach.
+            log_likelihood = 0.0
+
+            # Add the log likelihood contributions that involve
+            # the sufficient statistics and the on/off tolerance rates.
+            log_likelihood -= special.xlogy(nparts, total_tolerance_rate)
+            log_likelihood += special.xlogy(ngains_stat, tolerance_rate_on)
+            log_likelihood += special.xlogy(nlosses_stat, tolerance_rate_off)
+            log_likelihood -= tolerance_rate_off * (
+                    tolerance_duration_stat - total_tree_length)
+            log_likelihood -= tolerance_rate_on * (
+                    total_tree_length * nparts - tolerance_duration_stat)
+
+            # Add the log likelihood contributions that involve
+            # general functions of the data and not the on/off tolerance rates.
+            # On the other hand, they do involve the tolerance state.
+            root_primary_state = compound_to_primary[root_state]
+            log_likelihood += np.log(primary_distn[root_primary_state])
+            """
+            for compound_state, dwell_time in dwell_times.items():
+                primary_state = compound_to_primary[compound_state]
+                primary_rate_out = 0.0
+                for sink in Q_compound[compound_state]:
+                    if compound_to_primary[sink] != primary_state:
+                        rate = Q_compound[compound_state][sink]['weight']
+                        primary_rate_out += rate
+                log_likelihood -= dwell_time * primary_rate_out
+            """
+            for a, b in transitions.edges():
+                edge = transitions[a][b]
+                ntransitions = edge['weight']
+                prim_a = compound_to_primary[a]
+                prim_b = compound_to_primary[b]
+                if prim_a != prim_b:
+                    rate = Q_compound[a][b]['weight']
+                    log_likelihood += special.xlogy(ntransitions, rate)
+
+            print('cleverly computed log_likelihood:', log_likelihood)
+            print()
+
 
         raise Exception('raise an exception to print some stuff')
 
