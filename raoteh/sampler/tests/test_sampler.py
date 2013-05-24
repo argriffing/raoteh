@@ -20,11 +20,6 @@ from raoteh.sampler._conditional_expectation import (
         get_jukes_cantor_interaction)
 
 
-def get_first_element(elements):
-    for x in elements:
-        return x
-
-
 def get_test_transition_matrix():
     # This returns a sparse transition matrix for testing.
     # It uses an hack for the node indices, because I want to keep integers.
