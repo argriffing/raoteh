@@ -17,6 +17,9 @@ from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_arbitrary_tip)
 
+from raoteh.sampler._mjp import (
+        get_total_rates, get_conditional_transition_matrix)
+
 
 __all__ = []
 
@@ -325,19 +328,10 @@ def get_tolerance_process_log_likelihood(Q, state_to_part, T, node_to_tmap,
             T, root=root)
 
     # For the primary process, get the total rate away from each state.
-    total_rates = {}
-    for a in Q:
-        rate_out = 0.0
-        for b in Q[a]:
-            rate_out += Q[a][b]['weight']
-        total_rates[a] = rate_out
+    total_rates = get_total_rates(Q)
 
     # Construct a transition matrix conditional on a state change.
-    P = nx.DiGraph()
-    for a in Q:
-        for b in Q[a]:
-            weight = Q[a][b]['weight'] / rate_out[a]
-            P.add_edge(a, b, weight=weight)
+    P = get_conditional_transition_matrix(Q, total_rates)
 
     # Add the log likelihood contribution of the primary thread.
     log_likelihood += np.log(root_distn[root_state])

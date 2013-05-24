@@ -17,6 +17,54 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
+def get_total_rates(Q):
+    """
+    Get the total rate away from each state.
+
+    Parameters
+    ----------
+    Q : weighted directed networkx graph
+        Instantaneous rate matrix.
+
+    Returns
+    -------
+    total_rates : dict
+        Sparse map from state to total rate out of the state.
+
+    """
+    total_rates = defaultdict(float)
+    for a, b in Q.edges():
+        total_rates[a] += Q[a][b]['weight']
+    return dict(total_rates)
+
+
+def get_conditional_transition_matrix(Q, total_rates=None):
+    """
+    Construct a transition matrix conditional on a state change.
+
+    Parameters
+    ----------
+    Q : weighted directed networkx graph
+        Instantaneous rate matrix.
+    total_rates : dict, optional
+        Sparse map from state to total rate out of the state.
+
+    Returns
+    -------
+    P : weighted directed networkx graph
+        Transition probability matrix
+        conditional on an instantaneous transition.
+
+    """
+    if total_rates is None:
+        total_rates = get_total_rates(Q)
+    P = nx.DiGraph()
+    for a, b in Q.edges():
+        weight = Q[a][b]['weight'] / total_rates[a]
+        P.add_edge(a, b, weight=weight)
+    return P
+
+
 def get_history_dwell_times(T):
     """
 

@@ -20,7 +20,8 @@ from raoteh.sampler import _sampler
 from raoteh.sampler._util import (
                 StructuralZeroProb, NumericalZeroProb, get_first_element)
 from raoteh.sampler._mjp import (
-            get_history_dwell_times, get_history_root_state_and_transitions)
+            get_history_dwell_times, get_history_root_state_and_transitions,
+            get_total_rates, get_conditional_transition_matrix)
 
 
 class TestFullyAugmentedLikelihood(TestCase):
@@ -182,20 +183,10 @@ class TestFullyAugmentedLikelihood(TestCase):
                     compound_process_history)
 
             # Get the total rate away from each compound state.
-            #XXX move this code somewhere better
-            total_rates = {}
-            for a in Q_compound:
-                rate_out = 0.0
-                for b in Q_compound[a]:
-                    rate_out += Q_compound[a][b]['weight']
-                total_rates[a] = rate_out
+            total_rates = get_total_rates(Q_compound)
 
             # Construct a transition matrix conditional on a state change.
-            #XXX move this code somewhere better
-            P = nx.DiGraph()
-            for a, b in Q_compound.edges():
-                weight = Q_compound[a][b]['weight'] / total_rates[a]
-                P.add_edge(a, b, weight=weight)
+            P = get_conditional_transition_matrix(Q_compound, total_rates)
 
             # Compute the likelihood of the history.
             log_likelihood = 0.0
