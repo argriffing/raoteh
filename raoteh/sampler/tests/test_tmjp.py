@@ -189,20 +189,27 @@ class TestFullyAugmentedLikelihood(TestCase):
             total_rates = get_total_rates(Q_compound)
 
             # Construct a transition matrix conditional on a state change.
-            P = get_conditional_transition_matrix(Q_compound, total_rates)
+            #P = get_conditional_transition_matrix(Q_compound, total_rates)
 
             # Directly compute the log likelihood of the history.
-            log_likelihood = 0.0
-            log_likelihood += np.log(compound_distn[root_state])
+            ll_initial = np.log(compound_distn[root_state])
+            ll_dwell = 0.0
             for compound_state, dwell_time in dwell_times.items():
-                log_likelihood -= dwell_time * total_rates[compound_state]
+                ll_dwell -= dwell_time * total_rates[compound_state]
+            ll_transitions = 0.0
             for a, b in transitions.edges():
                 ntrans = transitions[a][b]['weight']
-                ptrans = P[a][b]['weight']
-                log_likelihood += special.xlogy(ntrans, ptrans)
-            direct_log_likelihood = log_likelihood
+                rate = Q_compound[a][b]['weight']
+                ll_transitions += special.xlogy(ntrans, rate)
 
-            print('directly computed log_likelihood:', direct_log_likelihood)
+            direct_ll_initrans = ll_initial + ll_transitions
+            direct_ll_dwell = ll_dwell
+            #print('direct log likelihood contributions:')
+            #print('initial:', ll_initial)
+            #print('transitions:', ll_transitions)
+            #print('initial plus transitions:', ll_initial + ll_transitions)
+            #print('dwell:', ll_dwell)
+            #print()
 
             # Compute the log likelihood through sufficient statistics.
 
@@ -216,7 +223,7 @@ class TestFullyAugmentedLikelihood(TestCase):
                 if tol == 1:
                     ngains_stat += 1
                 elif tol == 0:
-                    ngains_stat += 1
+                    nlosses_stat += 1
                 else:
                     raise Exception('invalid root tolerance state')
             for a, b in transitions.edges():
@@ -257,24 +264,24 @@ class TestFullyAugmentedLikelihood(TestCase):
                 tolerance_duration_stat += dwell_time * ntols
 
             # Initialize the log likelihood for this more clever approach.
-            log_likelihood = 0.0
+            ll_initrans = 0.0
+            ll_dwell = 0.0
 
             # Add the log likelihood contributions that involve
             # the sufficient statistics and the on/off tolerance rates.
-            log_likelihood -= special.xlogy(nparts, total_tolerance_rate)
-            log_likelihood += special.xlogy(ngains_stat, tolerance_rate_on)
-            log_likelihood += special.xlogy(nlosses_stat, tolerance_rate_off)
-            log_likelihood -= tolerance_rate_off * (
+            ll_initrans -= special.xlogy(nparts-1, total_tolerance_rate)
+            ll_initrans += special.xlogy(ngains_stat-1, tolerance_rate_on)
+            ll_initrans += special.xlogy(nlosses_stat, tolerance_rate_off)
+            ll_dwell -= tolerance_rate_off * (
                     tolerance_duration_stat - total_tree_length)
-            log_likelihood -= tolerance_rate_on * (
+            ll_dwell -= tolerance_rate_on * (
                     total_tree_length * nparts - tolerance_duration_stat)
 
             # Add the log likelihood contributions that involve
             # general functions of the data and not the on/off tolerance rates.
             # On the other hand, they do involve the tolerance state.
             root_primary_state = compound_to_primary[root_state]
-            log_likelihood += np.log(primary_distn[root_primary_state])
-            """
+            ll_initrans += np.log(primary_distn[root_primary_state])
             for compound_state, dwell_time in dwell_times.items():
                 primary_state = compound_to_primary[compound_state]
                 primary_rate_out = 0.0
@@ -282,8 +289,7 @@ class TestFullyAugmentedLikelihood(TestCase):
                     if compound_to_primary[sink] != primary_state:
                         rate = Q_compound[compound_state][sink]['weight']
                         primary_rate_out += rate
-                log_likelihood -= dwell_time * primary_rate_out
-            """
+                ll_dwell -= dwell_time * primary_rate_out
             for a, b in transitions.edges():
                 edge = transitions[a][b]
                 ntransitions = edge['weight']
@@ -291,13 +297,24 @@ class TestFullyAugmentedLikelihood(TestCase):
                 prim_b = compound_to_primary[b]
                 if prim_a != prim_b:
                     rate = Q_compound[a][b]['weight']
-                    log_likelihood += special.xlogy(ntransitions, rate)
+                    ll_initrans += special.xlogy(ntransitions, rate)
 
-            print('cleverly computed log_likelihood:', log_likelihood)
-            print()
+            clever_ll_initrans = ll_initrans
+            clever_ll_dwell = ll_dwell
+
+            # Compare the two log likelihood calculations.
+            assert_allclose(direct_ll_initrans, clever_ll_initrans)
+            assert_allclose(direct_ll_dwell, clever_ll_dwell)
+
+            #print('clever log likelihood contributions:')
+            #print('initial plus transitions:', ll_initrans)
+            #print('dwell:', ll_dwell)
+            #print()
+
+            #print()
 
 
-        raise Exception('raise an exception to print some stuff')
+        #raise Exception('raise an exception to print some stuff')
 
 
 if __name__ == '__main__':
