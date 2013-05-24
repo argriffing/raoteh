@@ -43,6 +43,8 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
     # Validate some input.
     if uniformization_factor <= 1:
         raise ValueError('the uniformization factor must be greater than 1')
+    if not Q:
+        raise ValueError('the rate matrix is empty')
     for a, b in Q.edges():
         if a == b:
             raise ValueError('the rate matrix should have no loops')
@@ -50,10 +52,11 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
     # Get the total rate away from each state.
     total_rates = {}
     for a in Q:
-        rate_out = 0.0
-        for b in Q[a]:
-            rate_out += Q[a][b]['weight']
-        total_rates[a] = rate_out
+        if Q[a]:
+            rate_out = 0.0
+            for b in Q[a]:
+                rate_out += Q[a][b]['weight']
+            total_rates[a] = rate_out
 
     # Initialize omega as the uniformization rate.
     omega = uniformization_factor * max(total_rates.values())
@@ -62,11 +65,12 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
     # and the uniformization rate.
     P = nx.DiGraph()
     for a in Q:
-        weight = 1.0 - total_rates[a] / omega
-        P.add_edge(a, a, weight=weight)
-        for b in Q[a]:
-            weight = Q[a][b]['weight'] / omega
-            P.add_edge(a, b, weight=weight)
+        if Q[a]:
+            weight = 1.0 - total_rates[a] / omega
+            P.add_edge(a, a, weight=weight)
+            for b in Q[a]:
+                weight = Q[a][b]['weight'] / omega
+                P.add_edge(a, b, weight=weight)
 
     # Define the uniformized poisson rates for Rao-Teh resampling.
     poisson_rates = dict((a, omega - q) for a, q in total_rates.items())
@@ -205,6 +209,11 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     then an arbitrary node with a known state will be chosen as the root.
 
     """
+
+    # Check for lack of any known state.
+    if not node_to_state:
+        raise NotImplementedError(
+                'unconditional forward simulation is not implemented')
 
     # If the root has not been provided, then pick one with a known state.
     if root is None:
@@ -466,7 +475,7 @@ def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
         # self-transitions (as in uniformization) must be allowed,
         # otherwise strange things can happen because of periodicity.
         if events_per_edge > len(P):
-            raise StructuralZeroProb('failed to find a feasible history')
+            raise Exception('failed to find a feasible history')
 
         # Increment some stuff and bisect edges if appropriate.
         if k is None:
