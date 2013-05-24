@@ -4,20 +4,11 @@ Test functions related to the Markov jump process.
 """
 from __future__ import division, print_function, absolute_import
 
-import random
-import itertools
-
-import numpy as np
 import networkx as nx
 
 from numpy.testing import (run_module_suite, TestCase,
-        assert_equal, assert_allclose, assert_, assert_raises,
-        decorators)
+        assert_equal, assert_allclose, assert_)
 
-import scipy.special
-
-from raoteh.sampler._util import (
-                StructuralZeroProb, NumericalZeroProb, get_first_element)
 from raoteh.sampler._mjp import (
             get_history_dwell_times, get_history_root_state_and_transitions,
             get_total_rates, get_conditional_transition_matrix)
