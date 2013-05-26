@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import numpy as np
 import networkx as nx
+import scipy.linalg
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
@@ -22,6 +23,49 @@ from raoteh.sampler._mjp import (
 
 
 __all__ = []
+
+
+#XXX this function could probably use a better name
+#XXX add a test
+def get_single_edge_tolerance_class_summary(
+        rate_off, rate_on, rate_absorb, t=1.0):
+    """
+    Compute probabilities and interactions along an edge.
+
+    This is for computing conditional expectations of
+    unobserved events and dwell times.
+
+    Parameters
+    ----------
+    rate_off : float
+        Rate from the 'on' state to the 'off' state.
+    rate_on : float
+        Rate from the 'off' state to the 'on' state.
+    rate_absorb : float
+        Rate from the 'on' state to the 'absorbing' state.
+    t : float, optional
+        Rates are multiplied by this scaling factor.
+
+    Returns
+    -------
+    probs : shape (2, 2) ndarray
+        Transition probability matrix.
+    interactions : shape (2, 2, 2, 2) ndarray
+        Endpoint conditioned interaction terms.
+
+    """
+    Q = np.array([
+        [-rate_on, rate_on, 0],
+        [rate_off, -(rate_off + rate_absorb), rate_absorb],
+        [0, 0, 0]], dtype=float)
+    probs = scipy.linalg.expm(Q*t)[:2, :2]
+    interactions = np.empty((2, 2, 2, 2), dtype=float)
+    for a in range(2):
+        for b in range(2):
+            C = np.zeros((3, 3), dtype=float)
+            C[a, b] = 1.0
+            interactions[a, b] = scipy.linalg.expm_frechet(t*Q, t*C)[:2, :2]
+    return probs, interactions
 
 
 def get_tolerance_micro_rate_matrix(rate_off, rate_on, rate_absorb):

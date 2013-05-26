@@ -121,7 +121,7 @@ class TestFullyAugmentedLikelihood(TestCase):
 
                 # Look for a tolerance state change.
                 # Do not allow simultaneous primary and tolerance changes.
-                # Do not allow more than one simultaneousl tolerance change.
+                # Do not allow more than one simultaneous tolerance change.
                 # Do not allow changes to the primary tolerance class.
                 if tol_hdist > 0:
                     if i_prim != j_prim:

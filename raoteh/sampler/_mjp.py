@@ -176,6 +176,50 @@ def get_history_statistics(T, root=None):
     return dwell_times, root_state, transitions
 
 
+def construct_node_to_pmap(T, P, node_to_state, root):
+    """
+    For each node, construct the map from state to subtree likelihood.
+
+    This variant is less general than construct_node_to_restricted pmap.
+    It is mainly a helper function for the state resampler,
+    and is possibly of not very general interest because of its lack
+    of flexibility to change the transition matrix on each branch.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree without required edge annotation.
+    P : networkx directed weighted graph
+        Sparse transition matrix.
+    node_to_state : dict
+        A sparse map from a node to its known state.
+    root : integer
+        The root node.
+
+    Returns
+    -------
+    node_to_pmap : dict
+        A map from a node to a map from a state to a subtree likelihood.
+
+    """
+    # Construct the augmented tree by annotating each edge with P.
+    T_aug = nx.Graph()
+    for a, b in T.edges():
+        T_aug.add_edge(a, b, P=P)
+
+    # Construct the map from node to allowed state set.
+    node_to_allowed_states = {}
+    all_states = set(P)
+    for restricted_node, state in node_to_state.items():
+        node_to_allowed_states[restricted_node] = {state}
+    for unrestricted_node in set(T) - set(node_to_state):
+        node_to_allowed_states[unrestricted_node] = all_states
+
+    # Return the node to pmap dict.
+    return construct_node_to_restricted_pmap(
+            T_aug, root, node_to_allowed_states)
+
+
 def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
     """
     For each node, construct the map from state to subtree likelihood.
@@ -308,4 +352,178 @@ def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
     if not feasible_root_states:
         raise StructuralZeroProb('no root state is feasible')
     return sum(root_distn[s] * root_pmap[s] for s in feasible_root_states)
+
+
+def get_marginal_state_distributions(T, root, node_to_pmap=None):
+    """
+    Get marginal state distributions at nodes in a tree.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices P.
+
+    Returns
+    -------
+    node_to_distn : dict
+        Sparse map from node to sparse map from state to probability.
+
+    """
+    # Construct the pmap if it does not yet already exist.
+
+    # Treat the root separately.
+    # If only one state is possible at the root, then we do not have to sample.
+    # Otherwise consult the map from root states to probabilities.
+    root_pmap = node_to_pmap[root]
+    if not root_pmap:
+        raise StructuralZeroProb('no state is feasible at the root')
+    elif len(root_pmap) == 1:
+        root_state = get_first_element(root_pmap)
+        if not root_pmap[root_state]:
+            raise NumericalZeroProb(
+                    'the only feasible state at the root '
+                    'gives a subtree probability of zero')
+    else:
+        if root_distn is None:
+            raise ValueError(
+                    'expected a prior distribution over the '
+                    '%d possible states at the root' % len(root_pmap))
+        prior_distn = root_distn
+        states = list(set(prior_distn) & set(root_pmap))
+        if not states:
+            raise StructuralZeroProb(
+                    'after accounting for the prior distribution at the root, '
+                    'no root state is feasible')
+        weights = []
+        for s in states:
+            weights.append(prior_distn[s] * node_to_pmap[node][s])
+        weight_sum = sum(weights)
+        if not weight_sum:
+            raise NumericalZeroProb('numerical problem at the root')
+        if len(states) == 1:
+            sampled_state = states[0]
+        else:
+            probs = np.array(weights, dtype=float) / weight_sum
+            sampled_state = np.random.choice(states, p=probs)
+        root_state = sampled_state
+    node_to_sampled_state[root] = root_state
+
+    # Sample the states at the rest of the nodes.
+    for node in nx.dfs_preorder_nodes(T, root):
+
+        # The root has already been sampled.
+        if node == root:
+            continue
+
+        # Get the parent node and its state.
+        parent_node = predecessors[node]
+        parent_state = node_to_sampled_state[parent_node]
+        
+        # Check that the parent state has transitions.
+        if parent_state not in P:
+            raise StructuralZeroProb(
+                    'no transition from the parent state is possible')
+
+        # Sample the state of a non-root node.
+        # A state is possible if it is reachable in one step from the
+        # parent state which has already been sampled
+        # and if it gives a subtree probability that is not structurally zero.
+        states = list(set(P[parent_state]) & set(node_to_pmap[node]))
+        if not states:
+            raise StructuralZeroProb('found a non-root infeasibility')
+        weights = []
+        for s in states:
+            weights.append(P[parent_state][s]['weight'] * node_to_pmap[node][s])
+        weight_sum = sum(weights)
+        if not weight_sum:
+            raise NumericalZeroProb('numerical problem at a non-root node')
+        if len(states) == 1:
+            sampled_state = states[0]
+        else:
+            probs = np.array(weights, dtype=float) / weight_sum
+            sampled_state = np.random.choice(states, p=probs)
+        node_to_sampled_state[node] = sampled_state
+
+
+def get_expected_history_statistics(T, Q, node_to_state, root):
+    """
+    This is a soft analog of get_history_statistics.
+
+    The input is analogous to the Rao-Teh gen_histories input,
+    and the output is analogous to the get_history_statistics output.
+    This is not coincidental; the output of this function should
+    be the same as the results of averaging the history statistics
+    of Rao-Teh history samples, when the number of samples is large.
+    A more general version of this function would be able
+    to deal with states that have more flexible restrictions.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree.
+    Q : directed weighted networkx graph
+        A sparse rate matrix.
+    node_to_state : dict
+        A map from nodes to states.
+        Nodes with unknown states do not correspond to keys in this map.
+    root : integer
+        Required to have a known state.
+
+    Returns
+    -------
+    dwell_times : dict
+        Map from the state to the expected dwell time on the tree.
+        This does not depend on the root.
+    transitions : directed weighted networkx graph
+        A networkx graph that tracks the expected number of times
+        each transition type appears in the history.
+        The expectation depends on the root.
+
+    """
+    # Do some input validation for this restricted variant.
+    if root not in node_to_state:
+        raise ValueError('the root is required to have a known state')
+
+    # Convert the sparse rate matrix to a dense ndarray rate matrix.
+    states = sorted(T)
+    nstates = len(states)
+    Q_dense = np.zeros((nstates, nstates), dtype=float)
+    for a, sa in enumerate(states):
+        for b, sb in enumerate(states):
+            if Q.has_edge(sa, sb):
+                edge = Q[sa][sb]
+                Q_dense[a, b] = edge['weight']
+    Q_dense = Q_dense - np.diag(np.sum(Q_dense, axis=1))
+
+    # Construct the augmented tree by annotating each edge
+    # with the appropriate state transition probability matrix.
+    T_aug = nx.Graph()
+    for na, nb in T.edges():
+        edge = T[na][nb]
+        weight = edge['weight']
+        P_dense = scipy.linalg.expm(weight * Q_dense)
+        P_nx = nx.DiGraph()
+        for a, sa in enumerate(states):
+            for b, sb in enumerate(states):
+                P_nx.add_edge(sa, sb, weight=P_dense[a, b])
+        T_aug.add_edge(a, b, P=P_nx)
+
+    # Construct the map from node to allowed state set.
+    node_to_allowed_states = {}
+    full_state_set = set(states)
+    for restricted_node, state in node_to_state.items():
+        node_to_allowed_states[restricted_node] = {state}
+    for unrestricted_node in full_state_set - set(node_to_state):
+        node_to_allowed_states[unrestricted_node] = full_state_set
+
+    # Construct the node to pmap dict.
+    node_to_pmap = construct_node_to_restricted_pmap(
+            T_aug, root, node_to_allowed_states)
+
+    # Compute the expectations of the dwell times and the transition counts
+    # by iterating over all edges and using the edge-specific
+    # joint distribution of the states at the edge endpoints.
+    for na, nb in nx.bfs_edges(T_aug, root):
+        edge = T_aug[na][nb]
+        # check 
 

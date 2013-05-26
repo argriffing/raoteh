@@ -17,7 +17,8 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
-def gen_histories(T, Q, node_to_state, uniformization_factor=2):
+def gen_histories(T, Q, node_to_state, uniformization_factor=2,
+        root=None, root_distn=None):
     """
     Yield history samples on trees.
 
@@ -35,8 +36,12 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
     node_to_state : dict
         A map from nodes to states.
         Nodes with unknown states do not correspond to keys in this map.
-    uniformization_factor : float
+    uniformization_factor : float, optional
         A value greater than 1.
+    root : integer, optional
+        Root of the tree.
+    root_distn : dict, optional
+        Map from root state to probability.
 
     """
 
@@ -80,7 +85,8 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
 
     # Construct an initial feasible history,
     # possibly with redundant event nodes.
-    T = get_feasible_history(T, P, node_to_state)
+    T = get_feasible_history(T, P, node_to_state,
+            root=root, root_distn=root_distn)
 
     # Generate histories using Rao-Teh sampling.
     while True:
@@ -98,7 +104,8 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2):
 
         # Resample edge states.
         event_nodes = set(T) - initial_nodes
-        T = resample_edge_states(T, P, node_to_state, event_nodes)
+        T = resample_edge_states(T, P, node_to_state, event_nodes,
+                root=root, root_distn=root_distn)
 
 
 def resample_poisson(T, state_to_rate, root=None):
@@ -153,29 +160,6 @@ def resample_poisson(T, state_to_rate, root=None):
     return T_out
 
 
-def construct_node_to_pmap(T, P, node_to_state, root):
-    """
-    A helper function for resample_states.
-
-    """
-    # Construct the augmented tree by annotating each edge with P.
-    T_aug = nx.Graph()
-    for a, b in T.edges():
-        T_aug.add_edge(a, b, P=P)
-
-    # Construct the map from node to allowed state set.
-    node_to_allowed_states = {}
-    all_states = set(P)
-    for restricted_node, state in node_to_state.items():
-        node_to_allowed_states[restricted_node] = {state}
-    for unrestricted_node in set(T) - set(node_to_state):
-        node_to_allowed_states[unrestricted_node] = all_states
-
-    # Return the node to pmap dict.
-    return _mjp.construct_node_to_restricted_pmap(
-            T_aug, root, node_to_allowed_states)
-
-
 def resample_states(T, P, node_to_state, root=None, root_distn=None):
     """
     This function applies to a tree for which nodes will be assigned states.
@@ -222,18 +206,8 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     # Bookkeeping structure related to tree traversal.
     predecessors = nx.dfs_predecessors(T, root)
 
-    # A bookkeeping structure related to state sampling.
-    P_for_sampling = {}
-    for source in P:
-        sinks = []
-        probs = []
-        for sink in P[source]:
-            sinks.append(sink)
-            probs.append(P[source][sink]['weight'])
-        P_for_sampling[source] = (sinks, probs)
-
     # For each node, get a sparse map from state to subtree probability.
-    node_to_pmap = construct_node_to_pmap(T, P, node_to_state, root)
+    node_to_pmap = _mjp.construct_node_to_pmap(T, P, node_to_state, root)
 
     # Sample the node states, beginning at the root.
     node_to_sampled_state = {}
