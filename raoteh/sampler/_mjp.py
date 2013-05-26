@@ -414,9 +414,18 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
     return posterior_distn
 
 
+#XXX add tests
 def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
     """
     Get marginal state distributions at nodes in a tree.
+
+    This function is similar to the Rao-Teh state sampling function,
+    except that instead of sampling a state at each node,
+    this function computes marginal distributions over states at each node.
+    Also, each edge of the input tree for this function has been
+    annotated with its own transition probability matrix,
+    whereas the Rao-Teh sampling function uses a single
+    uniformized transition probability matrix for all edges.
 
     Parameters
     ----------
@@ -429,8 +438,6 @@ def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
         Root node.
     prior_root_distn : dict, optional
         A finite distribution over root states.
-        If only a single state is allowed at the root,
-        then this is superfluous.
 
     Returns
     -------
@@ -438,81 +445,96 @@ def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
         Sparse map from node to sparse map from state to probability.
 
     """
-    # Init the output.
     node_to_distn = {}
-
-    # Treat the root separately.
-    root_pmap = node_to_pmap[root]
-    if not root_pmap:
-        raise StructuralZeroProb('no state is feasible at the root')
-    if len(root_pmap) == 1:
-        root_state = get_first_element(root_pmap)
-        if not root_pmap[root_state]:
-            raise NumericalZeroProb(
-                    'the only feasible state at the root '
-                    'gives a subtree probability of zero')
-    else:
-        if prior_root_distn is None:
-            raise ValueError(
-                    'expected a prior distribution over the '
-                    '%d possible states at the root' % len(root_pmap))
-        prior_distn = prior_root_distn
-        states = list(set(prior_distn) & set(root_pmap))
-        if not states:
-            raise StructuralZeroProb(
-                    'after accounting for the prior distribution at the root, '
-                    'no root state is feasible')
-        weights = []
-        for s in states:
-            weights.append(prior_distn[s] * node_to_pmap[node][s])
-        weight_sum = sum(weights)
-        if not weight_sum:
-            raise NumericalZeroProb('numerical problem at the root')
-        if len(states) == 1:
-            sampled_state = states[0]
-        else:
-            probs = np.array(weights, dtype=float) / weight_sum
-            sampled_state = np.random.choice(states, p=probs)
-        root_state = sampled_state
-    node_to_sampled_state[root] = root_state
-
-    # Sample the states at the rest of the nodes.
     for node in nx.dfs_preorder_nodes(T, root):
 
-        # The root has already been sampled.
+        # Compute the root prior distribution at the root separately.
         if node == root:
-            continue
-
-        # Get the parent node and its state.
-        parent_node = predecessors[node]
-        parent_state = node_to_sampled_state[parent_node]
-        
-        # Check that the parent state has transitions.
-        if parent_state not in P:
-            raise StructuralZeroProb(
-                    'no transition from the parent state is possible')
-
-        # Sample the state of a non-root node.
-        # A state is possible if it is reachable in one step from the
-        # parent state which has already been sampled
-        # and if it gives a subtree probability that is not structurally zero.
-        states = list(set(P[parent_state]) & set(node_to_pmap[node]))
-        if not states:
-            raise StructuralZeroProb('found a non-root infeasibility')
-        weights = []
-        for s in states:
-            weights.append(P[parent_state][s]['weight'] * node_to_pmap[node][s])
-        weight_sum = sum(weights)
-        if not weight_sum:
-            raise NumericalZeroProb('numerical problem at a non-root node')
-        if len(states) == 1:
-            sampled_state = states[0]
+            prior_distn = prior_root_distn
         else:
-            probs = np.array(weights, dtype=float) / weight_sum
-            sampled_state = np.random.choice(states, p=probs)
-        node_to_sampled_state[node] = sampled_state
+            parent_node = predecessors[node]
+            parent_distn = node_to_distn[parent_node]
+
+            # This is essentially a sparse matrix vector multiplication.
+            prior_distn = defaultdict(float)
+            for sa, pa in parent_distn.items():
+                for sb in P[sa]:
+                    edge = P[sa][sb]
+                    pab = edge['weight']
+                    prior_distn[sb] += pa * pab
+            prior_distn = dict(prior_distn)
+
+        # Compute the posterior distribution.
+        # This accounts for the marginal distribution at the parent node,
+        # the matrix of transition probabilities between the parent node
+        # and the current node, and the subtree likelihood conditional
+        # on the state of the current node.
+        if prior_distn is None:
+            if len(set(node_to_pmap[node])) == 1:
+                state = get_first_element(node_to_pmap[node])
+                if node_to_pmap[node][state]:
+                    node_to_distn[node] = {state : 1.0}
+                else:
+                    raise NumericalZeroProb
+            else:
+                raise StructuralZeroProb
+        else:
+            node_to_distn[node] = _mjp.get_zero_step_posterior_distn(
+                    prior_distn, node_to_pmap[node])
+
+    # Return the marginal state distributions at nodes.
+    return node_to_distn
 
 
+# XXX add tests
+def get_joint_endpoint_state_distn(T, node_to_pmap, node_to_distn, root):
+    """
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        Tree with edges annotated with sparse transition probability
+        matrices as directed weighted networkx graphs P.
+    node_to_pmap : dict
+        Map from node to a map from a state to the subtree likelihood.
+        This map incorporates state restrictions.
+    node_to_distn : dict
+        Conditional marginal state distribution at each node.
+    root : integer
+        Root state.
+
+    Returns
+    -------
+    T_aug : undirected networkx graph
+        A tree whose edges are annotated with sparse joint endpoint
+        state distributions as networkx digraphs.
+        These annotations use the attribute 'J' which
+        is supposed to mean 'joint' and which is writeen in
+        single letter caps reminiscent of matrix notation.
+
+    """
+    T_aug = nx.Graph()
+    for na, nb in nx.bfs_edges(T, root):
+        pmap = node_to_pmap[nb]
+        P = T[na][nb]['P']
+        J = nx.DiGraph()
+        total_weight = 0.0
+        weighted_edges = []
+        for sa, pa in node_to_distn[na].items():
+            feasible_states = set(P[sa]) & set(node_to_pmap[nb])
+            for sb in feasible_states:
+                edge = P[sa][sb]
+                pab = edge['weight']
+                joint_weight = pa * pab * pmap[sb]
+                weighted_edges.append((sa, sb, joint_weight))
+                total_weight += joint_weight
+        for sa, sb, weight in weighted_edges:
+            J.add_edge(sa, sb, weight / total_weight)
+        T_aug.add_edge(na, nb, J=J)
+    return T_aug
+
+
+# XXX add tests
 def get_expected_history_statistics(T, Q, node_to_state, root):
     """
     This is a soft analog of get_history_statistics.
@@ -553,7 +575,7 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
         raise ValueError('the root is required to have a known state')
 
     # Convert the sparse rate matrix to a dense ndarray rate matrix.
-    states = sorted(T)
+    states = sorted(Q)
     nstates = len(states)
     Q_dense = np.zeros((nstates, nstates), dtype=float)
     for a, sa in enumerate(states):
@@ -588,10 +610,70 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
     node_to_pmap = construct_node_to_restricted_pmap(
             T_aug, root, node_to_allowed_states)
 
+    # Get the marginal state distribution for each node in the tree,
+    # conditional on the known states.
+    node_to_distn = get_node_to_distn(T_aug, node_to_pmap, root)
+
+    # For each edge in the tree, get the joint distribution
+    # over the states at the endpoints of the edge.
+    T_joint = get_joint_endpoint_state_distn(
+            T_aug, node_to_pmap, node_to_distn, root)
+
     # Compute the expectations of the dwell times and the transition counts
     # by iterating over all edges and using the edge-specific
     # joint distribution of the states at the edge endpoints.
-    for na, nb in nx.bfs_edges(T_aug, root):
-        edge = T_aug[na][nb]
-        # check 
+    expected_dwell_times = defaultdict(float)
+    expected_transitions = nx.DiGraph()
+    for na, nb in nx.bfs_edges(T, root):
+
+        # Get the elapsed time along the edge.
+        t = T[na][nb]['weight']
+
+        # Get the conditional probability matrix associated with the edge.
+        P = T_aug[na][nb]['P']
+
+        # Get the joint probability matrix associated with the edge.
+        J = T_joint[na][nb]['J']
+
+        # Compute contributions to dwell time expectations along the path.
+        for sc_index, sc in enumerate(states):
+            C = np.zeros((nstates, nstates), dtype=float)
+            C[sc_index, sc_index] = 1.0
+            interact = scipy.linalg.expm_frechet(t*Q_dense, t*C)
+            for sa_index, sa in enumerate(states):
+                for sb_index, sb in enumerate(states):
+                    if not J.has_edge(sa, sb):
+                        continue
+                    cond_prob = P[sa][sb]['weight']
+                    joint_prob = J[sa][sb]['weight']
+                    # XXX simplify the joint_prob / cond_prob
+                    expected_dwell_times[sc] += (
+                            joint_prob *
+                            interact[sa_index, sb_index] /
+                            cond_prob)
+
+        # Compute contributions to transition count expectations.
+        for sc_index, sc in enumerate(states):
+            for sd_index, sd in enumerate(states):
+                if not Q.has_edge(sc, sd):
+                    continue
+                C = np.zeros((nstates, nstates), dtype=float)
+                C[sc_index, sd_index] = 1.0
+                interact = scipy.linalg.expm_frechet(t*Q_dense, t*C)
+                for sa_index, sa in enumerate(states):
+                    for sb_index, sb in enumerate(states):
+                        if not J.has_edge(sa, sb):
+                            continue
+                        cond_prob = P[sa][sb]['weight']
+                        joint_prob = J[sa][sb]['weight']
+                        contrib = (
+                                joint_prob *
+                                Q_dense[sc_index, sd_index] *
+                                interact[sc_index, sd_index] /
+                                cond_prob)
+                        if not expected_transitions.has_edge(sc, sd):
+                            expected_transitions.add_edge(sc, sd, weight=0.0)
+                        expected_transitions[sc][sd]['weight'] += contrib
+
+    return dict(expected_dwell_times), expected_transitions
 
