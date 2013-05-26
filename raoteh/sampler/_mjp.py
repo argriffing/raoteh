@@ -354,7 +354,61 @@ def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
     return sum(root_distn[s] * root_pmap[s] for s in feasible_root_states)
 
 
-def get_marginal_state_distributions(T, root, node_to_pmap=None):
+# TODO: use this in the rao teh sampler
+# and in the all-nodes marginal state distributions calculation.
+#XXX this function is named poorly
+def get_posterior_distn(pmap, prior_distn):
+    """
+
+    Parameters
+    ----------
+    pmap : dict
+        A sparse map from a state to a subtree likelihood.
+    prior_distn : dict
+        A sparse map from a state to a prior probability.
+
+    Returns
+    -------
+    posterior_distn : dict
+        A sparse map from a state to a posterior probability.
+
+    """
+    root_pmap = node_to_pmap[root]
+    if not root_pmap:
+        raise StructuralZeroProb('no state is feasible at the root')
+    if len(root_pmap) == 1:
+        root_state = get_first_element(root_pmap)
+        if not root_pmap[root_state]:
+            raise NumericalZeroProb(
+                    'the only feasible state at the root '
+                    'gives a subtree probability of zero')
+    else:
+        if prior_root_distn is None:
+            raise ValueError(
+                    'expected a prior distribution over the '
+                    '%d possible states at the root' % len(root_pmap))
+        prior_distn = prior_root_distn
+        states = list(set(prior_distn) & set(root_pmap))
+        if not states:
+            raise StructuralZeroProb(
+                    'after accounting for the prior distribution at the root, '
+                    'no root state is feasible')
+        weights = []
+        for s in states:
+            weights.append(prior_distn[s] * node_to_pmap[node][s])
+        weight_sum = sum(weights)
+        if not weight_sum:
+            raise NumericalZeroProb('numerical problem at the root')
+        if len(states) == 1:
+            sampled_state = states[0]
+        else:
+            probs = np.array(weights, dtype=float) / weight_sum
+            sampled_state = np.random.choice(states, p=probs)
+        root_state = sampled_state
+    node_to_sampled_state[root] = root_state
+
+
+def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
     """
     Get marginal state distributions at nodes in a tree.
 
@@ -362,6 +416,15 @@ def get_marginal_state_distributions(T, root, node_to_pmap=None):
     ----------
     T : undirected acyclic networkx graph
         A tree whose edges are annotated with transition matrices P.
+    node_to_pmap : dict
+        Map from node to a map from a state to the subtree likelihood.
+        This map incorporates state restrictions.
+    root : integer
+        Root node.
+    prior_root_distn : dict, optional
+        A finite distribution over root states.
+        If only a single state is allowed at the root,
+        then this is superfluous.
 
     Returns
     -------
@@ -369,26 +432,25 @@ def get_marginal_state_distributions(T, root, node_to_pmap=None):
         Sparse map from node to sparse map from state to probability.
 
     """
-    # Construct the pmap if it does not yet already exist.
+    # Init the output.
+    node_to_distn = {}
 
     # Treat the root separately.
-    # If only one state is possible at the root, then we do not have to sample.
-    # Otherwise consult the map from root states to probabilities.
     root_pmap = node_to_pmap[root]
     if not root_pmap:
         raise StructuralZeroProb('no state is feasible at the root')
-    elif len(root_pmap) == 1:
+    if len(root_pmap) == 1:
         root_state = get_first_element(root_pmap)
         if not root_pmap[root_state]:
             raise NumericalZeroProb(
                     'the only feasible state at the root '
                     'gives a subtree probability of zero')
     else:
-        if root_distn is None:
+        if prior_root_distn is None:
             raise ValueError(
                     'expected a prior distribution over the '
                     '%d possible states at the root' % len(root_pmap))
-        prior_distn = root_distn
+        prior_distn = prior_root_distn
         states = list(set(prior_distn) & set(root_pmap))
         if not states:
             raise StructuralZeroProb(

@@ -237,7 +237,8 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
                     'no root state is feasible')
         weights = []
         for s in states:
-            weights.append(prior_distn[s] * node_to_pmap[node][s])
+            # XXX this is not covered by tests...
+            weights.append(prior_distn[s] * node_to_pmap[root][s])
         weight_sum = sum(weights)
         if not weight_sum:
             raise NumericalZeroProb('numerical problem at the root')
