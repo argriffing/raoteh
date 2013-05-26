@@ -17,6 +17,28 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
+# Define a few helper functions that treat dictionaries and networkx graphs
+# as sparse vectors and matrices with undefined shapes.
+# Maybe this should be more object oriented.
+
+def _mul_dd(da, db):
+    # dict dict multiplication
+    return dict((n, da[n] * db[n]) for n in set(da) & set(db))
+
+def _sum_d(d):
+    # dict sum
+    return sum(d.values())
+
+def _mul_ds(d, s):
+    # dict scalar multiplication
+    return dict((k, v * s) for k, v in d.items())
+
+def _div_ds(d, s):
+    # dict scalar division
+    return dict((k, v / s) for k, v in d.items())
+
+
+
 def get_total_rates(Q):
     """
     Get the total rate away from each state.
@@ -354,18 +376,18 @@ def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
     return sum(root_distn[s] * root_pmap[s] for s in feasible_root_states)
 
 
-# TODO: use this in the rao teh sampler
-# and in the all-nodes marginal state distributions calculation.
-#XXX this function is named poorly
-def get_posterior_distn(pmap, prior_distn):
+def get_zero_step_posterior_distn(prior_distn, pmap):
     """
+    Do a kind of sparse dict-dict multiplication and normalize the result.
 
     Parameters
     ----------
-    pmap : dict
-        A sparse map from a state to a subtree likelihood.
     prior_distn : dict
         A sparse map from a state to a prior probability.
+    pmap : dict
+        A sparse map from a state to an observation likelihood.
+        In the MJP application, this likelihood observation corresponds to 
+        a subtree likelihood.
 
     Returns
     -------
@@ -373,39 +395,23 @@ def get_posterior_distn(pmap, prior_distn):
         A sparse map from a state to a posterior probability.
 
     """
-    root_pmap = node_to_pmap[root]
-    if not root_pmap:
-        raise StructuralZeroProb('no state is feasible at the root')
-    if len(root_pmap) == 1:
-        root_state = get_first_element(root_pmap)
-        if not root_pmap[root_state]:
-            raise NumericalZeroProb(
-                    'the only feasible state at the root '
-                    'gives a subtree probability of zero')
-    else:
-        if prior_root_distn is None:
-            raise ValueError(
-                    'expected a prior distribution over the '
-                    '%d possible states at the root' % len(root_pmap))
-        prior_distn = prior_root_distn
-        states = list(set(prior_distn) & set(root_pmap))
-        if not states:
-            raise StructuralZeroProb(
-                    'after accounting for the prior distribution at the root, '
-                    'no root state is feasible')
-        weights = []
-        for s in states:
-            weights.append(prior_distn[s] * node_to_pmap[node][s])
-        weight_sum = sum(weights)
-        if not weight_sum:
-            raise NumericalZeroProb('numerical problem at the root')
-        if len(states) == 1:
-            sampled_state = states[0]
-        else:
-            probs = np.array(weights, dtype=float) / weight_sum
-            sampled_state = np.random.choice(states, p=probs)
-        root_state = sampled_state
-    node_to_sampled_state[root] = root_state
+    if not prior_distn:
+        raise StructuralZeroProb(
+                'no state is feasible according to the prior')
+    if not pmap:
+        raise StructuralZeroProb(
+                'no state is feasible according to the observations')
+    feasible_states = set(prior_distn) & set(pmap)
+    if not feasible_states:
+        raise StructuralZeroProb(
+                'no state is in the intersection of prior feasible '
+                'and observation feasible states')
+    d = dict((n, prior_distn[n] * pmap[n]) for n in feasible_states)
+    total_weight = sum(d.values())
+    if not total_weight:
+        raise NumericalZeroProb('numerical zero probability error')
+    posterior_distn = dict((k, v / total_weight) for k, v in d.items())
+    return posterior_distn
 
 
 def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):

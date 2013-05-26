@@ -221,33 +221,16 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     elif len(root_pmap) == 1:
         root_state = get_first_element(root_pmap)
         if not root_pmap[root_state]:
-            raise NumericalZeroProb(
-                    'the only feasible state at the root '
-                    'gives a subtree probability of zero')
+            raise NumericalZeroProb('numerical problem at the root')
     else:
         if root_distn is None:
             raise ValueError(
                     'expected a prior distribution over the '
                     '%d possible states at the root' % len(root_pmap))
-        prior_distn = root_distn
-        states = list(set(prior_distn) & set(root_pmap))
-        if not states:
-            raise StructuralZeroProb(
-                    'after accounting for the prior distribution at the root, '
-                    'no root state is feasible')
-        weights = []
-        for s in states:
-            # XXX this is not covered by tests...
-            weights.append(prior_distn[s] * node_to_pmap[root][s])
-        weight_sum = sum(weights)
-        if not weight_sum:
-            raise NumericalZeroProb('numerical problem at the root')
-        if len(states) == 1:
-            sampled_state = states[0]
-        else:
-            probs = np.array(weights, dtype=float) / weight_sum
-            sampled_state = np.random.choice(states, p=probs)
-        root_state = sampled_state
+        posterior_distn = _mjp.get_zero_step_posterior_distn(
+                root_distn, root_pmap)
+        states, probs = zip(*posterior_distn.items())
+        root_state = np.random.choice(states, p=np.array(probs))
     node_to_sampled_state[root] = root_state
 
     # Sample the states at the rest of the nodes.
@@ -270,20 +253,12 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         # A state is possible if it is reachable in one step from the
         # parent state which has already been sampled
         # and if it gives a subtree probability that is not structurally zero.
-        states = list(set(P[parent_state]) & set(node_to_pmap[node]))
-        if not states:
-            raise StructuralZeroProb('found a non-root infeasibility')
-        weights = []
-        for s in states:
-            weights.append(P[parent_state][s]['weight'] * node_to_pmap[node][s])
-        weight_sum = sum(weights)
-        if not weight_sum:
-            raise NumericalZeroProb('numerical problem at a non-root node')
-        if len(states) == 1:
-            sampled_state = states[0]
-        else:
-            probs = np.array(weights, dtype=float) / weight_sum
-            sampled_state = np.random.choice(states, p=probs)
+        sinks = set(P[parent_state])
+        prior_distn = dict((s, P[parent_state][s]['weight']) for s in sinks)
+        posterior_distn = _mjp.get_zero_step_posterior_distn(
+                prior_distn, node_to_pmap[node])
+        states, probs = zip(*posterior_distn.items())
+        sampled_state = np.random.choice(states, p=np.array(probs))
         node_to_sampled_state[node] = sampled_state
 
     # Return the map of sampled states.
