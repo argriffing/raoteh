@@ -15,6 +15,7 @@ from numpy.testing import (run_module_suite, TestCase,
 from raoteh.sampler._mc import (
         get_history_log_likelihood, get_node_to_distn_naive, get_node_to_distn,
         construct_node_to_restricted_pmap,
+        construct_node_to_conditional_pmap,
         )
 
 
@@ -145,6 +146,15 @@ def _get_random_test_setup(nstates):
     return T, root, root_distn, node_to_allowed_states
 
 
+def _assert_distn_allclose(da, db):
+    # This is a helper function for testing.
+    da_vector = np.array(
+            [v for k, v in sorted(da.items())], dtype=float)
+    db_vector = np.array(
+            [v for k, v in sorted(db.items())], dtype=float)
+    assert_allclose(da_vector, db_vector)
+
+
 class TestMarkovChain(TestCase):
 
     def test_history_log_likelihood_P_default(self):
@@ -204,19 +214,13 @@ class TestMarkovChain(TestCase):
             node_to_pmap = construct_node_to_restricted_pmap(
                     T, root, node_to_allowed_states)
             node_to_distn_fast = get_node_to_distn(
-                    T, node_to_pmap, root, P)
+                    T, node_to_allowed_states, node_to_pmap, root, P)
 
             # Convert distributions to ndarrays for approximate comparison.
-            root_distn_vector = np.array(
-                    [v for k, v in sorted(root_distn.items())], dtype=float)
             for node, distn in node_to_distn_naive.items():
-                distn_vector = np.array(
-                        [v for k, v in sorted(distn.items())], dtype=float)
-                assert_allclose(distn_vector, root_distn_vector)
+                _assert_distn_allclose(root_distn, distn)
             for node, distn in node_to_distn_fast.items():
-                distn_vector = np.array(
-                        [v for k, v in sorted(distn.items())], dtype=float)
-                assert_allclose(distn_vector, root_distn_vector)
+                _assert_distn_allclose(root_distn, distn)
 
     def test_node_to_distn(self):
         # Test the marginal distributions of node states.
@@ -240,19 +244,22 @@ class TestMarkovChain(TestCase):
             # Get the node distributions more cleverly,
             # through the restricted pmap.
             node_to_pmap = construct_node_to_restricted_pmap(
+            #node_to_pmap = construct_node_to_conditional_pmap(
                     T, root, node_to_allowed_states)
             node_to_distn_fast = get_node_to_distn(
-                    T, node_to_pmap, root, root_distn)
+                    T, node_to_allowed_states, node_to_pmap,
+                    root, root_distn)
 
-            # Convert distributions to ndarrays for approximate comparison.
+            # Compare distributions at the root.
+            root_distn_naive = node_to_distn_naive[root]
+            root_distn_fast = node_to_distn_fast[root]
+            _assert_distn_allclose(root_distn_naive, root_distn_fast)
+
+            # Compare distributions at all nodes.
             for node in T:
                 distn_naive = node_to_distn_naive[node]
                 distn_fast = node_to_distn_fast[node]
-                distn_naive_vector = np.array(
-                        [v for k, v in sorted(distn_naive.items())])
-                distn_fast_vector = np.array(
-                        [v for k, v in sorted(distn_fast.items())])
-                assert_allclose(distn_naive_vector, distn_fast_vector)
+                _assert_distn_allclose(distn_naive, distn_fast)
 
     def test_node_to_distn_unrestricted(self):
         # Test the marginal distributions of node states.
@@ -279,17 +286,14 @@ class TestMarkovChain(TestCase):
             node_to_pmap = construct_node_to_restricted_pmap(
                     T, root, node_to_allowed_states)
             node_to_distn_fast = get_node_to_distn(
-                    T, node_to_pmap, root, root_distn)
+                    T, node_to_allowed_states, node_to_pmap,
+                    root, root_distn)
 
             # Convert distributions to ndarrays for approximate comparison.
             for node in T:
                 distn_naive = node_to_distn_naive[node]
                 distn_fast = node_to_distn_fast[node]
-                distn_naive_vector = np.array(
-                        [v for k, v in sorted(distn_naive.items())])
-                distn_fast_vector = np.array(
-                        [v for k, v in sorted(distn_fast.items())])
-                assert_allclose(distn_naive_vector, distn_fast_vector)
+                _assert_distn_allclose(distn_naive, distn_fast)
 
     def test_joint_endpoint_distributions(self):
         # Test the marginal distributions of node states.
