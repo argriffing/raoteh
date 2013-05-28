@@ -274,7 +274,8 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
                 'should exactly match the set of known states on the tree')
 
     # Check the root state.
-    if root not in root_distn:
+    root_state = node_to_state[root]
+    if root_state not in root_distn:
         raise StructuralZeroProb(
                 'the prior state distribution at the root '
                 'does not include the root state in this history')
@@ -283,7 +284,6 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
     log_likelihood = 0.0
 
     # Add the log likelihood contribution from the root.
-    root_state = node_to_state[root]
     log_likelihood += np.log(root_distn[root_state])
 
     # Add the log likelihood contribution from state transitions.
@@ -373,7 +373,6 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
     return node_to_distn
 
 
-#XXX add tests
 def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
     """
     Get marginal state distributions at nodes in a tree.
@@ -404,6 +403,10 @@ def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
         Sparse map from node to sparse map from state to probability.
 
     """
+    # Bookkeeping.
+    predecessors = nx.dfs_predecessors(T, root)
+
+    # Get the distributions.
     node_to_distn = {}
     for node in nx.dfs_preorder_nodes(T, root):
 
@@ -415,6 +418,7 @@ def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
             parent_distn = node_to_distn[parent_node]
 
             # This is essentially a sparse matrix vector multiplication.
+            P = T[parent_node][node]['P']
             prior_distn = defaultdict(float)
             for sa, pa in parent_distn.items():
                 for sb in P[sa]:
@@ -438,7 +442,7 @@ def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
             else:
                 raise StructuralZeroProb
         else:
-            node_to_distn[node] = _mjp.get_zero_step_posterior_distn(
+            node_to_distn[node] = get_zero_step_posterior_distn(
                     prior_distn, node_to_pmap[node])
 
     # Return the marginal state distributions at nodes.
