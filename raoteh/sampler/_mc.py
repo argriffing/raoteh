@@ -12,6 +12,7 @@ is out of the scope of this module.
 from __future__ import division, print_function, absolute_import
 
 from collections import defaultdict
+import itertools
 
 import numpy as np
 import networkx as nx
@@ -256,6 +257,8 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
         Root node.
     root_distn : dict
         Sparse prior distribution over states at the root.
+    P_default : weighted directed networkx graph, optional
+        A default universal probability transition matrix.
 
     Returns
     -------
@@ -291,7 +294,7 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
         sa = node_to_state[na]
         sb = node_to_state[nb]
         if not P.has_edge(sa, sb):
-            raise StructuralZeroError(
+            raise StructuralZeroProb(
                     'the states of the endpoints of an edge '
                     'are incompatible with the transition matrix on the edge')
         p = P[sa][sb]['weight']
@@ -302,24 +305,71 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
 
 
 def get_node_to_distn_naive(T, node_to_allowed_states,
-        root, prior_root_distn=None):
+        root, prior_root_distn, P_default=None):
     """
     Get marginal state distributions at nodes in a tree.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices P.
+    node_to_allowed_states : dict
+        Map from node to collection of allowed states.
+    root : integer
+        Root node.
+    prior_root_distn : dict
+        A finite distribution over root states.
+    P_default : weighted directed networkx graph, optional
+        A default universal probability transition matrix.
+
+    Returns
+    -------
+    node_to_distn : dict
+        Maps each node to a distribution over states.
 
     See also
     --------
     get_node_to_distn
 
     """
-    node_to_state_to_weight = {}
-
     nodes, allowed_states = zip(*node_to_allowed_states.items())
+    node_to_state_to_weight = dict((n, defaultdict(float)) for n in nodes)
     for assignment in itertools.product(*allowed_states):
 
-        # Compute the likelihood for the assignment.
+        # Get the map corresponding to the assignment.
+        node_to_state = dict(zip(nodes, assignment))
 
-        # 
-        pass
+        # Compute the log likelihood for the assignment.
+        # If the log likelihood cannot be computed,
+        # then skip to the next state assignment.
+        try:
+            ll = get_history_log_likelihood(
+                    T, node_to_state, root, prior_root_distn, P_default)
+        except StructuralZeroProb as e:
+            continue
+
+        # Add the likelihood to weights of states assigned to nodes.
+        likelihood = np.exp(ll)
+        for node, state in zip(nodes, assignment):
+            d = node_to_state_to_weight[node]
+            d[state] += likelihood
+
+    # For each node, normalize the distribution over states.
+    node_to_distn = {}
+    for node in nodes:
+        d = node_to_state_to_weight[node]
+        if not d:
+            raise ValueError('for one of the nodes, no state was observed')
+        total_weight = sum(d.values())
+        if not total_weight:
+            raise NumericalZeroProb(
+                    'for one of the nodes, '
+                    'the sum of weights of observed states is zero')
+        distn = dict((n, w / total_weight) for n, w in d.items())
+        node_to_distn[node] = distn
+
+    # Return the map from node to distribution.
+    return node_to_distn
 
 
 #XXX add tests

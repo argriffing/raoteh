@@ -14,7 +14,7 @@ from raoteh.sampler._mjp import (
             get_total_rates, get_conditional_transition_matrix)
 
 
-class TestMJP(TestCase):
+class TestMarkovJumpProcess(TestCase):
 
     def test_get_total_rates(self):
         Q = nx.DiGraph()

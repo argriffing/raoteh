@@ -11,11 +11,11 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
 from raoteh.sampler._mc import (
-        get_history_log_likelihood,
+        get_history_log_likelihood, get_node_to_distn_naive,
         )
 
 
-class TestMJP(TestCase):
+class TestMarkovChain(TestCase):
 
     def test_history_log_likelihood_P_default(self):
         T = nx.Graph()
@@ -40,6 +40,34 @@ class TestMJP(TestCase):
                 T, node_to_state, root, root_distn, P_default=P)
         desired = 4 * np.log(0.5)
         assert_equal(actual, desired)
+
+    def test_node_to_distn_naive(self):
+        # Test the marginal distributions of node states.
+
+        # Try an example where no state is initially known,
+        # but for which the transition matrix will cause
+        # the joint distribution of states at all nodes to be
+        # all in the same state.
+        # This will cause all states to have the same distribution
+        # as the root distribution.
+        nstates = 3
+        states = range(nstates)
+        P = nx.DiGraph()
+        P.add_weighted_edges_from([(s, s, 1) for s in states])
+        T = nx.Graph()
+        T.add_edge(0, 1)
+        T.add_edge(0, 2)
+        T.add_edge(0, 3)
+        root = 0
+        node_to_allowed_states = dict((n, set(states)) for n in T)
+        for root_distn in (
+                {0 : 0.10, 1 : 0.40, 2 : 0.50},
+                {0 : 0.25, 1 : 0.50, 2 : 0.25},
+                ):
+            node_to_distn = get_node_to_distn_naive(T, node_to_allowed_states,
+                    root, root_distn, P)
+            for node, distn in node_to_distn.items():
+                assert_equal(distn, root_distn)
 
     def test_marginal_distributions(self):
         # Test the marginal distributions of node states.
