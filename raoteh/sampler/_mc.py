@@ -517,51 +517,46 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
         # Compute the root prior distribution at the root separately.
         if node == root:
             prior_distn = prior_root_distn
+            if prior_distn is None:
+                if len(set(node_to_pmap[node])) == 1:
+                    state = get_first_element(node_to_pmap[node])
+                    if node_to_pmap[node][state]:
+                        node_to_distn[node] = {state : 1.0}
+                    else:
+                        raise NumericalZeroProb
+                else:
+                    raise StructuralZeroProb
+            else:
+                distn = get_zero_step_posterior_distn(
+                        prior_distn, node_to_pmap[node])
         else:
             parent_node = predecessors[node]
             parent_distn = node_to_distn[parent_node]
 
-            # This is essentially a sparse matrix vector multiplication.
+            # For each parent state,
+            # get the distribution over child states;
+            # this distribution will include both the P matrix
+            # and the pmap of the child node.
             P = T[parent_node][node]['P']
-            prior_distn = defaultdict(float)
+            distn = defaultdict(float)
             for sa, pa in parent_distn.items():
-                valid_states = set(P[sa]) & set(node_to_pmap[node])
 
-                """
-                # Use the conditional transition.
-                cond_weight = {}
-                for sb in valid_states:
-                    cond_weight[sb] = P[sa][sb]['weight']
-                total = np.sum(cond_weight.values())
-                pairs = cond_weight.items()
-                cond_distn = dict((sb, w / total) for sb, w in pairs)
-                """
+                # Construct the conditional transition probabilities.
+                feasible_sb = set(P[sa]) & set(node_to_pmap[node])
+                sb_weights = {}
+                for sb in feasible_sb:
+                    a = P[sa][sb]['weight']
+                    b = node_to_pmap[node][sb]
+                    sb_weights[sb] = a*b
+                tot = np.sum(sb_weights.values())
+                sb_distn = dict((sb, w / tot) for sb, w in sb_weights.items())
 
-                for sb in valid_states:
-                    pab = P[sa][sb]['weight']
-                    #pab = cond_distn[sb]
-                    prior_distn[sb] += pa * pab
-            prior_distn = dict(prior_distn)
-            #XXX
-            print(np.sum(prior_distn.values()))
+                # Add to the marginal distn.
+                for sb, pb in sb_distn.items():
+                    distn[sb] += pa * pb
 
-        # Compute the posterior distribution.
-        # This accounts for the marginal distribution at the parent node,
-        # the matrix of transition probabilities between the parent node
-        # and the current node, and the subtree likelihood conditional
-        # on the state of the current node.
-        if prior_distn is None:
-            if len(set(node_to_pmap[node])) == 1:
-                state = get_first_element(node_to_pmap[node])
-                if node_to_pmap[node][state]:
-                    node_to_distn[node] = {state : 1.0}
-                else:
-                    raise NumericalZeroProb
-            else:
-                raise StructuralZeroProb
-        else:
-            node_to_distn[node] = get_zero_step_posterior_distn(
-                    prior_distn, node_to_pmap[node])
+        # Set the node_to_distn.
+        node_to_distn[node] = distn
 
     # Return the marginal state distributions at nodes.
     return node_to_distn
