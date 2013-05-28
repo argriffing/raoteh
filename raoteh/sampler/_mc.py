@@ -373,6 +373,7 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
     return node_to_distn
 
 
+
 def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
         root, prior_root_distn=None):
     """
@@ -461,8 +462,83 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
     return node_to_distn
 
 
+def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
+        root, prior_root_distn, P_default=None):
+    """
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices P.
+    node_to_allowed_states : dict
+        Map from node to collection of allowed states.
+    root : integer
+        Root node.
+    prior_root_distn : dict
+        A finite distribution over root states.
+    P_default : weighted directed networkx graph, optional
+        A default universal probability transition matrix.
+
+    Returns
+    -------
+    T_aug : undirected networkx graph
+        A tree whose edges are annotated with sparse joint endpoint
+        state distributions as networkx digraphs.
+        These annotations use the attribute 'J' which
+        is supposed to mean 'joint' and which is writeen in
+        single letter caps reminiscent of matrix notation.
+
+    See also
+    --------
+    get_joint_endpoint_distn
+
+    """
+    T_aug = nx.Graph()
+    for na, nb in nx.bfs_edges(T, root):
+        T_aug.add_edge(na, nb, J=nx.DiGraph())
+    nodes, allowed_states = zip(*node_to_allowed_states.items())
+    for assignment in itertools.product(*allowed_states):
+
+        # Get the map corresponding to the assignment.
+        node_to_state = dict(zip(nodes, assignment))
+
+        # Compute the log likelihood for the assignment.
+        # If the log likelihood cannot be computed,
+        # then skip to the next state assignment.
+        try:
+            ll = get_history_log_likelihood(
+                    T, node_to_state, root, prior_root_distn, P_default)
+        except StructuralZeroProb as e:
+            continue
+
+        # Add the likelihood to weights of ordered node pairs on edges.
+        likelihood = np.exp(ll)
+        for na, nb in nx.bfs_edges(T, root):
+            J = T_aug[na][nb]['J']
+            sa = node_to_state[na]
+            sb = node_to_state[nb]
+            if not J.has_edge(sa, sb):
+                J.add_edge(sa, sb, weight=0.0)
+            J[sa][sb]['weight'] += likelihood
+
+    # For each edge, normalize the distribution over ordered state pairs.
+    for na, nb in nx.bfs_edges(T, root):
+        J = T_aug[na][nb]['J']
+        weights = []
+        for sa, sb in J.edges():
+            weights.append(J[sa][sb]['weight'])
+        if not weights:
+            raise Exception('internal error')
+        total_weight = np.sum(weights)
+        for sa, sb in J.edges():
+            J[sa][sb]['weight'] /= total_weight
+    
+    # Return the tree with the sparse joint distributions on edges.
+    return T_aug
+
+
 # XXX add tests
-def get_joint_endpoint_state_distn(T, node_to_pmap, node_to_distn, root):
+def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
     """
 
     Parameters
@@ -504,7 +580,7 @@ def get_joint_endpoint_state_distn(T, node_to_pmap, node_to_distn, root):
                 weighted_edges.append((sa, sb, joint_weight))
                 total_weight += joint_weight
         for sa, sb, weight in weighted_edges:
-            J.add_edge(sa, sb, weight / total_weight)
+            J.add_edge(sa, sb, weight = weight / total_weight)
         T_aug.add_edge(na, nb, J=J)
     return T_aug
 

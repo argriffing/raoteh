@@ -15,7 +15,9 @@ from numpy.testing import (run_module_suite, TestCase,
 from raoteh.sampler._mc import (
         get_history_log_likelihood, get_node_to_distn_naive, get_node_to_distn,
         construct_node_to_restricted_pmap,
+        get_joint_endpoint_distn_naive, get_joint_endpoint_distn,
         )
+        
 
 
 def _get_random_branching_tree(branching_distn, maxnodes=None):
@@ -152,6 +154,20 @@ def _assert_distn_allclose(da, db):
     db_vector = np.array(
             [v for k, v in sorted(db.items())], dtype=float)
     assert_allclose(da_vector, db_vector)
+
+
+def _assert_nx_matrix_allclose(U, V):
+    # This is a helper function for testing.
+    assert_equal(set(U), set(V))
+    assert_equal(set(U.edges()), set(V.edges()))
+    U_weights = []
+    V_weights = []
+    for a, b in U.edges():
+        U_weights.append(U[a][b]['weight'])
+        V_weights.append(V[a][b]['weight'])
+    u = np.array(U_weights, dtype=float)
+    v = np.array(V_weights, dtype=float)
+    assert_allclose(u, v)
 
 
 class TestMarkovChain(TestCase):
@@ -293,9 +309,31 @@ class TestMarkovChain(TestCase):
                 distn_fast = node_to_distn_fast[node]
                 _assert_distn_allclose(distn_naive, distn_fast)
 
-    def test_joint_endpoint_distributions(self):
-        # Test the marginal distributions of node states.
-        pass
+    def test_joint_endpoint_distn(self):
+        # Test joint endpoint state distributions on edges.
+        nstates = 4
+        nsamples = 10
+        for i in range(nsamples):
+            info = _get_random_test_setup(nstates)
+            T, root, root_distn, node_to_allowed_states = info
+            assert_equal(len(T), len(node_to_allowed_states))
+            assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
+            T_aug_naive = get_joint_endpoint_distn_naive(
+                    T, node_to_allowed_states, root, root_distn)
+            node_to_pmap = construct_node_to_restricted_pmap(
+                    T, root, node_to_allowed_states)
+            node_to_distn = get_node_to_distn(
+                    T, node_to_allowed_states, node_to_pmap,
+                    root, root_distn)
+            T_aug_fast = get_joint_endpoint_distn(
+                    T, node_to_pmap, node_to_distn, root)
+            for na, nb in nx.bfs_edges(T, root):
+                assert_(T_aug_naive.has_edge(na, nb))
+                assert_(T_aug_fast.has_edge(na, nb))
+            for na, nb in nx.bfs_edges(T, root):
+                J_naive = T_aug_naive[na][nb]['J']
+                J_fast = T_aug_fast[na][nb]['J']
+                _assert_nx_matrix_allclose(J_naive, J_fast)
 
 
 if __name__ == '__main__':
