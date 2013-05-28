@@ -234,7 +234,7 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
         raise StructuralZeroProb(
                 'no state is in the intersection of prior feasible '
                 'and observation feasible states')
-    d = dict((n, prior_distn[n] * pmap[n]) for n in feasible_states)
+    d = dict((s, prior_distn[s] * pmap[s]) for s in feasible_states)
     total_weight = sum(d.values())
     if not total_weight:
         raise NumericalZeroProb('numerical zero probability error')
@@ -422,8 +422,7 @@ def get_node_to_distn(T, node_to_pmap, root, prior_root_distn=None):
             prior_distn = defaultdict(float)
             for sa, pa in parent_distn.items():
                 for sb in P[sa]:
-                    edge = P[sa][sb]
-                    pab = edge['weight']
+                    pab = P[sa][sb]['weight']
                     prior_distn[sb] += pa * pab
             prior_distn = dict(prior_distn)
 

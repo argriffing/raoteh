@@ -99,7 +99,7 @@ def _get_random_transition_matrix(nstates):
     return P
 
 
-def _get_random_test_setup():
+def _get_random_test_setup(nstates):
     """
 
     Returns
@@ -121,13 +121,12 @@ def _get_random_test_setup():
 
     # For each edge on the tree,
     # sample a random sparse state transition matrix.
-    nstates = 4
     for na, nb in nx.bfs_edges(T, root):
         T[na][nb]['P'] = _get_random_transition_matrix(nstates)
 
     # Sample a root distribution.
     # It should be a little bit sparse, for testing.
-    weights = np.random.exponential(size=4)
+    weights = np.random.exponential(size=nstates)
     imissing = np.random.randint(nstates)
     pairs = [(i, w) for i, w in enumerate(weights) if i != imissing]
     weights[imissing] = 0
@@ -226,10 +225,48 @@ class TestMarkovChain(TestCase):
         # It checks the naive way of computing node_to_distn against
         # the more clever fast way to compute node_to_distn.
         # The two methods should give the same answer.
+        nstates = 4
         nsamples = 10
         for i in range(nsamples):
-            info = _get_random_test_setup()
+            info = _get_random_test_setup(nstates)
             T, root, root_distn, node_to_allowed_states = info
+            assert_equal(len(T), len(node_to_allowed_states))
+            assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
+
+            # Get the node distributions naively.
+            node_to_distn_naive = get_node_to_distn_naive(
+                    T, node_to_allowed_states, root, root_distn)
+
+            # Get the node distributions more cleverly,
+            # through the restricted pmap.
+            node_to_pmap = construct_node_to_restricted_pmap(
+                    T, root, node_to_allowed_states)
+            node_to_distn_fast = get_node_to_distn(
+                    T, node_to_pmap, root, root_distn)
+
+            # Convert distributions to ndarrays for approximate comparison.
+            for node in T:
+                distn_naive = node_to_distn_naive[node]
+                distn_fast = node_to_distn_fast[node]
+                distn_naive_vector = np.array(
+                        [v for k, v in sorted(distn_naive.items())])
+                distn_fast_vector = np.array(
+                        [v for k, v in sorted(distn_fast.items())])
+                assert_allclose(distn_naive_vector, distn_fast_vector)
+
+    def test_node_to_distn_unrestricted(self):
+        # Test the marginal distributions of node states.
+
+        # This test uses a complicated tree with complicated transitions.
+        # It checks the naive way of computing node_to_distn against
+        # the more clever fast way to compute node_to_distn.
+        # The two methods should give the same answer.
+        nstates = 4
+        nsamples = 10
+        for i in range(nsamples):
+            info = _get_random_test_setup(nstates)
+            T, root, root_distn, node_to_allowed_states = info
+            node_to_allowed_states = dict((n, set(range(nstates))) for n in T)
             assert_equal(len(T), len(node_to_allowed_states))
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
 
