@@ -552,7 +552,7 @@ def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
     node_to_distn : dict
         Conditional marginal state distribution at each node.
     root : integer
-        Root state.
+        Root node.
 
     Returns
     -------
@@ -568,19 +568,28 @@ def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
     for na, nb in nx.bfs_edges(T, root):
         pmap = node_to_pmap[nb]
         P = T[na][nb]['P']
-        J = nx.DiGraph()
-        total_weight = 0.0
         weighted_edges = []
         for sa, pa in node_to_distn[na].items():
-            feasible_states = set(P[sa]) & set(node_to_pmap[nb])
-            for sb in feasible_states:
-                edge = P[sa][sb]
-                pab = edge['weight']
-                joint_weight = pa * pab * pmap[sb]
-                weighted_edges.append((sa, sb, joint_weight))
-                total_weight += joint_weight
-        for sa, sb, weight in weighted_edges:
-            J.add_edge(sa, sb, weight = weight / total_weight)
+
+            # Construct the conditional transition probabilities.
+            feasible_sb = set(P[sa]) & set(pmap)
+            sb_weights = {}
+            for sb in feasible_sb:
+                a = P[sa][sb]['weight']
+                b = pmap[sb]
+                sb_weights[sb] = a*b
+            tot = np.sum(sb_weights.values())
+            sb_distn = dict((sb, w / tot) for sb, w in sb_weights.items())
+
+            # Add to the joint distn.
+            for sb, pb in sb_distn.items():
+                weighted_edges.append((sa, sb, pa * pb))
+
+        # Add the joint distribution.
+        J = nx.DiGraph()
+        J.add_weighted_edges_from(weighted_edges)
         T_aug.add_edge(na, nb, J=J)
+
+    # Return the augmented tree.
     return T_aug
 
