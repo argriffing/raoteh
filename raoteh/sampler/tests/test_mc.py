@@ -15,7 +15,6 @@ from numpy.testing import (run_module_suite, TestCase,
 from raoteh.sampler._mc import (
         get_history_log_likelihood, get_node_to_distn_naive, get_node_to_distn,
         construct_node_to_restricted_pmap,
-        construct_node_to_conditional_pmap,
         )
 
 
@@ -244,7 +243,6 @@ class TestMarkovChain(TestCase):
             # Get the node distributions more cleverly,
             # through the restricted pmap.
             node_to_pmap = construct_node_to_restricted_pmap(
-            #node_to_pmap = construct_node_to_conditional_pmap(
                     T, root, node_to_allowed_states)
             node_to_distn_fast = get_node_to_distn(
                     T, node_to_allowed_states, node_to_pmap,
