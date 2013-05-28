@@ -283,7 +283,8 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
     log_likelihood = 0.0
 
     # Add the log likelihood contribution from the root.
-    log_likelihood += np.log(root_distn[root])
+    root_state = node_to_state[root]
+    log_likelihood += np.log(root_distn[root_state])
 
     # Add the log likelihood contribution from state transitions.
     for na, nb in nx.bfs_edges(T, root):

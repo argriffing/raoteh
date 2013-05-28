@@ -66,8 +66,14 @@ class TestMarkovChain(TestCase):
                 ):
             node_to_distn = get_node_to_distn_naive(T, node_to_allowed_states,
                     root, root_distn, P)
+
+            # Convert distributions to ndarrays for approximate comparison.
+            root_distn_vector = np.array(
+                    [v for k, v in sorted(root_distn.items())], dtype=float)
             for node, distn in node_to_distn.items():
-                assert_equal(distn, root_distn)
+                distn_vector = np.array(
+                        [v for k, v in sorted(distn.items())], dtype=float)
+                assert_allclose(distn_vector, root_distn_vector)
 
     def test_marginal_distributions(self):
         # Test the marginal distributions of node states.
