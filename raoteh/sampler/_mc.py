@@ -3,7 +3,7 @@ Functions related to a Markov process in discrete time and space.
 
 This module assumes a rooted tree-shaped dependence structure.
 For continuous time processes (as opposed to discrete time processes)
-see the Markov jump process module.
+use the Markov jump process module instead.
 Everything related to hold times, dwell times, instantaneous rates,
 total rates, and edges or lengths or expectations associated with edges
 is out of the scope of this module.
@@ -22,6 +22,7 @@ from raoteh.sampler._util import (
 
 
 __all__ = []
+
 
 
 def construct_node_to_pmap(T, P, node_to_state, root):
@@ -238,6 +239,87 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
         raise NumericalZeroProb('numerical zero probability error')
     posterior_distn = dict((k, v / total_weight) for k, v in d.items())
     return posterior_distn
+
+
+def get_history_log_likelihood(T, node_to_state, root, root_distn,
+        P_default=None):
+    """
+    Compute the log likelihood for a fully augmented history.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        Tree annotated with transition matrices.
+    node_to_state : dict
+        Each node in the tree is mapped to an integer state.
+    root : integer
+        Root node.
+    root_distn : dict
+        Sparse prior distribution over states at the root.
+
+    Returns
+    -------
+    log_likelihood : float
+        The log likelihood of the fully augmented history.
+
+    """
+    # Check that the set of nodes for which the state is available
+    # exactly matches the set of nodes in the tree.
+    if set(T) != set(node_to_state):
+        raise ValueError(
+                'the set of nodes with known states in the history '
+                'should exactly match the set of known states on the tree')
+
+    # Check the root state.
+    if root not in root_distn:
+        raise StructuralZeroProb(
+                'the prior state distribution at the root '
+                'does not include the root state in this history')
+
+    # Initialize the log likelihood.
+    log_likelihood = 0.0
+
+    # Add the log likelihood contribution from the root.
+    log_likelihood += np.log(root_distn[root])
+
+    # Add the log likelihood contribution from state transitions.
+    for na, nb in nx.bfs_edges(T, root):
+        edge = T[na][nb]
+        P = edge.get('P', P_default)
+        if P is None:
+            raise ValueError('undefined transition matrix on this edge')
+        sa = node_to_state[na]
+        sb = node_to_state[nb]
+        if not P.has_edge(sa, sb):
+            raise StructuralZeroError(
+                    'the states of the endpoints of an edge '
+                    'are incompatible with the transition matrix on the edge')
+        p = P[sa][sb]['weight']
+        log_likelihood += np.log(p)
+
+    # Return the log likelihood.
+    return log_likelihood
+
+
+def get_node_to_distn_naive(T, node_to_allowed_states,
+        root, prior_root_distn=None):
+    """
+    Get marginal state distributions at nodes in a tree.
+
+    See also
+    --------
+    get_node_to_distn
+
+    """
+    node_to_state_to_weight = {}
+
+    nodes, allowed_states = zip(*node_to_allowed_states.items())
+    for assignment in itertools.product(*allowed_states):
+
+        # Compute the likelihood for the assignment.
+
+        # 
+        pass
 
 
 #XXX add tests
