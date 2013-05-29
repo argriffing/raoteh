@@ -17,10 +17,83 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
+def get_forward_sample(T, Q, root, root_distn):
+    """
+    Use simple unconditional forward sampling to get a history sample.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree.
+    Q : directed weighted networkx graph
+        A sparse rate matrix.
+    root : integer, optional
+        Root node.
+    root_distn : dict
+        Map from root state to probability.
+
+    Returns
+    -------
+    T_out : weighted undirected acyclic networkx graph
+        Weighted tree with extra degree-2 nodes
+        and with edges annotated with weights and with sampled states.
+
+    """
+    # Summarize the rate matrix.
+    total_rates = _mjp.get_total_rates(Q)
+    P = _mjp.get_conditional_transition_matrix(Q, total_rates)
+
+    # Initialize some stuff.
+    next_node = max(T) + 1
+
+    # Sample the root state.
+    states, probs = zip(*root_distn.items())
+    root_state = np.random.choice(states, p=probs)
+
+    # The node_to_state is for internal bookkeeping.
+    node_to_state = {root : root_state}
+
+    # Build the list of weighted edges.
+    annotated_edges = []
+    for a, b in nx.bfs_edges(T, root):
+        state = node_to_state[a]
+        weight = T[a][b]['weight']
+        prev_node = a
+        total_dwell = 0.0
+        if state in total_rates:
+            rate = total_rates[state]
+            while True:
+                dwell = random.expovariate(rate)
+                if total_dwell + dwell > weight:
+                    break
+                total_dwell += dwell
+                mid_node = next_node
+                next_node += 1
+                annotated_edge = (prev_node, mid_node, state, dwell)
+                annotated_edges.append(annotated_edge)
+                prev_node = mid_node
+
+                # Sample the state.
+                states = [s for s in P[state]]
+                probs = [P[state][s]['weight'] for s in states]
+                state = np.random.choice(states, p=probs)
+                node_to_state[prev_node] = state
+
+        # Add the last segment of the branch.
+        node_to_state[b] = state
+        annotated_edges.append((prev_node, b, state, weight - total_dwell))
+
+    # Return the history sample as an augmented tree.
+    T_out = nx.Graph()
+    for a, b, state, weight in annotated_edges:
+        T_out.add_edge(a, b, state=state, weight=weight)
+    return T_out
+
+
 def gen_histories(T, Q, node_to_state, uniformization_factor=2,
         root=None, root_distn=None):
     """
-    Yield history samples on trees.
+    Use the Rao-Teh method to sample histories on trees.
 
     Edges of the yielded trees will be augmented
     with weights and states.

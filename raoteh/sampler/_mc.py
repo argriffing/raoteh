@@ -537,7 +537,6 @@ def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
     return T_aug
 
 
-# XXX add tests
 def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
     """
 

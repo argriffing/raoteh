@@ -389,6 +389,47 @@ class TestResamplePoisson(TestCase):
         assert_allclose(T.size(weight='weight'), T_aug.size(weight='weight'))
 
 
+class TestForwardSample(TestCase):
+
+    def test_forward_sample(self):
+
+        # Define a tree with branch lengths.
+        T = nx.Graph()
+        T.add_edge(0, 12, weight=1.0)
+        T.add_edge(0, 23, weight=2.0)
+        T.add_edge(0, 33, weight=1.0)
+
+        # Define a rate matrix.
+        Q = nx.DiGraph()
+        Q.add_edge(0, 1, weight=4)
+        Q.add_edge(0, 2, weight=2)
+        Q.add_edge(1, 0, weight=1)
+        Q.add_edge(1, 2, weight=2)
+        Q.add_edge(2, 1, weight=1)
+        Q.add_edge(2, 0, weight=2)
+
+        # Define a root and a root distribution.
+        root = 0
+        root_distn = {0 : 0.25, 1 : 0.5, 2 : 0.25}
+
+        # Generate a few histories.
+        nsamples = 10
+        for i in range(nsamples):
+            T_aug = _sampler.get_forward_sample(T, Q, root, root_distn)
+
+            # Check that the weighted size is constant.
+            assert_allclose(
+                    T.size(weight='weight'), T_aug.size(weight='weight'))
+
+            # Check that for each node in the initial tree,
+            # all adjacent edges in the augmented tree have the same state.
+            for a in T:
+                states = set()
+                for b in T_aug.neighbors(a):
+                    states.add(T_aug[a][b]['state'])
+                assert_equal(len(states), 1)
+
+
 class TestRaoTehSampler(TestCase):
 
     def test_gen_histories(self):
