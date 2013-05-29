@@ -15,6 +15,7 @@ from numpy.testing import (run_module_suite, TestCase,
         decorators)
 
 from scipy import special
+from scipy import optimize
 
 from raoteh.sampler import _sampler
 from raoteh.sampler._util import (
@@ -22,6 +23,181 @@ from raoteh.sampler._util import (
 from raoteh.sampler._mjp import (
             get_history_dwell_times, get_history_root_state_and_transitions,
             get_total_rates, get_conditional_transition_matrix)
+
+
+def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
+    """
+
+    Returns
+    -------
+    primary_distn : dict
+        Primary process state distribution.
+    Q : weighted directed networkx graph
+        Sparse primary process transition rate matrix.
+    primary_to_part : dict
+        Maps primary state to tolerance class.
+    compound_to_primary : list
+        foo
+    compound_to_tolerances : list
+        foo
+    compound_distn : dict
+        foo
+    Q_compound : weighted directed networkx graph
+        Sparse compound process transition rate matrix.
+
+    """
+    # Define a distribution over some primary states.
+    nprimary = 4
+    primary_distn = {
+            0 : 0.1,
+            1 : 0.2,
+            2 : 0.3,
+            3 : 0.4}
+
+    # Define the transition rates.
+    primary_transition_rates = [
+            (0, 1, 2 * primary_distn[1]),
+            (1, 0, 2 * primary_distn[0]),
+            (1, 2, primary_distn[2]),
+            (2, 1, primary_distn[1]),
+            (2, 3, 2 * primary_distn[3]),
+            (3, 2, 2 * primary_distn[2]),
+            (3, 0, primary_distn[0]),
+            (0, 3, primary_distn[3]),
+            ]
+
+    # Define the primary process through its transition rate matrix.
+    Q = nx.DiGraph()
+    Q.add_weighted_edges_from(primary_transition_rates)
+
+    # Define some tolerance process stuff.
+    total_tolerance_rate = tolerance_rate_on + tolerance_rate_off
+    tolerance_distn = {
+            0 : tolerance_rate_off / total_tolerance_rate,
+            1 : tolerance_rate_on / total_tolerance_rate}
+
+    # Define a couple of tolerance classes.
+    nparts = 2
+    primary_to_part = {
+            0 : 0,
+            1 : 0,
+            2 : 1,
+            3 : 1}
+
+    # Define a compound state space.
+    compound_to_primary = []
+    compound_to_tolerances = []
+    for primary, tolerances in itertools.product(
+            range(nprimary),
+            itertools.product((0, 1), repeat=nparts)):
+        compound_to_primary.append(primary)
+        compound_to_tolerances.append(tolerances)
+
+    # Define the sparse distribution over compound states.
+    compound_distn = {}
+    for i, (primary, tolerances) in enumerate(
+            zip(compound_to_primary, compound_to_tolerances)):
+        part = primary_to_part[primary]
+        if tolerances[part] == 1:
+            p_primary = primary_distn[primary]
+            p_tolerances = 1.0
+            for tolerance_class, tolerance_state in enumerate(tolerances):
+                if tolerance_class != part:
+                    p_tolerances *= tolerance_distn[tolerance_state]
+            compound_distn[i] = p_primary * p_tolerances
+
+    # Check the number of entries in the compound state distribution.
+    assert_equal(len(compound_distn), nprimary * (1 << (nparts - 1)))
+
+    # Check that the distributions have the correct normalization.
+    assert_allclose(sum(primary_distn.values()), 1)
+    assert_allclose(sum(tolerance_distn.values()), 1)
+    assert_allclose(sum(compound_distn.values()), 1)
+
+    # Define the compound transition rate matrix.
+    # Use compound_distn to avoid formal states with zero probability.
+    # This is slow, but we do not need to be fast.
+    Q_compound = nx.DiGraph()
+    for i in compound_distn:
+        for j in compound_distn:
+            if i == j:
+                continue
+            i_prim = compound_to_primary[i]
+            j_prim = compound_to_primary[j]
+            i_tols = compound_to_tolerances[i]
+            j_tols = compound_to_tolerances[j]
+            tol_pairs = list(enumerate(zip(i_tols, j_tols)))
+            tol_diffs = [(k, x, y) for k, (x, y) in tol_pairs if x != y]
+            tol_hdist = len(tol_diffs)
+
+            # Look for a tolerance state change.
+            # Do not allow simultaneous primary and tolerance changes.
+            # Do not allow more than one simultaneous tolerance change.
+            # Do not allow changes to the primary tolerance class.
+            if tol_hdist > 0:
+                if i_prim != j_prim:
+                    continue
+                if tol_hdist > 1:
+                    continue
+                part, i_tol, j_tol = tol_diffs[0]
+                if part == primary_to_part[i_prim]:
+                    continue
+
+                # Add the transition rate.
+                if j_tol:
+                    weight = tolerance_rate_on
+                else:
+                    weight = tolerance_rate_off
+                Q_compound.add_edge(i, j, weight=weight)
+
+            # Look for a primary state change.
+            # Do not allow simultaneous primary and tolerance changes.
+            # Do not allow a change to a non-tolerated primary class.
+            # Do not allow transitions that have zero rate
+            # in the primary process.
+            if i_prim != j_prim:
+                if tol_hdist > 0:
+                    continue
+                if not i_tols[primary_to_part[j_prim]]:
+                    continue
+                if not Q.has_edge(i_prim, j_prim):
+                    continue
+                
+                # Add the primary state transition rate.
+                weight = Q[i_prim][j_prim]['weight']
+                Q_compound.add_edge(i, j, weight=weight)
+
+    return (primary_distn, Q, primary_to_part,
+            compound_to_primary, compound_to_tolerances, compound_distn,
+            Q_compound)
+
+
+class TestExpectationMaximization(TestCase):
+
+    def test_expectation_maximization(self):
+        # It should be possible to use expectation maximization
+        # to find locally optimal rate-on and rate-off values
+        # in the sense of maximum likelihood.
+        # Compare to a brute force search using scipy.optimize.
+
+        # Define the tolerance process rates.
+        rate_on = 0.5
+        rate_off = 1.5
+
+        # Define some other properties of the process,
+        # in a way that is not object-oriented.
+        (primary_distn, Q, primary_to_part,
+                compound_to_primary, compound_to_tolerances, compound_distn,
+                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+
+        # Summarize properties of the process.
+        nprimary = len(primary_distn)
+        nparts = len(set(primary_to_part.values()))
+        total_tolerance_rate = rate_on + rate_off
+        tolerance_distn = {
+                0 : rate_off / total_tolerance_rate,
+                1 : rate_on / total_tolerance_rate}
+
 
 
 class TestFullyAugmentedLikelihood(TestCase):
@@ -33,128 +209,23 @@ class TestFullyAugmentedLikelihood(TestCase):
         # I think that these two parameters are associated
         # with three sufficient statistics.
 
-        # Define a distribution over some primary states.
-        nprimary = 4
-        primary_distn = {
-                0 : 0.1,
-                1 : 0.2,
-                2 : 0.3,
-                3 : 0.4}
+        # Define the tolerance process rates.
+        rate_on = 0.5
+        rate_off = 1.5
 
-        # Define the transition rates.
-        primary_transition_rates = [
-                (0, 1, 2 * primary_distn[1]),
-                (1, 0, 2 * primary_distn[0]),
-                (1, 2, primary_distn[2]),
-                (2, 1, primary_distn[1]),
-                (2, 3, 2 * primary_distn[3]),
-                (3, 2, 2 * primary_distn[2]),
-                (3, 0, primary_distn[0]),
-                (0, 3, primary_distn[3]),
-                ]
+        # Define some other properties of the process,
+        # in a way that is not object-oriented.
+        (primary_distn, Q, primary_to_part,
+                compound_to_primary, compound_to_tolerances, compound_distn,
+                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
 
-        # Define the primary process through its transition rate matrix.
-        Q = nx.DiGraph()
-        Q.add_weighted_edges_from(primary_transition_rates)
-
-        # Define the tolerance birth and death rates.
-        tolerance_rate_on = 0.5
-        tolerance_rate_off = 1.5
-        total_tolerance_rate = tolerance_rate_on + tolerance_rate_off
+        # Summarize the other properties.
+        nprimary = len(primary_distn)
+        nparts = len(set(primary_to_part.values()))
+        total_tolerance_rate = rate_on + rate_off
         tolerance_distn = {
-                0 : tolerance_rate_off / total_tolerance_rate,
-                1 : tolerance_rate_on / total_tolerance_rate}
-
-        # Define a couple of tolerance classes.
-        nparts = 2
-        primary_to_part = {
-                0 : 0,
-                1 : 0,
-                2 : 1,
-                3 : 1}
-
-        # Define a compound state space.
-        compound_to_primary = []
-        compound_to_tolerances = []
-        for primary, tolerances in itertools.product(
-                range(nprimary),
-                itertools.product((0, 1), repeat=nparts)):
-            compound_to_primary.append(primary)
-            compound_to_tolerances.append(tolerances)
-
-        # Define the sparse distribution over compound states.
-        compound_distn = {}
-        for i, (primary, tolerances) in enumerate(
-                zip(compound_to_primary, compound_to_tolerances)):
-            part = primary_to_part[primary]
-            if tolerances[part] == 1:
-                p_primary = primary_distn[primary]
-                p_tolerances = 1.0
-                for tolerance_class, tolerance_state in enumerate(tolerances):
-                    if tolerance_class != part:
-                        p_tolerances *= tolerance_distn[tolerance_state]
-                compound_distn[i] = p_primary * p_tolerances
-
-        # Check the number of entries in the compound state distribution.
-        assert_equal(len(compound_distn), nprimary * (1 << (nparts - 1)))
-
-        # Check that the distributions have the correct normalization.
-        assert_allclose(sum(primary_distn.values()), 1)
-        assert_allclose(sum(tolerance_distn.values()), 1)
-        assert_allclose(sum(compound_distn.values()), 1)
-
-        # Define the compound transition rate matrix.
-        # Use compound_distn to avoid formal states with zero probability.
-        # This is slow, but we do not need to be fast.
-        Q_compound = nx.DiGraph()
-        for i in compound_distn:
-            for j in compound_distn:
-                if i == j:
-                    continue
-                i_prim = compound_to_primary[i]
-                j_prim = compound_to_primary[j]
-                i_tols = compound_to_tolerances[i]
-                j_tols = compound_to_tolerances[j]
-                tol_pairs = list(enumerate(zip(i_tols, j_tols)))
-                tol_diffs = [(k, x, y) for k, (x, y) in tol_pairs if x != y]
-                tol_hdist = len(tol_diffs)
-
-                # Look for a tolerance state change.
-                # Do not allow simultaneous primary and tolerance changes.
-                # Do not allow more than one simultaneous tolerance change.
-                # Do not allow changes to the primary tolerance class.
-                if tol_hdist > 0:
-                    if i_prim != j_prim:
-                        continue
-                    if tol_hdist > 1:
-                        continue
-                    part, i_tol, j_tol = tol_diffs[0]
-                    if part == primary_to_part[i_prim]:
-                        continue
-
-                    # Add the transition rate.
-                    if j_tol:
-                        weight = tolerance_rate_on
-                    else:
-                        weight = tolerance_rate_off
-                    Q_compound.add_edge(i, j, weight=weight)
-
-                # Look for a primary state change.
-                # Do not allow simultaneous primary and tolerance changes.
-                # Do not allow a change to a non-tolerated primary class.
-                # Do not allow transitions that have zero rate
-                # in the primary process.
-                if i_prim != j_prim:
-                    if tol_hdist > 0:
-                        continue
-                    if not i_tols[primary_to_part[j_prim]]:
-                        continue
-                    if not Q.has_edge(i_prim, j_prim):
-                        continue
-                    
-                    # Add the primary state transition rate.
-                    weight = Q[i_prim][j_prim]['weight']
-                    Q_compound.add_edge(i, j, weight=weight)
+                0 : rate_off / total_tolerance_rate,
+                1 : rate_on / total_tolerance_rate}
 
         # Define a tree with edge weights.
         T = nx.Graph()
@@ -264,11 +335,11 @@ class TestFullyAugmentedLikelihood(TestCase):
             # Add the log likelihood contributions that involve
             # the sufficient statistics and the on/off tolerance rates.
             ll_initrans -= special.xlogy(nparts-1, total_tolerance_rate)
-            ll_initrans += special.xlogy(ngains_stat-1, tolerance_rate_on)
-            ll_initrans += special.xlogy(nlosses_stat, tolerance_rate_off)
-            ll_dwell -= tolerance_rate_off * (
+            ll_initrans += special.xlogy(ngains_stat-1, rate_on)
+            ll_initrans += special.xlogy(nlosses_stat, rate_off)
+            ll_dwell -= rate_off * (
                     tolerance_duration_stat - total_tree_length)
-            ll_dwell -= tolerance_rate_on * (
+            ll_dwell -= rate_on * (
                     total_tree_length * nparts - tolerance_duration_stat)
 
             # Add the log likelihood contributions that involve
