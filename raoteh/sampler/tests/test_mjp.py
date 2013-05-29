@@ -58,7 +58,14 @@ class TestMarkovJumpProcess(TestCase):
             for b in range(nstates):
 
                 # Define the states at the two ends of the path.
-                node_to_state = {min(T):a, max(T):b}
+                #node_to_state = {min(T):a, max(T):b}
+                node_to_allowed_states = {
+                        0 : {a},
+                        1 : set(range(nstates)),
+                        2 : set(range(nstates)),
+                        3 : set(range(nstates)),
+                        4 : {b},
+                        }
 
                 # Define the Jukes-Cantor rate matrix.
                 Q = get_jukes_cantor_rate_matrix(nstates)
@@ -76,11 +83,12 @@ class TestMarkovJumpProcess(TestCase):
                 # Check the expected dwell times for various roots.
                 # XXX allow all possible root positions
                 #     when the expectation code becomes more flexible
-                for root in (min(T), max(T)):
+                #for root in (min(T), max(T)):
+                for root in T:
 
                     # Get the expected dwell times by brute force.
                     info = get_expected_history_statistics(
-                            T, Q, node_to_state, root)
+                            T, Q, node_to_allowed_states, root)
                     mjp_expected_dwell_times, mjp_expected_transitions = info
 
                     # Compare to the expected dwell times.

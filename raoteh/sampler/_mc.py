@@ -416,21 +416,22 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
     node_to_distn = {}
     for node in nx.dfs_preorder_nodes(T, root):
 
-        # Compute the root prior distribution at the root separately.
+        # Get the map from state to subtree likelihood.
+        pmap = node_to_pmap[node]
+
+        # Compute the prior distribution at the root separately.
+        # If the prior distribution is not provided,
+        # then treat it as uninformative.
         if node == root:
-            prior_distn = prior_root_distn
-            if prior_distn is None:
-                if len(set(node_to_pmap[node])) == 1:
-                    state = get_first_element(node_to_pmap[node])
-                    if node_to_pmap[node][state]:
-                        distn = {state : 1.0}
-                    else:
-                        raise NumericalZeroProb
-                else:
-                    raise StructuralZeroProb
+            if prior_root_distn is None:
+                if not pmap:
+                    raise StructuralZeroProb('no root state is feasible')
+                total_weight = sum(pmap.values())
+                if not total_weight:
+                    raise NumericalZeroProb('numerical zero probability error')
+                distn = dict((k, v / total_weight) for k, v in pmap.items())
             else:
-                distn = get_zero_step_posterior_distn(
-                        prior_distn, node_to_pmap[node])
+                distn = get_zero_step_posterior_distn(prior_root_distn, pmap)
         else:
             parent_node = predecessors[node]
             parent_distn = node_to_distn[parent_node]

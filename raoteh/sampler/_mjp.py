@@ -188,7 +188,8 @@ def get_history_statistics(T, root=None):
 
 # XXX add tests
 # XXX generalize node_to_state to node_to_allowed_states
-def get_expected_history_statistics(T, Q, node_to_state, root):
+def get_expected_history_statistics(T, Q, node_to_allowed_states,
+        root, root_distn=None):
     """
     This is a soft analog of get_history_statistics.
 
@@ -206,11 +207,13 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
         Weighted tree.
     Q : directed weighted networkx graph
         A sparse rate matrix.
-    node_to_state : dict
-        A map from nodes to states.
-        Nodes with unknown states do not correspond to keys in this map.
+    node_to_allowed_states : dict
+        Maps each node to a set of allowed states.
     root : integer
-        Required to have a known state.
+        Root node.
+    root_distn : dict, optional
+        Sparse distribution over states at the root.
+        This is optional if only one state is allowed at the root.
 
     Returns
     -------
@@ -226,8 +229,6 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
     # Do some input validation for this restricted variant.
     if root not in T:
         raise ValueError('the specified root is not in the tree')
-    if root not in node_to_state:
-        raise ValueError('the root is required to have a known state')
 
     # Convert the sparse rate matrix to a dense ndarray rate matrix.
     states = sorted(Q)
@@ -253,6 +254,7 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
                 P_nx.add_edge(sa, sb, weight=P_dense[a, b])
         T_aug.add_edge(na, nb, P=P_nx)
 
+    """
     # Construct the map from node to allowed state set.
     node_to_allowed_states = {}
     full_state_set = set(states)
@@ -260,6 +262,7 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
         node_to_allowed_states[restricted_node] = {state}
     for unrestricted_node in full_state_set - set(node_to_state):
         node_to_allowed_states[unrestricted_node] = full_state_set
+    """
 
     # Construct the node to pmap dict.
     node_to_pmap = construct_node_to_restricted_pmap(
@@ -268,7 +271,7 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
     # Get the marginal state distribution for each node in the tree,
     # conditional on the known states.
     node_to_distn = get_node_to_distn(
-            T_aug, node_to_allowed_states, node_to_pmap, root)
+            T_aug, node_to_allowed_states, node_to_pmap, root, root_distn)
 
     # For each edge in the tree, get the joint distribution
     # over the states at the endpoints of the edge.

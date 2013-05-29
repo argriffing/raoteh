@@ -493,6 +493,7 @@ class TestRaoTehSampler(TestCase):
         T = nx.Graph()
         T.add_edge(0, 1, weight=t)
         node_to_state = {0:a, 1:b}
+        node_to_allowed_states = {0:{a}, 1:{b}}
         root = 0
 
         # Define the Jukes-Cantor rate matrix.
@@ -519,7 +520,8 @@ class TestRaoTehSampler(TestCase):
             expected_dwell_times[i] = nhistories * interaction / probability
 
         # Get the MJP expected history statistics.
-        info = get_expected_history_statistics(T, Q, node_to_state, root)
+        info = get_expected_history_statistics(
+                T, Q, node_to_allowed_states, root)
         mjp_expected_dwell_times, mjp_expected_transitions = info
 
         # Compare to the expected dwell times.
