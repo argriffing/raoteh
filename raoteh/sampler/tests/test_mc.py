@@ -17,58 +17,8 @@ from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
         get_joint_endpoint_distn_naive, get_joint_endpoint_distn,
         )
-        
 
-
-def _get_random_branching_tree(branching_distn, maxnodes=None):
-    """
-    Eventually try to merge this into networkx.
-
-    Start with a single node.
-    Each node has a random number of descendents
-    drawn from a discrete distribution.
-    An extra descendent is added to the root node.
-
-    Parameters
-    ----------
-    branching_distn : array
-        This defines the distribution of the number of child nodes per node.
-        It is a finite distribution over the first few non-negative integers.
-    maxnodes : integer
-        Cap the number of nodes in the tree.
-
-    Returns
-    -------
-    T : undirected acyclic networkx graph
-        This is a rooted tree with at least one edge.
-        The root of the tree is node 0.
-
-    """
-    # Check the input.
-    if (maxnodes is not None) and (maxnodes < 2):
-        raise ValueError('if maxnodes is not None then it should be >= 2')
-
-    # Initialize.
-    T = nx.Graph()
-    root = 0
-    next_node = 0
-    active_nodes = {0}
-
-    # Keep adding nodes until the cap is reached or all lineages have ended.
-    while active_nodes:
-        node = active_nodes.pop()
-        nbranches = np.random.choice(
-                range(len(branching_distn)), p=branching_distn)
-        if node == root:
-            nbranches += 1
-        for i in range(nbranches):
-            c = next_node
-            next_node += 1
-            T.add_edge(node, c)
-            active_nodes.add(c)
-            if (maxnodes is not None) and (len(T) == maxnodes):
-                return T
-    return T
+from raoteh.sampler._sampler import get_random_branching_tree
 
 
 def _get_random_transition_matrix(nstates):
@@ -118,7 +68,7 @@ def _get_random_test_setup(nstates):
     """
     # Sample a random tree.
     branching_distn = [0.7, 0.1, 0.1, 0.1]
-    T = _get_random_branching_tree(branching_distn, maxnodes=6)
+    T = get_random_branching_tree(branching_distn, maxnodes=6)
     root = 0
 
     # For each edge on the tree,
