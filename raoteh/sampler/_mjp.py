@@ -8,37 +8,22 @@ from collections import defaultdict
 
 import numpy as np
 import networkx as nx
+import scipy.linalg
 
 from raoteh.sampler._mc import (
-        construct_node_to_pmap, get_zero_step_posterior_distn,
+        construct_node_to_pmap,
+        construct_node_to_restricted_pmap,
+        get_zero_step_posterior_distn,
+        get_node_to_distn,
+        get_joint_endpoint_distn,
         )
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_arbitrary_tip)
 
 
 __all__ = []
-
-
-# Define a few helper functions that treat dictionaries and networkx graphs
-# as sparse vectors and matrices with undefined shapes.
-# Maybe this should be more object oriented.
-
-def _mul_dd(da, db):
-    # dict dict multiplication
-    return dict((n, da[n] * db[n]) for n in set(da) & set(db))
-
-def _sum_d(d):
-    # dict sum
-    return sum(d.values())
-
-def _mul_ds(d, s):
-    # dict scalar multiplication
-    return dict((k, v * s) for k, v in d.items())
-
-def _div_ds(d, s):
-    # dict scalar division
-    return dict((k, v / s) for k, v in d.items())
 
 
 
@@ -202,6 +187,7 @@ def get_history_statistics(T, root=None):
 
 
 # XXX add tests
+# XXX generalize node_to_state to node_to_allowed_states
 def get_expected_history_statistics(T, Q, node_to_state, root):
     """
     This is a soft analog of get_history_statistics.
@@ -238,6 +224,8 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
 
     """
     # Do some input validation for this restricted variant.
+    if root not in T:
+        raise ValueError('the specified root is not in the tree')
     if root not in node_to_state:
         raise ValueError('the root is required to have a known state')
 
@@ -255,7 +243,7 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
     # Construct the augmented tree by annotating each edge
     # with the appropriate state transition probability matrix.
     T_aug = nx.Graph()
-    for na, nb in T.edges():
+    for na, nb in nx.bfs_edges(T, root):
         edge = T[na][nb]
         weight = edge['weight']
         P_dense = scipy.linalg.expm(weight * Q_dense)
@@ -263,7 +251,7 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
         for a, sa in enumerate(states):
             for b, sb in enumerate(states):
                 P_nx.add_edge(sa, sb, weight=P_dense[a, b])
-        T_aug.add_edge(a, b, P=P_nx)
+        T_aug.add_edge(na, nb, P=P_nx)
 
     # Construct the map from node to allowed state set.
     node_to_allowed_states = {}
@@ -279,11 +267,12 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
 
     # Get the marginal state distribution for each node in the tree,
     # conditional on the known states.
-    node_to_distn = get_node_to_distn(T_aug, node_to_pmap, root)
+    node_to_distn = get_node_to_distn(
+            T_aug, node_to_allowed_states, node_to_pmap, root)
 
     # For each edge in the tree, get the joint distribution
     # over the states at the endpoints of the edge.
-    T_joint = get_joint_endpoint_state_distn(
+    T_joint = get_joint_endpoint_distn(
             T_aug, node_to_pmap, node_to_distn, root)
 
     # Compute the expectations of the dwell times and the transition counts
@@ -306,7 +295,8 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
         for sc_index, sc in enumerate(states):
             C = np.zeros((nstates, nstates), dtype=float)
             C[sc_index, sc_index] = 1.0
-            interact = scipy.linalg.expm_frechet(t*Q_dense, t*C)
+            interact = scipy.linalg.expm_frechet(
+                    t*Q_dense, t*C, compute_expm=False)
             for sa_index, sa in enumerate(states):
                 for sb_index, sb in enumerate(states):
                     if not J.has_edge(sa, sb):
@@ -326,13 +316,15 @@ def get_expected_history_statistics(T, Q, node_to_state, root):
                     continue
                 C = np.zeros((nstates, nstates), dtype=float)
                 C[sc_index, sd_index] = 1.0
-                interact = scipy.linalg.expm_frechet(t*Q_dense, t*C)
+                interact = scipy.linalg.expm_frechet(
+                        t*Q_dense, t*C, compute_expm=False)
                 for sa_index, sa in enumerate(states):
                     for sb_index, sb in enumerate(states):
                         if not J.has_edge(sa, sb):
                             continue
                         cond_prob = P[sa][sb]['weight']
                         joint_prob = J[sa][sb]['weight']
+                        # XXX simplify the joint_prob / cond_prob
                         contrib = (
                                 joint_prob *
                                 Q_dense[sc_index, sd_index] *

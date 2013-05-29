@@ -1,11 +1,12 @@
 """
 Functions related to conditional expectations for testing the Rao-Teh sampler.
 
+The Jukes-Cantor formulas are from Tataru and Hobolth 2011.
+
 """
 from __future__ import division, print_function, absolute_import
 
-import math
-
+import numpy as np
 import networkx as nx
 
 __all__ = []
@@ -25,7 +26,7 @@ def get_jukes_cantor_probability(i, j, t, n=4):
     """
     p_{i, j}(t)
     """
-    p = math.exp(-(n*t) / (n-1))
+    p = np.exp(-(n*t) / (n-1))
     if i == j:
         return (1 + p*(n-1))/n
     else:
@@ -35,8 +36,8 @@ def get_jukes_cantor_interaction(a, b, c, d, t, n=4):
     """
     I_{c, d}^{a, b}(t)
     """
-    p = math.exp(-(n*t) / (n-1))
-    pm1 = math.expm1(-(n*t) / (n-1))
+    p = np.exp(-(n*t) / (n-1))
+    pm1 = np.expm1(-(n*t) / (n-1))
     if a != c and d != b:
         x = t*p + pm1*2*(n-1)/n
     elif a == c and d == b:

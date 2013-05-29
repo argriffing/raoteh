@@ -103,6 +103,8 @@ def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
     """
 
     # Bookkeeping.
+    if root not in T:
+        raise ValueError('the specified root node is not in the tree')
     successors = nx.dfs_successors(T, root)
 
     # For each node, get a sparse map from state to subtree probability.
@@ -421,7 +423,7 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
                 if len(set(node_to_pmap[node])) == 1:
                     state = get_first_element(node_to_pmap[node])
                     if node_to_pmap[node][state]:
-                        node_to_distn[node] = {state : 1.0}
+                        distn = {state : 1.0}
                     else:
                         raise NumericalZeroProb
                 else:

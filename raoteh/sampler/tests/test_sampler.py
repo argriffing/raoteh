@@ -12,8 +12,13 @@ from numpy.testing import (run_module_suite, TestCase,
         decorators)
 
 from raoteh.sampler import _sampler
+
 from raoteh.sampler._util import (
                 StructuralZeroProb, NumericalZeroProb, get_first_element)
+
+from raoteh.sampler._mjp import (
+        get_expected_history_statistics)
+
 from raoteh.sampler._conditional_expectation import (
         get_jukes_cantor_rate_matrix,
         get_jukes_cantor_probability,
@@ -474,7 +479,7 @@ class TestRaoTehSampler(TestCase):
                 if a in node_to_state:
                     assert_equal(node_to_state[a], state)
 
-    @decorators.skipif(True, 'benchmark monte carlo conditional expectation')
+    #@decorators.skipif(True, 'benchmark monte carlo conditional expectation')
     def test_jukes_cantor_conditional_expectation(self):
         # Compare Monte Carlo conditional expectations to the true values.
 
@@ -488,6 +493,7 @@ class TestRaoTehSampler(TestCase):
         T = nx.Graph()
         T.add_edge(0, 1, weight=t)
         node_to_state = {0:a, 1:b}
+        root = 0
 
         # Define the Jukes-Cantor rate matrix.
         Q = get_jukes_cantor_rate_matrix(n)
@@ -512,9 +518,14 @@ class TestRaoTehSampler(TestCase):
             probability = get_jukes_cantor_probability(a, b, t, n)
             expected_dwell_times[i] = nhistories * interaction / probability
 
+        # Get the MJP expected history statistics.
+        info = get_expected_history_statistics(T, Q, node_to_state, root)
+        mjp_expected_dwell_times, mjp_expected_transitions = info
+
         # Compare to the expected dwell times.
         print(observed_dwell_times)
         print(expected_dwell_times)
+        print(mjp_expected_dwell_times)
         raise Exception
 
 if __name__ == '__main__':
