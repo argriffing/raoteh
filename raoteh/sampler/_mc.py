@@ -197,12 +197,19 @@ def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
         The likelihood.
 
     """
+    if not root_distn:
+        raise StructuralZeroProb('empty root distribution')
     node_to_pmap = construct_node_to_restricted_pmap(
             T, root, node_to_allowed_states)
     root_pmap = node_to_pmap[root]
+    if not root_pmap:
+        raise StructuralZeroProb(
+                'all root states give a subtree likelihood of zero')
     feasible_root_states = set(root_distn) & set(root_pmap)
     if not feasible_root_states:
-        raise StructuralZeroProb('no root state is feasible')
+        raise StructuralZeroProb(
+                'all root states have either no prior support '
+                'or give a subtree likelihood of zero')
     return sum(root_distn[s] * root_pmap[s] for s in feasible_root_states)
 
 

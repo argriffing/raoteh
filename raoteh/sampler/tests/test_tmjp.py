@@ -20,13 +20,15 @@ from scipy import special
 from scipy import optimize
 
 from raoteh.sampler._sampler import (
-        gen_histories, get_random_branching_tree, get_forward_sample)
+        gen_histories, get_forward_sample,
+        get_random_branching_tree, get_random_agglom_tree)
 from raoteh.sampler._util import (
                 StructuralZeroProb, NumericalZeroProb, get_first_element)
 from raoteh.sampler._mjp import (
             get_history_dwell_times, get_history_root_state_and_transitions,
             get_total_rates, get_conditional_transition_matrix)
 from raoteh.sampler._mc import get_restricted_likelihood
+from raoteh.sampler._tmjp import get_tolerance_process_log_likelihood
 
 
 def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
@@ -176,9 +178,32 @@ def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
             Q_compound)
 
 
-def _get_expm_augmented_tree(T, Q, root):
-    # A helper function.
+def get_expm_augmented_tree(T, Q, root):
+    """
+    This is a helper function.
 
+    Parameters
+    ----------
+    T : weighted undirected networkx graph
+        This tree may possibly be annotated with edge state restrictions.
+        If an edge is annotated with the 'allowed' attribution,
+        then it is interpreted as a whitelist of states that are
+        allowed along the edge.  If the annotation is missing,
+        then no edge state restriction is imposed.
+    Q : weighted directed networkx graph
+        Sparse rate matrix.
+    root : integer
+        Root node.
+
+    Returns
+    -------
+    T_aug : weighted undirected networkx graph
+        Tree annotated with transition probability matrices.
+        If state restrictions along edges are in place,
+        then these probabilities are joint with the condition
+        that no restricted state was entered along the edge.
+
+    """
     # Convert the sparse rate matrix to a dense ndarray rate matrix.
     states = sorted(Q)
     nstates = len(states)
@@ -196,11 +221,21 @@ def _get_expm_augmented_tree(T, Q, root):
     for na, nb in nx.bfs_edges(T, root):
         edge = T[na][nb]
         weight = edge['weight']
-        P_dense = scipy.linalg.expm(weight * Q_dense)
+        if 'allowed' in edge:
+            allowed_edge_states = edge['allowed']
+            Q_dense_local = Q_dense.copy()
+            for a, sa in enumerate(states):
+                for b, sb in enumerate(states):
+                    if sb not in allowed_edge_states:
+                        Q_dense_local[a, b] = 0
+        else:
+            Q_dense_local = Q_dense
+        P_dense = scipy.linalg.expm(weight * Q_dense_local)
         P_nx = nx.DiGraph()
         for a, sa in enumerate(states):
             for b, sb in enumerate(states):
-                P_nx.add_edge(sa, sb, weight=P_dense[a, b])
+                if ('allowed' not in edge) or (sb in edge['allowed']):
+                    P_nx.add_edge(sa, sb, weight=P_dense[a, b])
         T_aug.add_edge(na, nb, P=P_nx)
 
     # Return the augmented tree.
@@ -208,18 +243,18 @@ def _get_expm_augmented_tree(T, Q, root):
 
 
 def _neg_log_likelihood_for_minimization(
-        T, root, node_to_allowed_states, X):
+        T_seq, root, node_to_allowed_states_seq, X):
     """
     This is intended to be functools.partial'd and sent to scipy.optimize.
 
     Parameters
     ----------
-    T : weighted undirected acyclic networkx graph
-        Tree with edge weights.
+    T_seq : sequence of weighted undirected acyclic networkx graphs
+        Tree with edge weights and annotated with allowed states on edges.
     root : integer
         Root node.
-    node_to_allowed_states : dict
-        Map from node to set of allowed compound states.
+    node_to_allowed_states_seq : sequence
+        List of maps from node to set of allowed compound states.
     X : one dimensional ndarray containing two floats
         This is the vector of parameters for minimization.
         It contains the log of the tolerance_rate_on
@@ -240,18 +275,24 @@ def _neg_log_likelihood_for_minimization(
             compound_to_primary, compound_to_tolerances, compound_distn,
             Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
 
-    # Compute some matrix exponentials and put them on the edges of the tree.
-    T_aug = _get_expm_augmented_tree(T, Q_compound, root)
-
     # Return the negative log likelihood for minimization.
-    likelihood = get_restricted_likelihood(
-            T_aug, root, node_to_allowed_states, compound_distn)
-    return -np.log(likelihood)
+    log_likelihood = 0.0
+    for T, node_to_allowed_states in zip(T_seq, node_to_allowed_states_seq):
+
+        # Compute some matrix exponentials
+        # and put them on the edges of the tree,
+        # respecting edge state restrictions.
+        T_aug = get_expm_augmented_tree(T, Q_compound, root)
+        likelihood = get_restricted_likelihood(
+                T_aug, root, node_to_allowed_states, compound_distn)
+        log_likelihood += np.log(likelihood)
+    neg_log_likelihood = -log_likelihood
+    return neg_log_likelihood
 
 
 class TestExpectationMaximization(TestCase):
 
-    def test_expectation_maximization(self):
+    def xfail_expectation_maximization(self):
         # It should be possible to use expectation maximization
         # to find locally optimal rate-on and rate-off values
         # in the sense of maximum likelihood.
@@ -268,6 +309,7 @@ class TestExpectationMaximization(TestCase):
                 Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
 
         # Summarize properties of the process.
+        ncompound = len(compound_to_primary)
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
         total_tolerance_rate = rate_on + rate_off
@@ -276,57 +318,77 @@ class TestExpectationMaximization(TestCase):
                 1 : rate_on / total_tolerance_rate}
 
         # Sample a non-tiny random tree without branch lengths.
-        branching_distn = [0.4, 0.3, 0.2, 0.1]
-        T = get_random_branching_tree(branching_distn, maxnodes=50)
+        #branching_distn = [0.4, 0.3, 0.2, 0.1]
+        #T = get_random_branching_tree(branching_distn, maxnodes=50)
+        T = get_random_agglom_tree(maxnodes=20)
         root = 0
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
-            T[na][nb]['weight'] = np.random.exponential(scale=0.1)
+            #scale = 1.0
+            scale = 0.1
+            T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
-        # Use forward sampling to jointly sample compound states on the tree,
-        # according to the compound process and its stationary distribution
-        # at the root.
-        T_forward_sample = get_forward_sample(
-                T, Q_compound, root, compound_distn)
 
-        # Track only the primary process information at leaves.
-        # Do not track the any tolerance process information at leaves,
-        # and track neither primary nor tolerance process information
-        # at non-leaf vertices or on any edge.
-        node_to_allowed_states = {}
-        for node in T:
-            if len(T[node]) == 1:
-                # Allow only compound states
-                # that have the the observed primary state.
-                neighbor = get_first_element(T_forward_sample[node])
-                compound_state = T_forward_sample[node][neighbor]['state']
+        # Track the primary process.
+        ncols = 5
+        T_seq = []
+        node_to_allowed_states_seq = []
+        for col in range(ncols):
+
+            # Use forward sampling to jointly sample compound states
+            # on the tree, according to the compound process
+            # and its stationary distribution at the root.
+            T_forward_sample = get_forward_sample(
+                    T, Q_compound, root, compound_distn)
+
+            # Construct the tree with edge-restricted compound states.
+            T_restricted = nx.Graph()
+            for na, nb in nx.bfs_edges(T_forward_sample, root):
+                compound_state = T_forward_sample[na][nb]['state']
                 primary_state = compound_to_primary[compound_state]
-                allowed_states = set()
-                for comp, prim in enumerate(compound_to_primary):
-                    if prim == primary_state:
-                        allowed_states.add(comp)
-            else:
-                # Allow all compound states.
-                allowed_states = set(range(len(compound_to_primary)))
-            node_to_allowed_states[node] = allowed_states
+                allowed = set()
+                for s in range(ncompound):
+                    if compound_to_primary[s] == primary_state:
+                        allowed.add(s)
+                weight = T_forward_sample[na][nb]['weight']
+                T_restricted.add_edge(na, nb, weight=weight, allowed=allowed)
+
+            # Construct the compound state restrictions at the nodes.
+            node_to_allowed_states = {}
+            for na in T_forward_sample:
+                neighbor_primary_states = set()
+                for nb in T_forward_sample[na]:
+                    edge = T_forward_sample[na][nb]
+                    compound_state = edge['state']
+                    primary_state = compound_to_primary[compound_state]
+                    neighbor_primary_states.add(primary_state)
+                allowed = set()
+                for s in range(ncompound):
+                    if compound_to_primary[s] in neighbor_primary_states:
+                        allowed.add(s)
+                node_to_allowed_states[na] = allowed
+
+            # Append to the state restriction sequences.
+            T_seq.append(T_restricted)
+            node_to_allowed_states_seq.append(node_to_allowed_states)
 
         # Report simulation parameter value neg log likelihood.
         X_true = np.log([rate_on, rate_off])
         true_neg_ll = _neg_log_likelihood_for_minimization(
-                T, root, node_to_allowed_states, X_true)
+                T_seq, root, node_to_allowed_states_seq, X_true)
         print('neg ll for true simulation parameter values:', true_neg_ll)
 
         # Report initial parameter value neg log likelihood.
         X0 = np.zeros(2, dtype=float)
         initial_neg_ll = _neg_log_likelihood_for_minimization(
-                T, root, node_to_allowed_states, X0)
+                T_seq, root, node_to_allowed_states_seq, X0)
         print('neg ll for initial parameter values:', initial_neg_ll)
 
         # Report the results of the optimization.
         f = functools.partial(
                 _neg_log_likelihood_for_minimization,
-                T, root, node_to_allowed_states)
+                T_seq, root, node_to_allowed_states_seq)
         method = 'BFGS'
         results = scipy.optimize.minimize(f, X0, method=method)
         print('results of', method, 'minimization:', results)
@@ -504,6 +566,73 @@ class TestFullyAugmentedLikelihood(TestCase):
             # Compare the two log likelihood calculations.
             assert_allclose(direct_ll_initrans, clever_ll_initrans)
             assert_allclose(direct_ll_dwell, clever_ll_dwell)
+
+
+class TestToleranceProcessMarginalLogLikelihood(TestCase):
+
+    def xfail_tolerance_process_log_likelihood(self):
+
+        # Define the tolerance process rates.
+        rate_on = 0.5
+        rate_off = 1.5
+
+        # Define some other properties of the process,
+        # in a way that is not object-oriented.
+        (primary_distn, Q, primary_to_part,
+                compound_to_primary, compound_to_tolerances, compound_distn,
+                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+
+        # Summarize properties of the process.
+        nprimary = len(primary_distn)
+        nparts = len(set(primary_to_part.values()))
+        total_tolerance_rate = rate_on + rate_off
+        tolerance_distn = {
+                0 : rate_off / total_tolerance_rate,
+                1 : rate_on / total_tolerance_rate}
+
+        # Sample a non-tiny random tree without branch lengths.
+        T = get_random_agglom_tree(maxnodes=20)
+        root = 0
+
+        # Add some random branch lengths onto the edges of the tree.
+        for na, nb in nx.bfs_edges(T, root):
+            scale = 0.1
+            T[na][nb]['weight'] = np.random.exponential(scale=scale)
+
+        # Use forward sampling to jointly sample compound states on the tree,
+        # according to the compound process and its stationary distribution
+        # at the root.
+        T_forward_sample = get_forward_sample(
+                T, Q_compound, root, compound_distn)
+
+        # Track only the primary process information at leaves.
+        # Do not track the any tolerance process information at leaves,
+        # and track neither primary nor tolerance process information
+        # at non-leaf vertices or on any edge.
+        node_to_allowed_states = {}
+        for node in T:
+            if len(T[node]) == 1:
+                # Allow only compound states
+                # that have the the observed primary state.
+                neighbor = get_first_element(T_forward_sample[node])
+                compound_state = T_forward_sample[node][neighbor]['state']
+                primary_state = compound_to_primary[compound_state]
+                allowed_states = set()
+                for comp, prim in enumerate(compound_to_primary):
+                    if prim == primary_state:
+                        allowed_states.add(comp)
+            else:
+                # Allow all compound states.
+                allowed_states = set(range(len(compound_to_primary)))
+            node_to_allowed_states[node] = allowed_states
+
+        # Compute the log likelihood, directly using the compound process.
+        X_true = np.log([rate_on, rate_off])
+        neg_ll_direct = _neg_log_likelihood_for_minimization(
+                T, root, node_to_allowed_states_seq, X_true)
+        neg_ll_clever = -get_tolerance_process_log_likelihood(
+                Q, state_to_part, T, node_to_tmap,
+                rate_off, rate_on, primary_distn, root)
 
 
 if __name__ == '__main__':

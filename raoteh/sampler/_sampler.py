@@ -17,6 +17,38 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
+def get_random_agglom_tree(maxnodes):
+    """
+    Sample an unweighted tree by adding branches to random previous nodes.
+
+    Parameters
+    ----------
+    maxnodes : integer
+        Max number of nodes in the sampled tree.
+
+    Returns
+    -------
+    T : undirected acyclic networkx graph
+        This is a rooted tree with at least one edge.
+        The root of the tree is node 0.
+
+    """
+    # Check the input.
+    if maxnodes < 2:
+        raise ValueError('maxnodes should be >= 2')
+
+    # Initialize.
+    T = nx.Graph()
+    T.add_node(len(T))
+
+    # Keep adding nodes until the cap is reached.
+    while len(T) < maxnodes:
+        na = np.random.randint(len(T))
+        nb = len(T)
+        T.add_edge(na, nb)
+    return T
+
+
 def get_random_branching_tree(branching_distn, maxnodes=None):
     """
     Sample an unweighted tree according to a random branching process.
