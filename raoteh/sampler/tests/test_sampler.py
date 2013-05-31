@@ -719,6 +719,15 @@ class TestMJP_Entropy(TestCase):
         for s, rate in total_rates.items():
             diff_ent_dwell += dwell_times[s] * rate
 
+        # Use some posterior expectations
+        # to get the transition contribution to differential entropy.
+        diff_ent_trans = 0.0
+        for sa in set(Q) & set(transitions):
+            for sb in set(Q[sa]) & set(transitions[sa]):
+                rate = Q[sa][sb]['weight']
+                ntrans_expected = transitions[sa][sb]['weight']
+                diff_ent_trans -= ntrans_expected * np.log(rate)
+
         print()
         print('nsamples:', nsamples)
         print()
@@ -732,7 +741,7 @@ class TestMJP_Entropy(TestCase):
         print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
         print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamples)
         print()
-        #print('diff ent trans:', diff_ent_trans)
+        print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
         print('error        :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
         print()

@@ -432,7 +432,7 @@ def get_expected_history_statistics(T, Q, node_to_allowed_states,
                         contrib = (
                                 joint_prob *
                                 Q_dense[sc_index, sd_index] *
-                                interact[sc_index, sd_index] /
+                                interact[sa_index, sb_index] /
                                 cond_prob)
                         if not expected_transitions.has_edge(sc, sd):
                             expected_transitions.add_edge(sc, sd, weight=0.0)
