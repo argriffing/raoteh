@@ -5,6 +5,7 @@ Rao-Teh sampler.
 from __future__ import division, print_function, absolute_import
 
 import random
+import itertools
 
 import numpy as np
 import networkx as nx
@@ -101,6 +102,124 @@ def get_random_branching_tree(branching_distn, maxnodes=None):
     return T
 
 
+class _FastRandomChoice:
+    # This is a helper class to speed up np.random.choice.
+
+    def __init__(self, P, bufsize=1000):
+        self._P = P
+        self._bufsize = bufsize
+        self._state_to_sink_samples = {}
+        self._state_to_nconsumed = {}
+
+    def sample(self, sa):
+        nconsumed = self._state_to_nconsumed.get(sa, None)
+        if (nconsumed is None) or (nconsumed >= self._bufsize):
+            sbs = [sb for sb in self._P[sa]]
+            probs = [self._P[sa][sb]['weight'] for sb in sbs]
+            self._state_to_sink_samples[sa] = np.random.choice(
+                    sbs, size=self._bufsize, p=probs)
+            self._state_to_nconsumed[sa] = 0
+            nconsumed = 0
+        sampled_state = self._state_to_sink_samples[sa][nconsumed]
+        self._state_to_nconsumed[sa] += 1
+        return sampled_state
+
+
+def gen_forward_samples(T, Q, root, root_distn, nsamples=None):
+    """
+    Use simple unconditional forward sampling to generate history samples.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree.
+    Q : directed weighted networkx graph
+        A sparse rate matrix.
+    root : integer, optional
+        Root node.
+    root_distn : dict
+        Map from root state to probability.
+    nsamples : integer, optional
+        Yield this many forward samples.
+
+    Yields
+    ------
+    T_out : weighted undirected acyclic networkx graph
+        Weighted tree with extra degree-2 nodes
+        and with edges annotated with weights and with sampled states.
+
+    """
+    # Summarize the rate matrix.
+    total_rates = _mjp.get_total_rates(Q)
+    P = _mjp.get_conditional_transition_matrix(Q, total_rates)
+    state_sampler = _FastRandomChoice(P)
+
+    # Unpack the distribution over root states.
+    root_states, root_probs = zip(*root_distn.items())
+
+    # If nsamples is known then sample all root states.
+    all_root_states = None
+    if nsamples is not None:
+        all_root_states = np.random.choice(
+                root_states, size=nsamples, p=root_probs)
+
+    for i in itertools.count():
+
+        # Check if we have already made enough samples.
+        if i == nsamples:
+            return
+
+        # Initialize some stuff.
+        next_node = max(T) + 1
+
+        # Sample the root state.
+        if all_root_states is not None:
+            root_state = all_root_states[i]
+        else:
+            root_state = np.random.choice(root_states, p=root_probs)
+
+        # The node_to_state is for internal bookkeeping.
+        node_to_state = {root : root_state}
+
+        # Build the list of weighted edges.
+        annotated_edges = []
+        for a, b in nx.bfs_edges(T, root):
+            state = node_to_state[a]
+            weight = T[a][b]['weight']
+            prev_node = a
+            total_dwell = 0.0
+            if state in total_rates:
+                rate = total_rates[state]
+                while True:
+                    #dwell = random.expovariate(rate)
+                    dwell = np.random.exponential(scale = 1/rate)
+                    if total_dwell + dwell > weight:
+                        break
+                    total_dwell += dwell
+                    mid_node = next_node
+                    next_node += 1
+                    annotated_edge = (prev_node, mid_node, state, dwell)
+                    annotated_edges.append(annotated_edge)
+                    prev_node = mid_node
+
+                    # Sample the state.
+                    #states = [s for s in P[state]]
+                    #probs = [P[state][s]['weight'] for s in states]
+                    #state = np.random.choice(states, p=probs)
+                    state = state_sampler.sample(state)
+                    node_to_state[prev_node] = state
+
+            # Add the last segment of the branch.
+            node_to_state[b] = state
+            annotated_edges.append((prev_node, b, state, weight - total_dwell))
+
+        # Yield the history sample as an augmented tree.
+        T_out = nx.Graph()
+        for a, b, state, weight in annotated_edges:
+            T_out.add_edge(a, b, state=state, weight=weight)
+        yield T_out
+
+
 def get_forward_sample(T, Q, root, root_distn):
     """
     Use simple unconditional forward sampling to get a history sample.
@@ -147,7 +266,8 @@ def get_forward_sample(T, Q, root, root_distn):
         if state in total_rates:
             rate = total_rates[state]
             while True:
-                dwell = random.expovariate(rate)
+                #dwell = random.expovariate(rate)
+                dwell = np.random.exponential(scale = 1/rate)
                 if total_dwell + dwell > weight:
                     break
                 total_dwell += dwell
@@ -301,7 +421,8 @@ def resample_poisson(T, state_to_rate, root=None):
         prev_node = a
         total_dwell = 0.0
         while True:
-            dwell = random.expovariate(rate)
+            #dwell = random.expovariate(rate)
+            dwell = np.random.exponential(scale = 1/rate)
             if total_dwell + dwell > weight:
                 break
             total_dwell += dwell

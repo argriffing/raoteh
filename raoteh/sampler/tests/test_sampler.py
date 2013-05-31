@@ -65,6 +65,22 @@ def get_test_transition_matrix():
     return P
 
 
+def get_neg_ll(T_aug, Q, root, distn):
+    # For testing.
+    total_rates = get_total_rates(Q)
+    info = get_history_statistics(T_aug, root=root)
+    dwell_times, root_state, transitions = info
+    log_likelihood = np.log(distn[root_state])
+    for state, dwell in dwell_times.items():
+        log_likelihood -= dwell * total_rates[state]
+    for sa, sb in transitions.edges():
+        ntransitions = transitions[sa][sb]['weight']
+        rate = Q[sa][sb]['weight']
+        log_likelihood += special.xlogy(ntransitions, rate)
+    neg_ll = -log_likelihood
+    return neg_ll
+
+
 class TestNodeStateSampler(TestCase):
 
     def test_resample_states_short_path(self):
@@ -465,47 +481,80 @@ class TestMJP_Entropy(TestCase):
                 ]
 
         # Multiply the rates by some factor.
-        #rates = [(a, b, 50*rate) for a, b, rate in rates]
+        fast_rates = [(a, b, 2*rate) for a, b, rate in rates]
 
         # Define the transition matrix.
         Q = nx.DiGraph()
         Q.add_weighted_edges_from(rates)
 
-        # Summarize the transition rate matrix.
-        total_rates = get_total_rates(Q)
+        # Define the transition matrix.
+        Q_fast = nx.DiGraph()
+        Q_fast.add_weighted_edges_from(fast_rates)
 
         # Define a tree with branch lengths.
         T = nx.Graph()
-        T.add_edge(0, 12, weight=1.0)
-        T.add_edge(0, 23, weight=2.0)
-        T.add_edge(0, 33, weight=1.0)
-        total_tree_length = 4.0
+        T.add_edge(0, 1, weight=10.0)
+        total_tree_length = T.size(weight='weight')
         root = 0
 
         # Do some forward samples,
         # and get the negative expected log likelihood.
-        neg_ll_samples = []
+        neg_ll_contribs_init = []
+        neg_ll_contribs_dwell = []
+        neg_ll_contribs_trans = []
+
         nsamples = 10000
-        #nsamples = 1000
-        for i in range(nsamples):
-            T_aug = _sampler.get_forward_sample(T, Q, root, distn)
+        sqrt_nsamples = np.sqrt(nsamples)
+        for T_aug in _sampler.gen_forward_samples(T, Q, root, distn, nsamples):
+            total_rates = get_total_rates(Q)
             info = get_history_statistics(T_aug, root=root)
             dwell_times, root_state, transitions = info
-            log_likelihood = np.log(distn[root_state])
+
+            # contribution of root state to log likelihood
+            ll = np.log(distn[root_state])
+            neg_ll_contribs_init.append(-ll)
+
+            # contribution of dwell times
+            ll = 0.0
             for state, dwell in dwell_times.items():
-                log_likelihood -= dwell * total_rates[state]
+                ll -= dwell * total_rates[state]
+            neg_ll_contribs_dwell.append(-ll)
+
+            # contribution of transitions
+            ll = 0.0
             for sa, sb in transitions.edges():
                 ntransitions = transitions[sa][sb]['weight']
                 rate = Q[sa][sb]['weight']
-                log_likelihood += special.xlogy(ntransitions, rate)
-            neg_ll = -log_likelihood
-            neg_ll_samples.append(neg_ll)
-        differential_entropy = get_reversible_differential_entropy(
-                Q, distn, total_tree_length)
-        print('differential entropy:', differential_entropy)
-        print('mean of neg log likl:', np.mean(neg_ll_samples))
-        print('std. dev. of neg log:', np.std(neg_ll_samples))
-        print('skew of neg log likl:', scipy.stats.skew(neg_ll_samples))
+                ll += special.xlogy(ntransitions, rate)
+            neg_ll_contribs_trans.append(-ll)
+
+        diff_ent_init = 0.0
+        diff_ent_dwell = 0.0
+        diff_ent_trans = 0.0
+        t = total_tree_length
+        for sa in set(Q) & set(distn):
+            prob = distn[sa]
+            diff_ent_init -= prob * np.log(prob)
+            for sb in Q[sa]:
+                rate = Q[sa][sb]['weight']
+                diff_ent_dwell += t * prob * rate
+                diff_ent_trans -= t * prob * rate * np.log(rate)
+
+        print()
+        print('nsamples:', nsamples)
+        print()
+        print('diff ent init:', diff_ent_init)
+        print('neg ll init  :', np.mean(neg_ll_contribs_init))
+        print('error        :', np.std(neg_ll_contribs_init) / sqrt_nsamples)
+        print()
+        print('diff ent dwell:', diff_ent_dwell)
+        print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
+        print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamples)
+        print()
+        print('diff ent trans:', diff_ent_trans)
+        print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
+        print('error        :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
+        print()
         raise Exception('print entropy stuff')
 
 
