@@ -178,6 +178,7 @@ def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
             Q_compound)
 
 
+#XXX this belongs in the Markov jump chain module
 def get_expm_augmented_tree(T, Q, root):
     """
     This is a helper function.

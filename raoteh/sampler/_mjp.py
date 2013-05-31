@@ -223,6 +223,69 @@ def get_reversible_differential_entropy(Q, stationary_distn, t):
     return differential_entropy
 
 
+def get_expm_augmented_tree(T, Q, root):
+    """
+
+    Parameters
+    ----------
+    T : weighted undirected networkx graph
+        This tree may possibly be annotated with edge state restrictions.
+        If an edge is annotated with the 'allowed' attribution,
+        then it is interpreted as a whitelist of states that are
+        allowed along the edge.  If the annotation is missing,
+        then no edge state restriction is imposed.
+    Q : weighted directed networkx graph
+        Sparse rate matrix.
+    root : integer
+        Root node.
+
+    Returns
+    -------
+    T_aug : weighted undirected networkx graph
+        Tree annotated with transition probability matrices.
+        If state restrictions along edges are in place,
+        then these probabilities are joint with the condition
+        that no restricted state was entered along the edge.
+
+    """
+    # Convert the sparse rate matrix to a dense ndarray rate matrix.
+    states = sorted(Q)
+    nstates = len(states)
+    Q_dense = np.zeros((nstates, nstates), dtype=float)
+    for a, sa in enumerate(states):
+        for b, sb in enumerate(states):
+            if Q.has_edge(sa, sb):
+                edge = Q[sa][sb]
+                Q_dense[a, b] = edge['weight']
+    Q_dense = Q_dense - np.diag(np.sum(Q_dense, axis=1))
+
+    # Construct the augmented tree by annotating each edge
+    # with the appropriate state transition probability matrix.
+    T_aug = nx.Graph()
+    for na, nb in nx.bfs_edges(T, root):
+        edge = T[na][nb]
+        weight = edge['weight']
+        if 'allowed' in edge:
+            allowed_edge_states = edge['allowed']
+            Q_dense_local = Q_dense.copy()
+            for a, sa in enumerate(states):
+                for b, sb in enumerate(states):
+                    if sb not in allowed_edge_states:
+                        Q_dense_local[a, b] = 0
+        else:
+            Q_dense_local = Q_dense
+        P_dense = scipy.linalg.expm(weight * Q_dense_local)
+        P_nx = nx.DiGraph()
+        for a, sa in enumerate(states):
+            for b, sb in enumerate(states):
+                if ('allowed' not in edge) or (sb in edge['allowed']):
+                    P_nx.add_edge(sa, sb, weight=P_dense[a, b])
+        T_aug.add_edge(na, nb, P=P_nx)
+
+    # Return the augmented tree.
+    return T_aug
+
+
 # XXX add tests
 # XXX generalize node_to_state to node_to_allowed_states
 def get_expected_history_statistics(T, Q, node_to_allowed_states,
@@ -267,6 +330,7 @@ def get_expected_history_statistics(T, Q, node_to_allowed_states,
     if root not in T:
         raise ValueError('the specified root is not in the tree')
 
+    #XXX use get_expm_augmented_tree instead
     # Convert the sparse rate matrix to a dense ndarray rate matrix.
     states = sorted(Q)
     nstates = len(states)

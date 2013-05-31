@@ -382,7 +382,6 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
     return node_to_distn
 
 
-
 def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
         root, prior_root_distn=None):
     """

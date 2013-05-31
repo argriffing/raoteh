@@ -3,6 +3,7 @@
 from __future__ import division, print_function, absolute_import
 
 import itertools
+from collections import defaultdict
 
 import numpy as np
 import networkx as nx
@@ -18,7 +19,12 @@ from raoteh.sampler import _sampler
 from raoteh.sampler._util import (
                 StructuralZeroProb, NumericalZeroProb, get_first_element)
 
+from raoteh.sampler._mc import (
+        construct_node_to_restricted_pmap,
+        get_node_to_distn)
+
 from raoteh.sampler._mjp import (
+        get_expm_augmented_tree,
         get_reversible_differential_entropy,
         get_total_rates,
         get_history_statistics,
@@ -458,6 +464,7 @@ class TestForwardSample(TestCase):
 
 class TestMJP_Entropy(TestCase):
 
+    @decorators.skipif(True, 'this test prints stuff')
     def test_mjp_reversible_differential_entropy(self):
 
         # Define a distribution over some primary states.
@@ -486,9 +493,6 @@ class TestMJP_Entropy(TestCase):
                 (3, 0, distn[0]),
                 (0, 3, distn[3]),
                 ]
-
-        # Multiply the rates by some factor.
-        fast_rates = [(a, b, 2*rate) for a, b, rate in rates]
 
         # Define the transition rate matrix.
         Q = nx.DiGraph()
@@ -578,6 +582,157 @@ class TestMJP_Entropy(TestCase):
         print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamples)
         print()
         print('diff ent trans:', diff_ent_trans)
+        print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
+        print('error        :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
+        print()
+        raise Exception('print entropy stuff')
+
+    def test_mjp_monte_carlo_rao_teh_differential_entropy(self):
+
+        # Define a distribution over some primary states.
+        nstates = 4
+        """
+        distn = {
+                0 : 0.1,
+                1 : 0.2,
+                2 : 0.3,
+                3 : 0.4}
+        """
+        distn = {
+                0 : 0.91,
+                1 : 0.02,
+                2 : 0.03,
+                3 : 0.04}
+
+        # Define the transition rates.
+        rates = [
+                (0, 1, 2 * distn[1]),
+                (1, 0, 2 * distn[0]),
+                (1, 2, distn[2]),
+                (2, 1, distn[1]),
+                (2, 3, 2 * distn[3]),
+                (3, 2, 2 * distn[2]),
+                (3, 0, distn[0]),
+                (0, 3, distn[3]),
+                ]
+
+        # Define the transition rate matrix.
+        Q = nx.DiGraph()
+        Q.add_weighted_edges_from(rates)
+
+        # Summarize the transition rate matrix.
+        total_rates = get_total_rates(Q)
+
+        # Check reversibility.
+        for sa, sb in Q.edges():
+            rate_ab = Q[sa][sb]['weight']
+            rate_ba = Q[sb][sa]['weight']
+            assert_allclose(distn[sa] * rate_ab, distn[sb] * rate_ba)
+
+        # Define a tree with branch lengths.
+        T = nx.Graph()
+        T.add_edge(0, 1, weight=1.0)
+        T.add_edge(0, 2, weight=2.0)
+        T.add_edge(0, 3, weight=1.0)
+        total_tree_length = T.size(weight='weight')
+        root = 0
+
+        # Restrict the states at the leaves.
+        node_to_state = {1:0, 2:0, 3:1}
+
+        # Define the number of samples.
+        nsamples = 1000
+        sqrt_nsamples = np.sqrt(nsamples)
+
+        # Do some forward samples,
+        # and get the negative expected log likelihood.
+        sampled_root_distn = defaultdict(float)
+        neg_ll_contribs_init = []
+        neg_ll_contribs_dwell = []
+        neg_ll_contribs_trans = []
+        for T_aug in itertools.islice(
+                _sampler.gen_histories(
+                    T, Q, node_to_state, uniformization_factor=2,
+                    root=root, root_distn=distn), nsamples):
+            info = get_history_statistics(T_aug, root=root)
+            dwell_times, root_state, transitions = info
+
+            # contribution of root state to log likelihood
+            sampled_root_distn[root_state] += 1.0 / nsamples
+            ll = np.log(distn[root_state])
+            neg_ll_contribs_init.append(-ll)
+
+            # contribution of dwell times
+            ll = 0.0
+            for state, dwell in dwell_times.items():
+                ll -= dwell * total_rates[state]
+            neg_ll_contribs_dwell.append(-ll)
+
+            # contribution of transitions
+            ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q[sa][sb]['weight']
+                ll += special.xlogy(ntransitions, rate)
+            neg_ll_contribs_trans.append(-ll)
+
+        """
+        diff_ent_init = 0.0
+        diff_ent_dwell = 0.0
+        diff_ent_trans = 0.0
+        t = total_tree_length
+        for sa in set(Q) & set(distn):
+            prob = distn[sa]
+            diff_ent_init -= prob * np.log(prob)
+            for sb in Q[sa]:
+                rate = Q[sa][sb]['weight']
+                diff_ent_dwell += t * prob * rate
+                diff_ent_trans -= t * prob * rate * np.log(rate)
+        """
+
+        # Get the diff_ent_init through the root posterior marginal distn.
+        node_to_allowed_states = {}
+        for node in T:
+            if node in node_to_state:
+                allowed = {node_to_state[node]}
+            else:
+                allowed = set(range(nstates))
+            node_to_allowed_states[node] = allowed
+        T_trans = get_expm_augmented_tree(T, Q, root)
+        node_to_pmap = construct_node_to_restricted_pmap(
+                T_trans, root, node_to_allowed_states)
+        posterior_node_to_distn = get_node_to_distn(
+                T_trans, node_to_allowed_states, node_to_pmap,
+                root, prior_root_distn=distn)
+        posterior_root_distn = posterior_node_to_distn[root]
+        diff_ent_init = 0.0
+        for state, prob in posterior_node_to_distn[root].items():
+            diff_ent_init -= special.xlogy(prob, distn[state])
+
+        # Get some posterior expectations.
+        dwell_times, transitions = get_expected_history_statistics(
+                T, Q, node_to_allowed_states, root, root_distn=distn)
+
+        # Use some posterior expectations
+        # to get the dwell time contribution to differential entropy.
+        diff_ent_dwell = 0.0
+        for s, rate in total_rates.items():
+            diff_ent_dwell += dwell_times[s] * rate
+
+        print()
+        print('nsamples:', nsamples)
+        print()
+        print('sampled root distn :', sampled_root_distn)
+        print('analytic root distn:', posterior_root_distn)
+        print('diff ent init:', diff_ent_init)
+        print('neg ll init  :', np.mean(neg_ll_contribs_init))
+        print('error        :', np.std(neg_ll_contribs_init) / sqrt_nsamples)
+        print()
+        print('diff ent dwell:', diff_ent_dwell)
+        print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
+        print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamples)
+        print()
+        #print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
         print('error        :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
         print()
