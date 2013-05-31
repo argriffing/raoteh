@@ -20,7 +20,8 @@ from scipy import special
 from scipy import optimize
 
 from raoteh.sampler._sampler import (
-        gen_histories, get_forward_sample,
+        gen_histories, get_forward_sample)
+from raoteh.sampler._sample_tree import (
         get_random_branching_tree, get_random_agglom_tree)
 from raoteh.sampler._util import (
                 StructuralZeroProb, NumericalZeroProb, get_first_element)

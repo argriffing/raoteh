@@ -583,7 +583,7 @@ class TestMJP_Entropy(TestCase):
         print()
         print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
-        print('error        :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
+        print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
         print()
         raise Exception('print entropy stuff')
 
@@ -743,7 +743,7 @@ class TestMJP_Entropy(TestCase):
         print()
         print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
-        print('error        :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
+        print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
         print()
         raise Exception('print entropy stuff')
 

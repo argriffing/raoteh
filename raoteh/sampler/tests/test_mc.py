@@ -18,7 +18,7 @@ from raoteh.sampler._mc import (
         get_joint_endpoint_distn_naive, get_joint_endpoint_distn,
         )
 
-from raoteh.sampler._sampler import get_random_branching_tree
+from raoteh.sampler._sample_tree import get_random_branching_tree
 
 
 def _get_random_transition_matrix(nstates):
