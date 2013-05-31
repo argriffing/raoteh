@@ -467,6 +467,13 @@ class TestMJP_Entropy(TestCase):
                 1 : 0.2,
                 2 : 0.3,
                 3 : 0.4}
+        """
+        distn = {
+                0 : 0.91,
+                1 : 0.02,
+                2 : 0.03,
+                3 : 0.04}
+        """
 
         # Define the transition rates.
         rates = [
@@ -483,30 +490,49 @@ class TestMJP_Entropy(TestCase):
         # Multiply the rates by some factor.
         fast_rates = [(a, b, 2*rate) for a, b, rate in rates]
 
-        # Define the transition matrix.
+        # Define the transition rate matrix.
         Q = nx.DiGraph()
         Q.add_weighted_edges_from(rates)
 
-        # Define the transition matrix.
-        Q_fast = nx.DiGraph()
-        Q_fast.add_weighted_edges_from(fast_rates)
+        # Summarize the transition rate matrix.
+        total_rates = get_total_rates(Q)
+
+        # Check reversibility.
+        for sa, sb in Q.edges():
+            rate_ab = Q[sa][sb]['weight']
+            rate_ba = Q[sb][sa]['weight']
+            assert_allclose(distn[sa] * rate_ab, distn[sb] * rate_ba)
 
         # Define a tree with branch lengths.
         T = nx.Graph()
-        T.add_edge(0, 1, weight=10.0)
+        """
+        T.add_edge(0, 1, weight=100.0)
+        T.add_edge(1, 2, weight=100.0)
+        T.add_edge(2, 3, weight=100.0)
+        T.add_edge(3, 4, weight=100.0)
+        T.add_edge(4, 5, weight=100.0)
+        T.add_edge(5, 6, weight=100.0)
+        T.add_edge(6, 7, weight=100.0)
+        T.add_edge(7, 8, weight=100.0)
+        T.add_edge(8, 9, weight=100.0)
+        T.add_edge(9, 10, weight=100.0)
+        """
+        T.add_edge(0, 1, weight=1.0)
+        T.add_edge(0, 2, weight=2.0)
+        T.add_edge(0, 3, weight=1.0)
         total_tree_length = T.size(weight='weight')
         root = 0
+
+        # Define the number of samples.
+        nsamples = 10000
+        sqrt_nsamples = np.sqrt(nsamples)
 
         # Do some forward samples,
         # and get the negative expected log likelihood.
         neg_ll_contribs_init = []
         neg_ll_contribs_dwell = []
         neg_ll_contribs_trans = []
-
-        nsamples = 10000
-        sqrt_nsamples = np.sqrt(nsamples)
         for T_aug in _sampler.gen_forward_samples(T, Q, root, distn, nsamples):
-            total_rates = get_total_rates(Q)
             info = get_history_statistics(T_aug, root=root)
             dwell_times, root_state, transitions = info
 

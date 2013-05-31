@@ -116,6 +116,8 @@ class _FastRandomChoice:
         if (nconsumed is None) or (nconsumed >= self._bufsize):
             sbs = [sb for sb in self._P[sa]]
             probs = [self._P[sa][sb]['weight'] for sb in sbs]
+            if not np.allclose(np.sum(probs), 1):
+                raise Exception('internal error')
             self._state_to_sink_samples[sa] = np.random.choice(
                     sbs, size=self._bufsize, p=probs)
             self._state_to_nconsumed[sa] = 0
@@ -188,26 +190,27 @@ def gen_forward_samples(T, Q, root, root_distn, nsamples=None):
             weight = T[a][b]['weight']
             prev_node = a
             total_dwell = 0.0
-            if state in total_rates:
-                rate = total_rates[state]
-                while True:
-                    #dwell = random.expovariate(rate)
-                    dwell = np.random.exponential(scale = 1/rate)
-                    if total_dwell + dwell > weight:
-                        break
-                    total_dwell += dwell
-                    mid_node = next_node
-                    next_node += 1
-                    annotated_edge = (prev_node, mid_node, state, dwell)
-                    annotated_edges.append(annotated_edge)
-                    prev_node = mid_node
+            while True:
+                if state in total_rates:
+                    rate = total_rates[state]
+                else:
+                    break
+                dwell = np.random.exponential(scale = 1/rate)
+                if total_dwell + dwell > weight:
+                    break
+                total_dwell += dwell
+                mid_node = next_node
+                next_node += 1
+                annotated_edge = (prev_node, mid_node, state, dwell)
+                annotated_edges.append(annotated_edge)
+                prev_node = mid_node
 
-                    # Sample the state.
-                    #states = [s for s in P[state]]
-                    #probs = [P[state][s]['weight'] for s in states]
-                    #state = np.random.choice(states, p=probs)
-                    state = state_sampler.sample(state)
-                    node_to_state[prev_node] = state
+                # Sample the state.
+                #states = [s for s in P[state]]
+                #probs = [P[state][s]['weight'] for s in states]
+                #state = np.random.choice(states, p=probs)
+                state = state_sampler.sample(state)
+                node_to_state[prev_node] = state
 
             # Add the last segment of the branch.
             node_to_state[b] = state
@@ -263,25 +266,26 @@ def get_forward_sample(T, Q, root, root_distn):
         weight = T[a][b]['weight']
         prev_node = a
         total_dwell = 0.0
-        if state in total_rates:
-            rate = total_rates[state]
-            while True:
-                #dwell = random.expovariate(rate)
-                dwell = np.random.exponential(scale = 1/rate)
-                if total_dwell + dwell > weight:
-                    break
-                total_dwell += dwell
-                mid_node = next_node
-                next_node += 1
-                annotated_edge = (prev_node, mid_node, state, dwell)
-                annotated_edges.append(annotated_edge)
-                prev_node = mid_node
+        while True:
+            if state in total_rates:
+                rate = total_rates[state]
+            else:
+                break
+            dwell = np.random.exponential(scale = 1/rate)
+            if total_dwell + dwell > weight:
+                break
+            total_dwell += dwell
+            mid_node = next_node
+            next_node += 1
+            annotated_edge = (prev_node, mid_node, state, dwell)
+            annotated_edges.append(annotated_edge)
+            prev_node = mid_node
 
-                # Sample the state.
-                states = [s for s in P[state]]
-                probs = [P[state][s]['weight'] for s in states]
-                state = np.random.choice(states, p=probs)
-                node_to_state[prev_node] = state
+            # Sample the state.
+            states = [s for s in P[state]]
+            probs = [P[state][s]['weight'] for s in states]
+            state = np.random.choice(states, p=probs)
+            node_to_state[prev_node] = state
 
         # Add the last segment of the branch.
         node_to_state[b] = state
@@ -421,7 +425,6 @@ def resample_poisson(T, state_to_rate, root=None):
         prev_node = a
         total_dwell = 0.0
         while True:
-            #dwell = random.expovariate(rate)
             dwell = np.random.exponential(scale = 1/rate)
             if total_dwell + dwell > weight:
                 break
