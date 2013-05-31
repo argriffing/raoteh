@@ -336,13 +336,7 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2,
             raise ValueError('the rate matrix should have no loops')
     
     # Get the total rate away from each state.
-    total_rates = {}
-    for a in Q:
-        if Q[a]:
-            rate_out = 0.0
-            for b in Q[a]:
-                rate_out += Q[a][b]['weight']
-            total_rates[a] = rate_out
+    total_rates = _mjp.get_total_rates(Q)
 
     # Initialize omega as the uniformization rate.
     omega = uniformization_factor * max(total_rates.values())
