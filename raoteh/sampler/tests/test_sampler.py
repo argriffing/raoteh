@@ -19,6 +19,9 @@ from raoteh.sampler import _sampler
 from raoteh.sampler._util import (
                 StructuralZeroProb, NumericalZeroProb, get_first_element)
 
+from raoteh.sampler._sample_mc import(
+        resample_states)
+
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
         get_node_to_distn)
@@ -114,7 +117,7 @@ class TestNodeStateSampler(TestCase):
         node_to_state = {0: 0, 2: 3}
         assert_raises(
                 StructuralZeroProb,
-                _sampler.resample_states,
+                resample_states,
                 T, P, node_to_state)
 
         # But if the path endpoints have states
@@ -123,7 +126,7 @@ class TestNodeStateSampler(TestCase):
         root_distn = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
         node_to_state = {0: 0, 2: 2}
         for root in T:
-            observed = _sampler.resample_states(
+            observed = resample_states(
                     T, P, node_to_state, root, root_distn)
             expected = {0: 0, 1: 1, 2: 2}
             assert_equal(observed, expected)
@@ -134,7 +137,7 @@ class TestNodeStateSampler(TestCase):
         root_distn = {0: 0.1, 1: 0.2, 2: 0.3, 3: 0.4}
         node_to_state = {0: 3, 2: 1}
         for root in T:
-            observed = _sampler.resample_states(
+            observed = resample_states(
                     T, P, node_to_state, root, root_distn)
             expected = {0: 3, 1: 2, 2: 1}
             assert_equal(observed, expected)
@@ -157,7 +160,7 @@ class TestNodeStateSampler(TestCase):
         for root in T:
             assert_raises(
                     StructuralZeroProb,
-                    _sampler.resample_states,
+                    resample_states,
                     T, P, node_to_state, root, root_distn)
 
     def test_resample_states_separated_regions(self):
@@ -197,7 +200,7 @@ class TestNodeStateSampler(TestCase):
         # Check that the correct internal states are sampled,
         # regardless of the root choice.
         for root in T:
-            observed = _sampler.resample_states(
+            observed = resample_states(
                     T, P, node_to_state, root, root_distn)
             expected = {
                     0 : 0,
