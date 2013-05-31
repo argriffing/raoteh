@@ -6,6 +6,8 @@ import itertools
 
 import numpy as np
 import networkx as nx
+import scipy.stats
+from scipy import special
 
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises,
@@ -17,6 +19,9 @@ from raoteh.sampler._util import (
                 StructuralZeroProb, NumericalZeroProb, get_first_element)
 
 from raoteh.sampler._mjp import (
+        get_reversible_differential_entropy,
+        get_total_rates,
+        get_history_statistics,
         get_expected_history_statistics)
 
 from raoteh.sampler._conditional_expectation import (
@@ -433,6 +438,75 @@ class TestForwardSample(TestCase):
                 for b in T_aug.neighbors(a):
                     states.add(T_aug[a][b]['state'])
                 assert_equal(len(states), 1)
+
+
+class TestMJP_Entropy(TestCase):
+
+    def test_mjp_reversible_differential_entropy(self):
+
+        # Define a distribution over some primary states.
+        nstates = 4
+        distn = {
+                0 : 0.1,
+                1 : 0.2,
+                2 : 0.3,
+                3 : 0.4}
+
+        # Define the transition rates.
+        rates = [
+                (0, 1, 2 * distn[1]),
+                (1, 0, 2 * distn[0]),
+                (1, 2, distn[2]),
+                (2, 1, distn[1]),
+                (2, 3, 2 * distn[3]),
+                (3, 2, 2 * distn[2]),
+                (3, 0, distn[0]),
+                (0, 3, distn[3]),
+                ]
+
+        # Multiply the rates by some factor.
+        #rates = [(a, b, 50*rate) for a, b, rate in rates]
+
+        # Define the transition matrix.
+        Q = nx.DiGraph()
+        Q.add_weighted_edges_from(rates)
+
+        # Summarize the transition rate matrix.
+        total_rates = get_total_rates(Q)
+
+        # Define a tree with branch lengths.
+        T = nx.Graph()
+        T.add_edge(0, 12, weight=1.0)
+        T.add_edge(0, 23, weight=2.0)
+        T.add_edge(0, 33, weight=1.0)
+        total_tree_length = 4.0
+        root = 0
+
+        # Do some forward samples,
+        # and get the negative expected log likelihood.
+        neg_ll_samples = []
+        nsamples = 10000
+        #nsamples = 1000
+        for i in range(nsamples):
+            T_aug = _sampler.get_forward_sample(T, Q, root, distn)
+            info = get_history_statistics(T_aug, root=root)
+            dwell_times, root_state, transitions = info
+            log_likelihood = np.log(distn[root_state])
+            for state, dwell in dwell_times.items():
+                log_likelihood -= dwell * total_rates[state]
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q[sa][sb]['weight']
+                log_likelihood += special.xlogy(ntransitions, rate)
+            neg_ll = -log_likelihood
+            neg_ll_samples.append(neg_ll)
+        differential_entropy = get_reversible_differential_entropy(
+                Q, distn, total_tree_length)
+        print('differential entropy:', differential_entropy)
+        print('mean of neg log likl:', np.mean(neg_ll_samples))
+        print('std. dev. of neg log:', np.std(neg_ll_samples))
+        print('skew of neg log likl:', scipy.stats.skew(neg_ll_samples))
+        raise Exception('print entropy stuff')
 
 
 class TestRaoTehSampler(TestCase):

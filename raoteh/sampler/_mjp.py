@@ -9,6 +9,7 @@ from collections import defaultdict
 import numpy as np
 import networkx as nx
 import scipy.linalg
+import scipy.stats
 
 from raoteh.sampler._mc import (
         construct_node_to_pmap,
@@ -184,6 +185,42 @@ def get_history_statistics(T, root=None):
     root_state, transitions = get_history_root_state_and_transitions(
             T, root=root)
     return dwell_times, root_state, transitions
+
+
+def get_reversible_differential_entropy(Q, stationary_distn, t):
+    """
+    Compute differential entropy of a time-reversible Markov jump process.
+
+    This is the differential entropy of the distribution over trajectories.
+    The rate matrix Q must be time-reversible
+    with the given stationary distribution.
+
+    Parameters
+    ----------
+    Q : directed weighted networkx graph
+        Sparse matrix of transition rates.
+    stationary_distn : dict
+        Stationary distribution of the process.
+    t : float
+        Amount of time over which the process is observed.
+
+    Returns
+    -------
+    differential_entropy : float
+        The differential entropy of the distribution over trajectories.
+        This is not the Shannon entropy, and may be negative.
+
+    """
+    # Initialize the rate of trajectory distribution entropy per time.
+    # This accounts for both expected dwell times and expected transitions.
+    differential_entropy = 0.0
+    for sa in set(Q) & set(stationary_distn):
+        prob = stationary_distn[sa]
+        differential_entropy -= prob * np.log(prob)
+        for sb in Q[sa]:
+            rate = Q[sa][sb]['weight']
+            differential_entropy += t * prob * rate * (1 - np.log(rate))
+    return differential_entropy
 
 
 # XXX add tests
