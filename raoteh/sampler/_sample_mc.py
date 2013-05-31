@@ -4,8 +4,6 @@ Sample Markov chain trajectories on trees.
 """
 from __future__ import division, print_function, absolute_import
 
-import itertools
-
 import numpy as np
 import networkx as nx
 
