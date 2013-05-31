@@ -27,7 +27,6 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
-
 def get_total_rates(Q):
     """
     Get the total rate away from each state.
@@ -286,8 +285,6 @@ def get_expm_augmented_tree(T, Q, root):
     return T_aug
 
 
-# XXX add tests
-# XXX generalize node_to_state to node_to_allowed_states
 def get_expected_history_statistics(T, Q, node_to_allowed_states,
         root, root_distn=None):
     """
@@ -330,8 +327,9 @@ def get_expected_history_statistics(T, Q, node_to_allowed_states,
     if root not in T:
         raise ValueError('the specified root is not in the tree')
 
-    #XXX use get_expm_augmented_tree instead
     # Convert the sparse rate matrix to a dense ndarray rate matrix.
+    # Use this instead of get_expm_augmented_tree
+    # because we also need Q_dense for expm_frechet.
     states = sorted(Q)
     nstates = len(states)
     Q_dense = np.zeros((nstates, nstates), dtype=float)
@@ -354,16 +352,6 @@ def get_expected_history_statistics(T, Q, node_to_allowed_states,
             for b, sb in enumerate(states):
                 P_nx.add_edge(sa, sb, weight=P_dense[a, b])
         T_aug.add_edge(na, nb, P=P_nx)
-
-    """
-    # Construct the map from node to allowed state set.
-    node_to_allowed_states = {}
-    full_state_set = set(states)
-    for restricted_node, state in node_to_state.items():
-        node_to_allowed_states[restricted_node] = {state}
-    for unrestricted_node in full_state_set - set(node_to_state):
-        node_to_allowed_states[unrestricted_node] = full_state_set
-    """
 
     # Construct the node to pmap dict.
     node_to_pmap = construct_node_to_restricted_pmap(
