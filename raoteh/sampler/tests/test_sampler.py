@@ -18,13 +18,7 @@ from raoteh.sampler._util import (
 
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
-        get_node_to_distn)
-
-from raoteh.sampler._sampler import (
-        gen_histories,
-        gen_forward_samples,
-        get_forward_sample,
-        resample_poisson,
+        get_node_to_distn,
         )
 
 from raoteh.sampler._mjp import (
@@ -38,6 +32,16 @@ from raoteh.sampler._conditional_expectation import (
         get_jukes_cantor_rate_matrix,
         get_jukes_cantor_probability,
         get_jukes_cantor_interaction)
+
+from raoteh.sampler._sampler import (
+        gen_histories,
+        gen_forward_samples,
+        get_forward_sample,
+        resample_poisson,
+        get_feasible_history,
+        )
+
+from raoteh.sampler._sample_mc import get_test_transition_matrix
 
 
 def get_neg_ll(T_aug, Q, root, distn):
@@ -495,6 +499,61 @@ class TestRaoTehSampler(TestCase):
         print(expected_dwell_times)
         print(mjp_expected_dwell_times)
         raise Exception
+
+
+class TestFeasibleHistorySampler(TestCase):
+
+    def test_get_feasible_history(self):
+
+        # This transition matrix is on a 4x4 grid.
+        P = get_test_transition_matrix()
+
+        # Define a very sparse tree.
+        T = nx.Graph()
+        T.add_weighted_edges_from([
+            (0, 12, 1.0),
+            (0, 23, 2.0),
+            (0, 33, 1.0),
+            ])
+
+        # Define the known states
+        node_to_state = {
+                12 : 11,
+                23 : 14,
+                33 : 41}
+
+        # Define a root at a node with a known state,
+        # so that we can avoid specifying a distribution at the root.
+        root = 12
+        T_aug = get_feasible_history(T, P, node_to_state, root=root)
+
+        # The unweighted and weighted tree size should be unchanged.
+        assert_allclose(
+                T.size(weight='weight'), T_aug.size(weight='weight'))
+
+        # Check that for each node in the initial tree,
+        # all adjacent edges in the augmented tree have the same state.
+        # Furthermore if the state of the node in the initial tree is known,
+        # check that the adjacent edges share this known state.
+        for a in T:
+            states = set()
+            for b in T_aug.neighbors(a):
+                states.add(T_aug[a][b]['state'])
+            assert_equal(len(states), 1)
+            state = get_first_element(states)
+            if a in node_to_state:
+                assert_equal(node_to_state[a], state)
+
+        # Check that every adjacent edge pair is a valid transition.
+        successors = nx.dfs_successors(T_aug, root)
+        for a, b in nx.bfs_edges(T_aug, root):
+            if b in successors:
+                for c in successors[b]:
+                    ab = T_aug[a][b]['state']
+                    bc = T_aug[b][c]['state']
+                    assert_(ab in P)
+                    assert_(bc in P[ab])
+                    assert_(P[ab][bc]['weight'] > 0)
 
 
 if __name__ == '__main__':
