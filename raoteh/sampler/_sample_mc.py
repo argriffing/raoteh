@@ -9,7 +9,7 @@ import itertools
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform, _mjp
+from raoteh.sampler import _graph_transform, _mc
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
 
@@ -64,7 +64,7 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     predecessors = nx.dfs_predecessors(T, root)
 
     # For each node, get a sparse map from state to subtree probability.
-    node_to_pmap = _mjp.construct_node_to_pmap(T, P, node_to_state, root)
+    node_to_pmap = _mc.construct_node_to_pmap(T, P, node_to_state, root)
 
     # Sample the node states, beginning at the root.
     node_to_sampled_state = {}
@@ -84,7 +84,7 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
             raise ValueError(
                     'expected a prior distribution over the '
                     '%d possible states at the root' % len(root_pmap))
-        posterior_distn = _mjp.get_zero_step_posterior_distn(
+        posterior_distn = _mc.get_zero_step_posterior_distn(
                 root_distn, root_pmap)
         states, probs = zip(*posterior_distn.items())
         root_state = np.random.choice(states, p=np.array(probs))
@@ -112,7 +112,7 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
         # and if it gives a subtree probability that is not structurally zero.
         sinks = set(P[parent_state])
         prior_distn = dict((s, P[parent_state][s]['weight']) for s in sinks)
-        posterior_distn = _mjp.get_zero_step_posterior_distn(
+        posterior_distn = _mc.get_zero_step_posterior_distn(
                 prior_distn, node_to_pmap[node])
         states, probs = zip(*posterior_distn.items())
         sampled_state = np.random.choice(states, p=np.array(probs))

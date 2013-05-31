@@ -12,9 +12,7 @@ import scipy.linalg
 import scipy.stats
 
 from raoteh.sampler._mc import (
-        construct_node_to_pmap,
         construct_node_to_restricted_pmap,
-        get_zero_step_posterior_distn,
         get_node_to_distn,
         get_joint_endpoint_distn,
         )
