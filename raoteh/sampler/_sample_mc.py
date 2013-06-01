@@ -8,8 +8,13 @@ import numpy as np
 import networkx as nx
 
 from raoteh.sampler import _graph_transform, _mc
+
 from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb, get_first_element)
+        StructuralZeroProb, NumericalZeroProb,
+        get_first_element, get_normalized_dict_distn,
+        dict_random_choice)
+
+from raoteh.sampler._mc import get_zero_step_posterior_distn
 
 
 __all__ = []
@@ -50,9 +55,12 @@ def get_test_transition_matrix():
     return P
 
 
+# XXX this is a special case of resample_restricted_states.
 def resample_states(T, P, node_to_state, root=None, root_distn=None):
     """
     This function applies to a tree for which nodes will be assigned states.
+
+    It is somewhat obsolete.
 
     Parameters
     ----------
@@ -82,16 +90,84 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     If no root is provided,
     then an arbitrary node with a known state will be chosen as the root.
 
+    See also
+    --------
+    resample_restricted_states
+
     """
-
-    # Check for lack of any known state.
-    if not node_to_state:
-        raise NotImplementedError(
-                'unconditional forward simulation is not implemented')
-
     # If the root has not been provided, then pick one with a known state.
     if root is None:
         root = get_first_element(node_to_state)
+
+
+def resample_restricted_states(T, node_to_allowed_states,
+        root, prior_root_distn=None, P_default=None):
+    """
+    This function applies to a tree for which nodes will be assigned states.
+
+    Parameters
+    ----------
+    T : unweighted undirected acyclic networkx graph
+        States do not change within chunks represented by nodes in this tree.
+        Edges may be annotated with a sparse transition matrix P
+        as a weighted directed networkx graph.
+    node_to_allowed_states : dict
+        Maps each node to a set of allowed states.
+    root : integer
+        Root node.
+    prior_root_distn : dict, optional
+        Map from root state to prior probability.
+        If the distribution is not provided,
+        the it will be assumed to be uninformative.
+    P_default : weighted directed networkx graph, optional
+        Edges that are not explicitly annotated with a transition matrix P
+        will use this default transition matrix instead.
+        The edge weights are transition probabilities.
+
+    Returns
+    -------
+    node_to_sampled_state : dict
+        A map from each node of T to its sampled state.
+
+    See also
+    --------
+    resample_states
+
+    """
+    # Check for failure to annotate the nodes.
+    bad = set(T) - set(node_to_allowed_states)
+    if bad:
+        raise ValueError('the following nodes in the tree '
+                'are not annotated with allowed states: ' + str(sorted(bad)))
+
+    # Check for annotated non-nodes.
+    bad = set(node_to_allowed_states) - set(T)
+    if bad:
+        raise ValueError('the following nodes are annotated '
+                'with allowed states, but these nodes do not appear '
+                'in the tree: ' + str(sorted(bad)))
+
+    # Check that the root is in the tree.
+    if root not in T:
+        raise ValueError('the specified root ' + str(root) + 'is not '
+                'a node in the tree')
+
+    # Check for blatant infeasibility.
+    bad = set(n for n, s in node_to_allowed_states.items() if not s)
+    if bad:
+        raise StructuralZeroProb('the following nodes have no allowed states '
+                'according to their annotation: ' + str(sorted(bad)))
+
+    # Check for blatant root infeasibility
+    # caused partially by sparsity of the prior root distribution.
+    if prior_root_distn is not None:
+        if not prior_root_distn:
+            raise StructuralZeroProb('no root state is feasible '
+                    'because no state has a positive prior probability')
+        if not set(prior_root_distn) & node_to_allowed_states[root]:
+            raise StructuralZeroProb('no root state is feasible '
+                    'because the states with positive prior probability '
+                    'are disallowed by the annotation')
 
     # Bookkeeping structure related to tree traversal.
     predecessors = nx.dfs_predecessors(T, root)
@@ -102,54 +178,70 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     # Sample the node states, beginning at the root.
     node_to_sampled_state = {}
 
-    # Treat the root separately.
-    # If only one state is possible at the root, then we do not have to sample.
-    # Otherwise consult the map from root states to probabilities.
-    root_pmap = node_to_pmap[root]
-    if not root_pmap:
-        raise StructuralZeroProb('no state is feasible at the root')
-    elif len(root_pmap) == 1:
-        root_state = get_first_element(root_pmap)
-        if not root_pmap[root_state]:
-            raise NumericalZeroProb('numerical problem at the root')
-    else:
-        if root_distn is None:
-            raise ValueError(
-                    'expected a prior distribution over the '
-                    '%d possible states at the root' % len(root_pmap))
-        posterior_distn = _mc.get_zero_step_posterior_distn(
-                root_distn, root_pmap)
-        states, probs = zip(*posterior_distn.items())
-        root_state = np.random.choice(states, p=np.array(probs))
-    node_to_sampled_state[root] = root_state
-
-    # Sample the states at the rest of the nodes.
+    # Sample the states.
     for node in nx.dfs_preorder_nodes(T, root):
 
-        # The root has already been sampled.
+        # Get the precomputed pmap associated with the node.
+        # This is a sparse map from state to subtree likelihood.
+        pmap = node_to_pmap[root]
+
+        # Check for infeasibility caused by pmap sparsity.
+        if not pmap:
+            if node == root:
+                raise StructuralZeroProb('no root state is feasible because '
+                        'the subtree has zero likelihood for each state')
+            else:
+                raise StructuralZeroProb('no state is feasible '
+                        'for node %s because the subtree has zero likelihood '
+                        'for each state' % node)
+
+        # Define the posterior distribution over states at the node.
         if node == root:
-            continue
+            if prior_root_distn is None:
+                dpost = get_normalized_dict_distn(pmap)
+            else:
+                if not set(prior_root_distn) & set(pmap):
+                    raise StructuralZeroProb('no root state is feasible '
+                            'because the subtree has zero probability '
+                            'for each root state with positive prior '
+                            'probability')
+                dpost = get_zero_step_posterior_distn(
+                        prior_root_distn, pmap)
+        else:
 
-        # Get the parent node and its state.
-        parent_node = predecessors[node]
-        parent_state = node_to_sampled_state[parent_node]
-        
-        # Check that the parent state has transitions.
-        if parent_state not in P:
-            raise StructuralZeroProb(
-                    'no transition from the parent state is possible')
+            # Get the parent node and its state.
+            parent_node = predecessors[node]
+            parent_state = node_to_sampled_state[parent_node]
 
-        # Sample the state of a non-root node.
-        # A state is possible if it is reachable in one step from the
-        # parent state which has already been sampled
-        # and if it gives a subtree probability that is not structurally zero.
-        sinks = set(P[parent_state])
-        prior_distn = dict((s, P[parent_state][s]['weight']) for s in sinks)
-        posterior_distn = _mc.get_zero_step_posterior_distn(
-                prior_distn, node_to_pmap[node])
-        states, probs = zip(*posterior_distn.items())
-        sampled_state = np.random.choice(states, p=np.array(probs))
-        node_to_sampled_state[node] = sampled_state
+            # Get the transition probability matrix.
+            P = T[parent_node][node].get('P', P_default)
+            if P is None:
+                raise ValueError(
+                        'no transition probability matrix is available')
+            
+            # Check that the parent state has transitions.
+            if parent_state not in P:
+                raise StructuralZeroProb(
+                        'no transition from the parent state is possible')
+
+            # Get the distribution of a non-root node.
+            sinks = set(P[parent_state]) & node_to_allowed_states[node]
+            if not sinks:
+                raise StructuralZeroProb(
+                        'all allowed transitions from the parent node, '
+                        'given its sampled state, lead to disallowed '
+                        'states at the current node')
+            prior_distn = dict((s, P[parent_state][s]['weight']) for s in sinks)
+            if not set(prior_distn) & set(pmap):
+                raise StructuralZeroProb(
+                        'all transitions from the parent node, '
+                        'in its currently sampled state, to an allowed '
+                        'state in the current node, lead to only subtrees '
+                        'with likelihood zero')
+            dpost = get_zero_step_posterior_distn(prior_distn, pmap)
+
+        # Sample the state from the posterior distribution.
+        node_to_sampled_state[node] = dict_random_choice(dpost)
 
     # Return the map of sampled states.
     return node_to_sampled_state

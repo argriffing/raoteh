@@ -4,6 +4,7 @@ Exception classes and utility functions for the Rao-Teh sampler.
 """
 from __future__ import division, print_function, absolute_import
 
+import numpy as np
 
 __all__ = []
 
@@ -17,11 +18,21 @@ class StructuralZeroProb(ZeroProbError):
 class NumericalZeroProb(ZeroProbError):
     pass
 
-
 def get_first_element(elements):
     for x in elements:
         return x
 
+def dict_random_choice(d):
+    choices, p = zip(*d.items())
+    return np.random.choice(choices, p=p)
+
+def get_normalized_dict_distn(d):
+    if not d:
+        raise StructuralZeroProb('cannot normalize an empty distribution')
+    total_weight = sum(d.values())
+    if not total_weight:
+        raise NumericalZeroProb('the normalizing denominator is zero')
+    return dict((k, v / total_weight) for k, v in d.items())
 
 def get_arbitrary_tip(T, degrees=None):
     """

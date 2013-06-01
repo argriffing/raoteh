@@ -19,7 +19,8 @@ import networkx as nx
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
-        get_first_element, get_arbitrary_tip)
+        get_first_element, get_arbitrary_tip,
+        get_normalized_dict_distn)
 
 
 __all__ = []
@@ -244,11 +245,7 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
                 'no state is in the intersection of prior feasible '
                 'and observation feasible states')
     d = dict((s, prior_distn[s] * pmap[s]) for s in feasible_states)
-    total_weight = sum(d.values())
-    if not total_weight:
-        raise NumericalZeroProb('numerical zero probability error')
-    posterior_distn = dict((k, v / total_weight) for k, v in d.items())
-    return posterior_distn
+    return get_normalized_dict_distn(d)
 
 
 def get_history_log_likelihood(T, node_to_state, root, root_distn,
