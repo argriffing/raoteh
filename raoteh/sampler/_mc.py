@@ -71,7 +71,8 @@ def construct_node_to_pmap(T, P, node_to_state, root):
             T_aug, root, node_to_allowed_states)
 
 
-def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
+def construct_node_to_restricted_pmap(
+        T, root, node_to_allowed_states, P_default=None):
     """
     For each node, construct the map from state to subtree likelihood.
 
@@ -95,6 +96,8 @@ def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
         The root node.
     node_to_allowed_states : dict
         A map from a node to a set of allowed states.
+    P_default : directed weighted acyclic networkx graph, optional
+        A default transition matrix.
 
     Returns
     -------
@@ -123,7 +126,11 @@ def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
                 for n in successors[node]:
 
                     # Define the transition matrix according to the edge.
-                    P = T[node][n]['P']
+                    P = T[node][n].get('P', P_default)
+                    if P is None:
+                        raise ValueError('one of the edges is not annotated '
+                                'with a transition matrix, and no default '
+                                'transition matrix has been provided')
 
                     # Check that a transition away from the parent state
                     # is possible along this edge.
@@ -141,12 +148,12 @@ def construct_node_to_restricted_pmap(T, root, node_to_allowed_states):
                         structural_failure = True
                         break
 
-                # If there is no structural failure,
+                # If there is no structural failure or error,
                 # then add the subtree probability to the node state pmap.
                 if not structural_failure:
                     cprob = 1.0
                     for n in successors[node]:
-                        P = T[node][n]['P']
+                        P = T[node][n].get('P', P_default)
                         valid_states = set(P[node_state]) & set(node_to_pmap[n])
                         nprob = 0.0
                         for s in valid_states:

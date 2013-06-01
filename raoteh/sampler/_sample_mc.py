@@ -9,10 +9,16 @@ import networkx as nx
 
 from raoteh.sampler import _graph_transform, _mc
 
+from raoteh.sampler._mc import (
+        construct_node_to_restricted_pmap,
+        construct_node_to_pmap,
+        )
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_normalized_dict_distn,
-        dict_random_choice)
+        dict_random_choice,
+        )
 
 from raoteh.sampler._mc import get_zero_step_posterior_distn
 
@@ -96,8 +102,29 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
 
     """
     # If the root has not been provided, then pick one with a known state.
+    # If no state is known then pick an arbitrary root.
     if root is None:
-        root = get_first_element(node_to_state)
+        if node_to_state:
+            root = get_first_element(node_to_state)
+        else:
+            root = get_first_element(T)
+
+    # Construct the set of all possible states.
+    all_states = set(P)
+    if root_distn is not None:
+        all_states.update(root_distn)
+
+    # Construct the map from each node to its set of allowed states.
+    node_to_allowed_states = {}
+    for node in T:
+        if node in node_to_state:
+            node_to_allowed_states[node] = {node_to_state[node]}
+        else:
+            node_to_allowed_states[node] = all_states
+
+    # Sample the state at each node.
+    return resample_restricted_states(T, node_to_allowed_states,
+            root, root_distn, P_default=P)
 
 
 def resample_restricted_states(T, node_to_allowed_states,
@@ -173,7 +200,8 @@ def resample_restricted_states(T, node_to_allowed_states,
     predecessors = nx.dfs_predecessors(T, root)
 
     # For each node, get a sparse map from state to subtree probability.
-    node_to_pmap = _mc.construct_node_to_pmap(T, P, node_to_state, root)
+    node_to_pmap = construct_node_to_restricted_pmap(
+            T, root, node_to_allowed_states, P_default)
 
     # Sample the node states, beginning at the root.
     node_to_sampled_state = {}
@@ -183,7 +211,7 @@ def resample_restricted_states(T, node_to_allowed_states,
 
         # Get the precomputed pmap associated with the node.
         # This is a sparse map from state to subtree likelihood.
-        pmap = node_to_pmap[root]
+        pmap = node_to_pmap[node]
 
         # Check for infeasibility caused by pmap sparsity.
         if not pmap:
