@@ -444,9 +444,8 @@ class TestFullyAugmentedLikelihood(TestCase):
         # Test the likelihood calculations
         # for a few conditionally sampled histories on the tree.
         nhistories = 10
-        for compound_process_history in itertools.islice(
-                gen_histories(T, Q_compound, node_to_compound_state),
-                nhistories):
+        for compound_process_history in gen_histories(
+                T, Q_compound, node_to_compound_state, nhistories=nhistories):
 
             # Summarize the compound process history.
             dwell_times = get_history_dwell_times(

@@ -307,10 +307,11 @@ class TestMJP_Entropy(TestCase):
         neg_ll_contribs_init = []
         neg_ll_contribs_dwell = []
         neg_ll_contribs_trans = []
-        for T_aug in itertools.islice(
-                gen_histories(
-                    T, Q, node_to_state, uniformization_factor=2,
-                    root=root, root_distn=distn), nsamples):
+        for T_aug in gen_histories(
+                T, Q, node_to_state, root=root, root_distn=distn,
+                uniformization_factor=2, nhistories=nsamples):
+
+            # Get some stats of the histories.
             info = get_history_statistics(T_aug, root=root)
             dwell_times, root_state, transitions = info
 
@@ -429,8 +430,8 @@ class TestRaoTehSampler(TestCase):
 
         # Generate a few histories.
         nhistories = 10
-        for T_sample in itertools.islice(
-                gen_histories(T, Q, node_to_state), nhistories):
+        for T_sample in gen_histories(
+                T, Q, node_to_state, nhistories=nhistories):
 
             # Check that the weighted size is constant.
             assert_allclose(
@@ -472,8 +473,8 @@ class TestRaoTehSampler(TestCase):
         # Do some Monte Carlo sampling.
         observed_dwell_times = np.zeros(n, dtype=float)
         nhistories = 1000
-        for T_sample in itertools.islice(
-                gen_histories(T, Q, node_to_state), nhistories):
+        for T_sample in gen_histories(
+                T, Q, node_to_state, nhistories=nhistories):
 
             # Accumulate the amount of time spent in each state.
             for na, nb in T_sample.edges():

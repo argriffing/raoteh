@@ -224,8 +224,9 @@ def get_forward_sample(T, Q, root, root_distn):
     return T_out
 
 
-def gen_histories(T, Q, node_to_state, uniformization_factor=2,
-        root=None, root_distn=None):
+def gen_histories(T, Q, node_to_state,
+        root=None, root_distn=None,
+        uniformization_factor=2, nhistories=None):
     """
     Use the Rao-Teh method to sample histories on trees.
 
@@ -243,15 +244,77 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2,
     node_to_state : dict
         A map from nodes to states.
         Nodes with unknown states do not correspond to keys in this map.
-    uniformization_factor : float, optional
-        A value greater than 1.
     root : integer, optional
         Root of the tree.
     root_distn : dict, optional
         Map from root state to probability.
+    uniformization_factor : float, optional
+        A value greater than 1.
+    nhistories : integer, optional
+        Sample this many histories.
+        If None, then sample an unlimited number of histories.
 
     """
+    # If the root has not been specified,
+    # pick a root with known state if any exist,
+    # and pick an arbitrary one otherwise.
+    if root is None:
+        if node_to_state:
+            root = get_first_element(node_to_state)
+        else:
+            root = get_first_element(T)
 
+    # Get the set of all states.
+    all_states = set(Q)
+    if root_distn is not None:
+        all_states.update(set(root_distn))
+
+    # Convert the state restriction format.
+    node_to_allowed_states = {}
+    for node in T:
+        if node in node_to_state:
+            allowed = {node_to_state[node]}
+        else:
+            allowed = all_states
+        node_to_allowed_states[node] = allowed
+
+    # Sample the histories.
+    for history in gen_restricted_histories(T, Q, node_to_allowed_states,
+            root, root_distn=root_distn,
+            uniformization_factor=uniformization_factor,
+            nhistories=nhistories):
+        yield history
+
+
+def gen_restricted_histories(T, Q, node_to_allowed_states,
+        root, root_distn=None, uniformization_factor=2, nhistories=None):
+    """
+    Use the Rao-Teh method to sample histories on trees.
+
+    Edges of the yielded trees will be augmented
+    with weights and states.
+    The weighted size of each yielded tree should be the same
+    as the weighted size of the input tree.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree.
+    Q : directed weighted networkx graph
+        A sparse rate matrix.
+    node_to_allowed_states : dict
+        A map from each node to a set of allowed states.
+    root : integer
+        Root of the tree.
+    root_distn : dict, optional
+        Map from root state to probability.
+    uniformization_factor : float, optional
+        A value greater than 1.
+    nhistories : integer, optional
+        Sample this many histories.
+        If None, then sample an unlimited number of histories.
+
+    """
     # Validate some input.
     if uniformization_factor <= 1:
         raise ValueError('the uniformization factor must be greater than 1')
@@ -286,11 +349,11 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2,
 
     # Construct an initial feasible history,
     # possibly with redundant event nodes.
-    T = get_feasible_history(T, P, node_to_state,
+    T = get_restricted_feasible_history(T, P, node_to_allowed_states,
             root=root, root_distn=root_distn)
 
     # Generate histories using Rao-Teh sampling.
-    while True:
+    for i in itertools.count():
 
         # Identify and remove the non-original redundant nodes.
         all_rnodes = _graph_transform.get_redundant_degree_two_nodes(T)
@@ -300,13 +363,20 @@ def gen_histories(T, Q, node_to_state, uniformization_factor=2,
         # Yield the sampled history on the tree.
         yield T
 
+        # If we have sampled enough histories, then return.
+        if nhistories is not None:
+            nsampled = i + 1
+            if nsampled >= nhistories:
+                return
+
         # Resample poisson events.
         T = resample_poisson(T, poisson_rates)
 
         # Resample edge states.
         event_nodes = set(T) - initial_nodes
-        T = resample_edge_states(T, P, node_to_state, event_nodes,
-                root=root, root_distn=root_distn)
+        T = resample_restricted_edge_states(
+                T, P, node_to_allowed_states, event_nodes,
+                root=root, prior_root_distn=root_distn)
 
 
 def resample_poisson(T, state_to_rate, root=None):
@@ -426,7 +496,7 @@ def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
 
     # Get the restricted feasible history.
     return get_restricted_feasible_history(
-        T, P, node_to_allowed_states, root=root, root_distn=root_distn)
+        T, P, node_to_allowed_states, root, root_distn=root_distn)
 
 
 def get_restricted_feasible_history(
