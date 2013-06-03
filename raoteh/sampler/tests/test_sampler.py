@@ -494,7 +494,25 @@ class TestRaoTehSampler(TestCase):
 
 class TestFeasibleHistorySampler(TestCase):
 
-    def test_sparse_expm(self):
+    def test_sparse_expm_symmetric(self):
+        Q = nx.DiGraph()
+        Q.add_weighted_edges_from([
+            (0, 1, 1),
+            (1, 0, 1),
+            (1, 2, 1),
+            (2, 1, 1),
+            (0, 2, 1),
+            (2, 0, 1),
+            ])
+        P = sparse_expm(Q, 1)
+        expected_edges = (
+                (0, 0), (0, 1), (0, 2),
+                (1, 0), (1, 1), (1, 2),
+                (2, 0), (2, 1), (2, 2),
+                )
+        assert_equal(set(P.edges()), set(expected_edges))
+
+    def test_sparse_expm_one_way_state_transitions(self):
         Q = nx.DiGraph()
         Q.add_weighted_edges_from([
             (0, 1, 1),

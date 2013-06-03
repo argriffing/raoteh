@@ -386,10 +386,11 @@ def get_tolerance_process_log_likelihood(Q, state_to_part, T, node_to_tmap,
 
     # Add the log likelihood contribution of the primary thread.
     log_likelihood += np.log(root_distn[root_state])
-    for a, b in transitions.edges():
-        ntrans = transitions[a][b]['weight']
-        ptrans = P[a][b]['weight']
-        log_likelihood += scipy.special.xlogy(ntrans, ptrans)
+    for sa in set(transitions) & set(P):
+        for sb in set(transitions[sa]) & set(P[sa]):
+            ntrans = transitions[sa][sb]['weight']
+            ptrans = P[sa][sb]['weight']
+            log_likelihood += scipy.special.xlogy(ntrans, ptrans)
 
     # Add the log likelihood contribution of the process
     # associated with each tolerance class.
