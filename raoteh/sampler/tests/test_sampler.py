@@ -14,7 +14,9 @@ from numpy.testing import (run_module_suite, TestCase,
         decorators)
 
 from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb, get_first_element)
+        StructuralZeroProb, NumericalZeroProb,
+        get_first_element, sparse_expm,
+        )
 
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
@@ -503,6 +505,34 @@ class TestRaoTehSampler(TestCase):
 
 
 class TestFeasibleHistorySampler(TestCase):
+
+    def test_sparse_expm(self):
+        Q = nx.DiGraph()
+        Q.add_weighted_edges_from([
+            (0, 1, 1),
+            (1, 2, 1)])
+        P = sparse_expm(Q, 1)
+        expected_edges = (
+                (0, 1), (1, 2), (0, 2),
+                (0, 0), (1, 1), (2, 2))
+        assert_equal(set(P.edges()), set(expected_edges))
+        T = nx.Graph()
+        T.add_weighted_edges_from([
+            (0, 1, 1.0),
+            (0, 2, 1.0),
+            (0, 3, 1.0)])
+        root = 0
+        root_distn = {1 : 0.5, 2 : 0.5}
+
+        # Check infeasibility of a transition to state 0.
+        node_to_state = {1 : 1, 2 : 1, 3 : 0}
+        assert_raises(
+                Exception,
+                get_feasible_history,
+                T, P, node_to_state,
+                root=root,
+                root_distn=root_distn,
+                )
 
     def test_get_feasible_history(self):
 

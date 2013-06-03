@@ -447,7 +447,7 @@ def get_expected_history_statistics_for_log_likelihood(
 
     # Construct the augmented tree by annotating each edge
     # with the appropriate state transition probability matrix.
-    T_aug = get_expm_augmented_tree_dense_rates(T, states, Q_dense, root)
+    T_aug = get_expm_augmented_tree_dense_rates(T, Q, root)
 
     # Construct the node to pmap dict.
     node_to_pmap = construct_node_to_restricted_pmap(
