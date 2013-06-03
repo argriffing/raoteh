@@ -624,7 +624,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
-            scale = 10.0
+            scale = 0.5
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
         # Use forward sampling to jointly sample compound states on the tree,
@@ -695,7 +695,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 100
+        nsamples = 1000
         sqrt_nsamples = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,
@@ -751,6 +751,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # Summarize the primary proposal rates.
         primary_proposal_total_rates = get_total_rates(Q_primary_proposal)
 
+        # Summarize the primary rates.
+        primary_total_rates = get_total_rates(Q_primary)
+
         # Get the map from leaf node to primary state.
         leaf_to_primary_state = {}
         for node in T:
@@ -768,6 +771,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         imp_neg_ll_contribs_init = []
         imp_neg_ll_contribs_dwell = []
         imp_neg_ll_contribs_trans = []
+        importance_weights = []
         for T_aug in gen_histories(
                 T, Q_primary_proposal, leaf_to_primary_state,
                 root=root, root_distn=primary_distn,
@@ -789,6 +793,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             # to the neg log likelihood estimate.
             info = get_history_statistics(T_aug, root=root)
             dwell_times, root_state, transitions = info
+
+
+            # Proposal primary process summary.
 
             # contribution of root state to log likelihood
             proposal_init_ll = np.log(primary_distn[root_state])
@@ -813,6 +820,34 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 proposal_init_ll,
                 proposal_dwell_ll,
                 proposal_trans_ll))
+
+
+            # Non-proposal primary process summary.
+
+            # contribution of root state to log likelihood
+            primary_init_ll = np.log(primary_distn[root_state])
+
+            # contribution of dwell times
+            ll = 0.0
+            for state, dwell in dwell_times.items():
+                ll -= dwell * primary_total_rates[state]
+            primary_dwell_ll = ll
+
+            # contribution of transitions
+            ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_primary[sa][sb]['weight']
+                ll += special.xlogy(ntransitions, rate)
+            primary_trans_ll = ll
+
+            # Get the proposal log likelihood
+            # by summing the log likelihood contributions.
+            primary_ll = sum((
+                primary_init_ll,
+                primary_dwell_ll,
+                primary_trans_ll))
+
 
             # Compute the importance sampling ratio.
             # This requires computing the primary proposal likelihood,
@@ -870,17 +905,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                             if primary_to_part[sb] == tolerance_class:
                                 rate = Q_primary[primary_state][sb]['weight']
                                 absorption_rate += rate
-                    if not absorption_rate:
-                        print('absorption fail')
-                        print('primary state:', primary_state)
-                        for sb in Q_primary[primary_state]:
-                            if primary_to_part[sb] == tolerance_class:
-                                rate = Q_primary[primary_state][sb]['weight']
-                                print('absorption', primary_state, '->', sb,
-                                        ':', rate)
-                            else:
-                                print('non-absorption', primary_state, '->', sb,
-                                        ':', rate)
 
                     # Construct the local tolerance rate matrix.
                     Q_tol = nx.DiGraph()
@@ -927,6 +951,30 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 if 1 in dwell_times:
                     expected_dwell_on += dwell_times[1]
 
+            # Add the importance weight to the list.
+            importance_weights.append(importance_weight)
+
+            # XXX for now ignore the contribution
+            # Add the log likelihood contribution
+            # of the initial state distribution.
+            #imp_neg_ll_contribs_init = []
+            imp_neg_ll_contribs_init.append(0.0)
+
+            # Add the log likelihood contributions of the primary transitions.
+            imp_tolerance_trans_ll = 0.0
+            imp_tolerance_trans_ll += special.xlogy(expected_ngains, rate_on)
+            imp_tolerance_trans_ll += special.xlogy(expected_nlosses, rate_off)
+            imp_trans_ll = primary_trans_ll + imp_tolerance_trans_ll
+            imp_neg_ll_contribs_trans.append(-imp_trans_ll)
+
+            # XXX for now ignore this contribution
+            # Add the log likelihood contributions
+            # of the dwell times.
+            imp_neg_ll_contribs_dwell.append(0.0)
+
+        # define some expectations
+        normalized_imp_trans = (np.array(importance_weights) * np.array(
+                imp_neg_ll_contribs_trans)) / np.mean(importance_weights)
 
         print()
         print('--- tmjp experiment ---')
@@ -946,6 +994,11 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
         print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
+        print('imp trans     :', np.mean(normalized_imp_trans))
+        print('error         :', np.std(normalized_imp_trans) / sqrt_nsamples)
+        print()
+        print('importance weights:', importance_weights)
+        print('mean of importance weights:', np.mean(importance_weights))
         print()
         raise Exception('print tmjp entropy stuff')
 
