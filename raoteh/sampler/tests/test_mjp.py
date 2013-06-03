@@ -81,9 +81,6 @@ class TestMarkovJumpProcess(TestCase):
 
                 # Get the MJP expected history statistics.
                 # Check the expected dwell times for various roots.
-                # XXX allow all possible root positions
-                #     when the expectation code becomes more flexible
-                #for root in (min(T), max(T)):
                 for root in T:
 
                     # Get the expected dwell times by brute force.
