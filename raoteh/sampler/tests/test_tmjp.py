@@ -593,9 +593,6 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
     def test_tmjp_monte_carlo_rao_teh_differential_entropy(self):
-        #XXX under construction
-        #XXX possibly move this into a test_sample_tmjp.py module
-
         # In this test, we look at conditional expected log likelihoods.
         # These are computed in two ways.
         # The first way is by exponential integration using expm_frechet.
@@ -700,7 +697,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         nsamples = 1000
         sqrt_nsamples = np.sqrt(nsamples)
 
-        # Do some forward samples,
+        # Do some Rao-Teh conditional samples,
         # and get the negative expected log likelihood.
         sampled_root_distn = defaultdict(float)
         neg_ll_contribs_init = []
@@ -733,6 +730,85 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 rate = Q_compound[sa][sb]['weight']
                 ll += special.xlogy(ntransitions, rate)
             neg_ll_contribs_trans.append(-ll)
+
+        # Define a rate matrix for a primary process proposal distribution.
+        # This is intended to define a Markov jump process for primary states
+        # which approximates the non-Markov jump process for primary states
+        # defined by the marginal primary component of the compound process.
+        # This biased proposal primary process can be used for either
+        # importance sampling or for a Metropolis-Hastings step
+        # within the Rao-Teh sampling.
+        Q_primary_proposal = nx.DiGraph()
+        for sa, sb in Q.edges():
+            primary_rate = Q[sa][sb]['weight']
+            if primary_to_part[sa] == primary_to_part[sb]:
+                proposal_rate = primary_rate * tolerance_distn[1]
+            else:
+                proposal_rate = primary_rate
+            Q_primary_proposal.add_edge(sa, sb, weight=proposal_rate)
+
+        # Summarize the primary proposal rates.
+        primary_proposal_total_rates = get_total_rates(Q_primary_proposal)
+
+        # Get the map from leaf node to primary state.
+        leaf_to_primary_state = {}
+        for node in T:
+            deg = len(T[node])
+            if deg == 1:
+                neighbor = get_first_element(T_forward_sample[node])
+                compound_state = T_forward_sample[node][neighbor]['state']
+                primary_state = compound_to_primary[compound_state]
+                leaf_to_primary_state[node] = primary_state
+
+        # Get Rao-Teh samples of primary process trajectories
+        # conditional on the primary states at the leaves.
+        # The imp_ prefix denotes importance sampling.
+        imp_sampled_root_distn = defaultdict(float)
+        imp_neg_ll_contribs_init = []
+        imp_neg_ll_contribs_dwell = []
+        imp_neg_ll_contribs_trans = []
+        for T_aug in gen_histories(
+                T, Q_primary_proposal, leaf_to_primary_state,
+                root=root, root_distn=primary_distn,
+                uniformization_factor=2, nhistories=nsamples):
+
+            # Compute primary process statistics.
+            # These will be used for two purposes.
+            # One of the purposes is as the denominator of the
+            # importance sampling ratio.
+            # The second purpose is to compute contributions
+            # to the neg log likelihood estimate.
+            info = get_history_statistics(T_aug, root=root)
+            dwell_times, root_state, transitions = info
+
+            # contribution of root state to log likelihood
+            proposal_init_ll = np.log(primary_distn[root_state])
+
+            # contribution of dwell times
+            ll = 0.0
+            for state, dwell in dwell_times.items():
+                ll -= dwell * primary_proposal_total_rates[state]
+            proposal_dwell_ll = ll
+
+            # contribution of transitions
+            ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_primary_proposal[sa][sb]['weight']
+                ll += special.xlogy(ntransitions, rate)
+            proposal_trans_ll = ll
+
+            # Compute the importance sampling ratio.
+            # This requires computing the primary proposal likelihood,
+            # and also computing the marginal likelihood
+            # of the primary process by integrating over
+            # tolerance histories.
+            # For now, we will assume that the tolerance histories
+            # are completely unobserved, although they are somewhat
+            # constrained by the sampled primary trajectory.
+            # If we begin to include disease data into the analysis,
+            # the tolerance histories will become more constrained.
+            pass
 
         print()
         print('--- tmjp experiment ---')
