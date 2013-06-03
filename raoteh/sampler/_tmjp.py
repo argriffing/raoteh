@@ -16,10 +16,17 @@ import scipy.linalg
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
-        get_first_element, get_arbitrary_tip)
+        get_first_element, get_arbitrary_tip,
+        )
+
+from raoteh.sampler._mc import (
+        get_restricted_likelihood,
+        )
 
 from raoteh.sampler._mjp import (
-        get_total_rates, get_conditional_transition_matrix)
+        get_history_root_state_and_transitions,
+        get_total_rates, get_conditional_transition_matrix,
+        )
 
 
 __all__ = []
@@ -184,7 +191,7 @@ def get_tolerance_substrate(
         # then do not add the absorption rate to the annotation.
         sbs = [sb for sb in Q[state] if state_to_part[state] == part]
         if sbs:
-            absorption_rate = sum(Q[state][sb] for sb in sbs)
+            absorption_rate = sum(Q[state][sb]['weight'] for sb in sbs)
             T_out[a][b]['absorption'] = absorption_rate
 
     # Return the annotated networkx tree and the node to tolerance state map.
@@ -270,9 +277,9 @@ def get_tolerance_class_likelihood(
     # that the absorbing tolerance state 2 is disallowed.
     node_to_allowed_states = {}
     for node, tolerance in node_to_tolerance.items():
-        node_to_allowed_states = {tolerance}
+        node_to_allowed_states[node] = {tolerance}
     for node in set(T) - set(node_to_tolerance):
-        node_to_allowed_states = {0, 1}
+        node_to_allowed_states[node] = {0, 1}
 
     # Construct yet another tree with annotated edges.
     # This one will have a transition matrix on each edge.
@@ -306,11 +313,11 @@ def get_tolerance_class_likelihood(
         for i in range(3):
             for j in range(3):
                 P_local_nx.add_edge(i, j, weight=P_local_ndarray[i, j])
-        T_aug.add_edge(a, b, P=P_local)
+        T_aug.add_edge(a, b, P=P_local_nx)
 
     # Get the likelihood from the augmented tree and the root distribution.
     likelihood = get_restricted_likelihood(
-            T_aug, root, node_to_allowed_states, root_distn)
+            T_aug, root, node_to_allowed_states, root_prior)
 
     # Return the likelihood.
     return likelihood
