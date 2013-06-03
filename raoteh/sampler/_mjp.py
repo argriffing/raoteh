@@ -269,8 +269,9 @@ def get_expm_augmented_tree(T, Q, root):
     return T_aug
 
 
-def get_expected_history_statistics(T, Q, node_to_allowed_states,
-        root, root_distn=None):
+#XXX edge-specific rate matrices are not implemented
+def get_expected_history_statistics(T, node_to_allowed_states,
+        root, root_distn=None, Q_default=None):
     """
     This is a soft analog of get_history_statistics.
 
@@ -285,9 +286,8 @@ def get_expected_history_statistics(T, Q, node_to_allowed_states,
     Parameters
     ----------
     T : weighted undirected acyclic networkx graph
-        Weighted tree.
-    Q : directed weighted networkx graph
-        A sparse rate matrix.
+        Edges of this tree are annotated with weights and possibly with
+        edge-specific Q rate matrices.
     node_to_allowed_states : dict
         Maps each node to a set of allowed states.
     root : integer
@@ -295,6 +295,8 @@ def get_expected_history_statistics(T, Q, node_to_allowed_states,
     root_distn : dict, optional
         Sparse distribution over states at the root.
         This is optional if only one state is allowed at the root.
+    Q_default : directed weighted networkx graph, optional
+        A sparse rate matrix.
 
     Returns
     -------
@@ -310,6 +312,9 @@ def get_expected_history_statistics(T, Q, node_to_allowed_states,
     # Do some input validation for this restricted variant.
     if root not in T:
         raise ValueError('the specified root is not in the tree')
+
+    # XXX change this later
+    Q = Q_default
 
     # Convert the sparse rate matrix to a dense ndarray rate matrix.
     states, Q_dense = get_dense_rate_matrix(Q)

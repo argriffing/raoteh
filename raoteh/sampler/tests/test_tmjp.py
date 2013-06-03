@@ -676,8 +676,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Get some posterior expectations.
         dwell_times, transitions = get_expected_history_statistics(
-                T, Q_compound, node_to_allowed_states,
-                root, root_distn=compound_distn)
+                T, node_to_allowed_states,
+                root, root_distn=compound_distn, Q_default=Q_compound)
 
         # Use some posterior expectations
         # to get the dwell time contribution to differential entropy.
@@ -695,7 +695,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 1000
+        nsamples = 100
         sqrt_nsamples = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,

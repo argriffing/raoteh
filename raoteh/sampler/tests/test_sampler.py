@@ -357,7 +357,8 @@ class TestMJP_Entropy(TestCase):
 
         # Get some posterior expectations.
         dwell_times, transitions = get_expected_history_statistics(
-                T, Q, node_to_allowed_states, root, root_distn=distn)
+                T, node_to_allowed_states,
+                root, root_distn=distn, Q_default=Q)
 
         # Use some posterior expectations
         # to get the dwell time contribution to differential entropy.
@@ -481,7 +482,7 @@ class TestRaoTehSampler(TestCase):
 
         # Get the MJP expected history statistics.
         info = get_expected_history_statistics(
-                T, Q, node_to_allowed_states, root)
+                T, node_to_allowed_states, root, Q_default=Q)
         mjp_expected_dwell_times, mjp_expected_transitions = info
 
         # Compare to the expected dwell times.

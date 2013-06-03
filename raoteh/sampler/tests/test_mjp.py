@@ -85,7 +85,7 @@ class TestMarkovJumpProcess(TestCase):
 
                     # Get the expected dwell times by brute force.
                     info = get_expected_history_statistics(
-                            T, Q, node_to_allowed_states, root)
+                            T, node_to_allowed_states, root, Q_default=Q)
                     mjp_expected_dwell_times, mjp_expected_transitions = info
 
                     # Compare to the expected dwell times.
