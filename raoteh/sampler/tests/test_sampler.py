@@ -126,7 +126,7 @@ class TestMJP_Entropy(TestCase):
     @decorators.skipif(True, 'this test prints stuff')
     def test_mjp_reversible_differential_entropy(self):
 
-        # Define a distribution over some primary states.
+        # Define a distribution over some states.
         nstates = 4
         distn = {
                 0 : 0.1,
@@ -248,7 +248,7 @@ class TestMJP_Entropy(TestCase):
 
     def test_mjp_monte_carlo_rao_teh_differential_entropy(self):
 
-        # Define a distribution over some primary states.
+        # Define a distribution over some states.
         nstates = 4
         """
         distn = {
@@ -336,20 +336,6 @@ class TestMJP_Entropy(TestCase):
                 ll += special.xlogy(ntransitions, rate)
             neg_ll_contribs_trans.append(-ll)
 
-        """
-        diff_ent_init = 0.0
-        diff_ent_dwell = 0.0
-        diff_ent_trans = 0.0
-        t = total_tree_length
-        for sa in set(Q) & set(distn):
-            prob = distn[sa]
-            diff_ent_init -= prob * np.log(prob)
-            for sb in Q[sa]:
-                rate = Q[sa][sb]['weight']
-                diff_ent_dwell += t * prob * rate
-                diff_ent_trans -= t * prob * rate * np.log(rate)
-        """
-
         # Get the diff_ent_init through the root posterior marginal distn.
         node_to_allowed_states = {}
         for node in T:
@@ -393,6 +379,7 @@ class TestMJP_Entropy(TestCase):
         print()
         print('sampled root distn :', sampled_root_distn)
         print('analytic root distn:', posterior_root_distn)
+        print()
         print('diff ent init:', diff_ent_init)
         print('neg ll init  :', np.mean(neg_ll_contribs_init))
         print('error        :', np.std(neg_ll_contribs_init) / sqrt_nsamples)

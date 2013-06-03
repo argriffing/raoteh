@@ -221,7 +221,6 @@ def get_reversible_differential_entropy(Q, stationary_distn, t):
     return differential_entropy
 
 
-#XXX under construction
 def get_expm_augmented_tree(T, Q, root):
     """
     Add transition probability matrices to edges.

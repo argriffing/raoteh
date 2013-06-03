@@ -7,29 +7,49 @@ from __future__ import division, print_function, absolute_import
 import random
 import itertools
 import functools
+from collections import defaultdict
 
 import numpy as np
 import networkx as nx
-
-from numpy.testing import (run_module_suite, TestCase,
-        assert_equal, assert_allclose, assert_, assert_raises,
-        decorators)
-
 import scipy.linalg
 from scipy import special
 from scipy import optimize
 
-from raoteh.sampler._sampler import (
-        gen_histories, get_forward_sample)
-from raoteh.sampler._sample_tree import (
-        get_random_branching_tree, get_random_agglom_tree)
+from numpy.testing import (
+        run_module_suite, TestCase,
+        assert_equal, assert_allclose, assert_, assert_raises, decorators,
+        )
+
 from raoteh.sampler._util import (
-                StructuralZeroProb, NumericalZeroProb, get_first_element)
+        StructuralZeroProb, NumericalZeroProb, get_first_element,
+        )
+
+from raoteh.sampler._mc import (
+        get_restricted_likelihood,
+        construct_node_to_restricted_pmap,
+        get_node_to_distn,
+        )
+
 from raoteh.sampler._mjp import (
-            get_history_dwell_times, get_history_root_state_and_transitions,
-            get_total_rates, get_conditional_transition_matrix)
-from raoteh.sampler._mc import get_restricted_likelihood
-from raoteh.sampler._tmjp import get_tolerance_process_log_likelihood
+        get_history_dwell_times, get_history_root_state_and_transitions,
+        get_history_statistics,
+        get_total_rates, get_conditional_transition_matrix,
+        get_expm_augmented_tree,
+        get_expected_history_statistics,
+        )
+
+from raoteh.sampler._tmjp import (
+        get_tolerance_process_log_likelihood,
+        )
+
+from raoteh.sampler._sampler import (
+        gen_histories, gen_restricted_histories,
+        get_forward_sample,
+        )
+
+from raoteh.sampler._sample_tree import (
+        get_random_branching_tree, get_random_agglom_tree,
+        )
 
 
 def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
@@ -179,71 +199,6 @@ def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
             Q_compound)
 
 
-#XXX this belongs in the Markov jump chain module
-def get_expm_augmented_tree(T, Q, root):
-    """
-    This is a helper function.
-
-    Parameters
-    ----------
-    T : weighted undirected networkx graph
-        This tree may possibly be annotated with edge state restrictions.
-        If an edge is annotated with the 'allowed' attribution,
-        then it is interpreted as a whitelist of states that are
-        allowed along the edge.  If the annotation is missing,
-        then no edge state restriction is imposed.
-    Q : weighted directed networkx graph
-        Sparse rate matrix.
-    root : integer
-        Root node.
-
-    Returns
-    -------
-    T_aug : weighted undirected networkx graph
-        Tree annotated with transition probability matrices.
-        If state restrictions along edges are in place,
-        then these probabilities are joint with the condition
-        that no restricted state was entered along the edge.
-
-    """
-    # Convert the sparse rate matrix to a dense ndarray rate matrix.
-    states = sorted(Q)
-    nstates = len(states)
-    Q_dense = np.zeros((nstates, nstates), dtype=float)
-    for a, sa in enumerate(states):
-        for b, sb in enumerate(states):
-            if Q.has_edge(sa, sb):
-                edge = Q[sa][sb]
-                Q_dense[a, b] = edge['weight']
-    Q_dense = Q_dense - np.diag(np.sum(Q_dense, axis=1))
-
-    # Construct the augmented tree by annotating each edge
-    # with the appropriate state transition probability matrix.
-    T_aug = nx.Graph()
-    for na, nb in nx.bfs_edges(T, root):
-        edge = T[na][nb]
-        weight = edge['weight']
-        if 'allowed' in edge:
-            allowed_edge_states = edge['allowed']
-            Q_dense_local = Q_dense.copy()
-            for a, sa in enumerate(states):
-                for b, sb in enumerate(states):
-                    if sb not in allowed_edge_states:
-                        Q_dense_local[a, b] = 0
-        else:
-            Q_dense_local = Q_dense
-        P_dense = scipy.linalg.expm(weight * Q_dense_local)
-        P_nx = nx.DiGraph()
-        for a, sa in enumerate(states):
-            for b, sb in enumerate(states):
-                if ('allowed' not in edge) or (sb in edge['allowed']):
-                    P_nx.add_edge(sa, sb, weight=P_dense[a, b])
-        T_aug.add_edge(na, nb, P=P_nx)
-
-    # Return the augmented tree.
-    return T_aug
-
-
 def _neg_log_likelihood_for_minimization(
         T_seq, root, node_to_allowed_states_seq, X):
     """
@@ -330,7 +285,6 @@ class TestExpectationMaximization(TestCase):
             #scale = 1.0
             scale = 0.1
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
-
 
         # Track the primary process.
         ncols = 5
@@ -636,6 +590,168 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
                 rate_off, rate_on, primary_distn, root)
 
 
-if __name__ == '__main__':
-    run_module_suite()
+class TestToleranceProcessExpectedLogLikelihood(TestCase):
+
+    def test_tmjp_monte_carlo_rao_teh_differential_entropy(self):
+        #XXX under construction
+        #XXX possibly move this into a test_sample_tmjp.py module
+
+        # In this test, we look at conditional expected log likelihoods.
+        # These are computed in two ways.
+        # The first way is by exponential integration using expm_frechet.
+        # The second way is by Rao-Teh sampling.
+
+        # Define the tolerance process rates.
+        rate_on = 0.5
+        rate_off = 1.5
+
+        # Define some other properties of the process,
+        # in a way that is not object-oriented.
+        (primary_distn, Q, primary_to_part,
+                compound_to_primary, compound_to_tolerances, compound_distn,
+                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+
+        # Summarize properties of the process.
+        nprimary = len(primary_distn)
+        nparts = len(set(primary_to_part.values()))
+        total_rates = get_total_rates(Q_compound)
+        total_tolerance_rate = rate_on + rate_off
+        tolerance_distn = {
+                0 : rate_off / total_tolerance_rate,
+                1 : rate_on / total_tolerance_rate}
+
+        # Sample a non-tiny random tree without branch lengths.
+        T = get_random_agglom_tree(maxnodes=20)
+        root = 0
+
+        # Add some random branch lengths onto the edges of the tree.
+        for na, nb in nx.bfs_edges(T, root):
+            scale = 0.1
+            T[na][nb]['weight'] = np.random.exponential(scale=scale)
+
+        # Use forward sampling to jointly sample compound states on the tree,
+        # according to the compound process and its stationary distribution
+        # at the root.
+        T_forward_sample = get_forward_sample(
+                T, Q_compound, root, compound_distn)
+
+        # Track only the primary process information at leaves.
+        # Do not track the any tolerance process information at leaves,
+        # and track neither primary nor tolerance process information
+        # at non-leaf vertices or on any edge.
+        node_to_allowed_states = {}
+        for node in T:
+
+            # For nodes of degree 1, allow only compound states
+            # that share the primary state with the sampled compound state.
+            # For the remaining nodes, allow all possible compound states.
+            deg = len(T[node])
+            if deg == 1:
+                neighbor = get_first_element(T_forward_sample[node])
+                compound_state = T_forward_sample[node][neighbor]['state']
+                primary_state = compound_to_primary[compound_state]
+                allowed_states = set()
+                for comp, prim in enumerate(compound_to_primary):
+                    if prim == primary_state:
+                        allowed_states.add(comp)
+            else:
+                allowed_states = set(range(len(compound_to_primary)))
+            node_to_allowed_states[node] = allowed_states
+
+        # Compute the conditional expected log likelihood explicitly
+        # using some Markov jump process functions.
+
+        # Annotate the edges of the tree
+        # transition probability matrices which account for
+        # the compound process transition rate matrix
+        # and the length of the edge.
+        T_trans = get_expm_augmented_tree(T, Q_compound, root)
+        node_to_pmap = construct_node_to_restricted_pmap(
+                T_trans, root, node_to_allowed_states)
+        posterior_node_to_distn = get_node_to_distn(
+                T_trans, node_to_allowed_states, node_to_pmap,
+                root, prior_root_distn=compound_distn)
+        posterior_root_distn = posterior_node_to_distn[root]
+        diff_ent_init = 0.0
+        for state, prob in posterior_node_to_distn[root].items():
+            diff_ent_init -= special.xlogy(prob, compound_distn[state])
+
+        # Get some posterior expectations.
+        dwell_times, transitions = get_expected_history_statistics(
+                T, Q_compound, node_to_allowed_states,
+                root, root_distn=compound_distn)
+
+        # Use some posterior expectations
+        # to get the dwell time contribution to differential entropy.
+        diff_ent_dwell = 0.0
+        for s, rate in total_rates.items():
+            diff_ent_dwell += dwell_times[s] * rate
+
+        # Use some posterior expectations
+        # to get the transition contribution to differential entropy.
+        diff_ent_trans = 0.0
+        for sa in set(Q_compound) & set(transitions):
+            for sb in set(Q_compound[sa]) & set(transitions[sa]):
+                rate = Q_compound[sa][sb]['weight']
+                ntrans_expected = transitions[sa][sb]['weight']
+                diff_ent_trans -= ntrans_expected * np.log(rate)
+
+        # Define the number of samples.
+        nsamples = 1000
+        sqrt_nsamples = np.sqrt(nsamples)
+
+        # Do some forward samples,
+        # and get the negative expected log likelihood.
+        sampled_root_distn = defaultdict(float)
+        neg_ll_contribs_init = []
+        neg_ll_contribs_dwell = []
+        neg_ll_contribs_trans = []
+        for T_aug in gen_restricted_histories(
+                T, Q_compound, node_to_allowed_states,
+                root=root, root_distn=compound_distn,
+                uniformization_factor=2, nhistories=nsamples):
+
+            # Get some stats of the histories.
+            info = get_history_statistics(T_aug, root=root)
+            dwell_times, root_state, transitions = info
+
+            # contribution of root state to log likelihood
+            sampled_root_distn[root_state] += 1.0 / nsamples
+            ll = np.log(compound_distn[root_state])
+            neg_ll_contribs_init.append(-ll)
+
+            # contribution of dwell times
+            ll = 0.0
+            for state, dwell in dwell_times.items():
+                ll -= dwell * total_rates[state]
+            neg_ll_contribs_dwell.append(-ll)
+
+            # contribution of transitions
+            ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_compound[sa][sb]['weight']
+                ll += special.xlogy(ntransitions, rate)
+            neg_ll_contribs_trans.append(-ll)
+
+        print()
+        print('--- tmjp experiment ---')
+        print('nsamples:', nsamples)
+        print()
+        print('sampled root distn :', sampled_root_distn)
+        print('analytic root distn:', posterior_root_distn)
+        print()
+        print('diff ent init:', diff_ent_init)
+        print('neg ll init  :', np.mean(neg_ll_contribs_init))
+        print('error        :', np.std(neg_ll_contribs_init) / sqrt_nsamples)
+        print()
+        print('diff ent dwell:', diff_ent_dwell)
+        print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
+        print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamples)
+        print()
+        print('diff ent trans:', diff_ent_trans)
+        print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
+        print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
+        print()
+        raise Exception('print tmjp entropy stuff')
 
