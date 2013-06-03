@@ -881,6 +881,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
                 # Compute conditional expectations of dwell times
                 # and transitions for this tolerance class.
+                dwell_times, transitions = get_expected_history_statistics(
+                        T_tol, node_to_allowed_tolerances,
+                        root, root_distn=tolerance_distn)
 
 
         print()

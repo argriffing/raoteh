@@ -256,7 +256,6 @@ def get_expm_augmented_tree(T, root, Q_default=None):
     return T_aug
 
 
-#XXX edge-specific rate matrices are not implemented
 def get_expected_history_statistics(T, node_to_allowed_states,
         root, root_distn=None, Q_default=None):
     """
@@ -300,16 +299,22 @@ def get_expected_history_statistics(T, node_to_allowed_states,
     if root not in T:
         raise ValueError('the specified root is not in the tree')
 
-    # XXX change this later
-    Q = Q_default
-
-    # Convert the sparse rate matrix to a dense ndarray rate matrix.
-    states, Q_dense = get_dense_rate_matrix(Q)
+    # Attempt to define the state space.
+    # This will use the default rate matrix if available,
+    # and it will try to use all available edge-specific rate matrices.
+    full_state_set = set()
+    if Q_default is not None:
+        full_state_set.update(Q_default)
+    for na, nb in nx.bfs_edges(T, root):
+        Q = T[na][nb].get('Q', None)
+        if Q is not None:
+            full_state_set.update(Q)
+    states = sorted(full_state_set)
     nstates = len(states)
 
     # Construct the augmented tree by annotating each edge
     # with the appropriate state transition probability matrix.
-    T_aug = get_expm_augmented_tree(T, root, Q_default=Q)
+    T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Construct the node to pmap dict.
     node_to_pmap = construct_node_to_restricted_pmap(
@@ -331,6 +336,20 @@ def get_expected_history_statistics(T, node_to_allowed_states,
     expected_dwell_times = defaultdict(float)
     expected_transitions = nx.DiGraph()
     for na, nb in nx.bfs_edges(T, root):
+
+        # Get the sparse rate matrix to use for this edge.
+        Q = T[na][nb].get('Q', Q_default)
+        if Q is None:
+            raise ValueError('no rate matrix is available for this edge')
+
+        # Construct the dense local rate matrix
+        # for the purposes of frechet derivative.
+        Q_dense = np.zeros((nstates, nstates), dtype=float)
+        for sa_index, sa in enumerate(states):
+            for sb_index, sb in enumerate(states):
+                if Q.has_edge(sa, sb):
+                    Q_dense[sa_index, sb_index] = Q[sa][sb]['weight']
+        Q_dense = Q_dense - np.diag(np.sum(Q_dense, axis=1))
 
         # Get the elapsed time along the edge.
         t = T[na][nb]['weight']
