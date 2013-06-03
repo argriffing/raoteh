@@ -344,7 +344,7 @@ class TestMJP_Entropy(TestCase):
             else:
                 allowed = set(range(nstates))
             node_to_allowed_states[node] = allowed
-        T_trans = get_expm_augmented_tree(T, Q, root)
+        T_trans = get_expm_augmented_tree(T, root, Q_default=Q)
         node_to_pmap = construct_node_to_restricted_pmap(
                 T_trans, root, node_to_allowed_states)
         posterior_node_to_distn = get_node_to_distn(

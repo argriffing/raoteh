@@ -240,7 +240,7 @@ def _neg_log_likelihood_for_minimization(
         # Compute some matrix exponentials
         # and put them on the edges of the tree,
         # respecting edge state restrictions.
-        T_aug = get_expm_augmented_tree(T, Q_compound, root)
+        T_aug = get_expm_augmented_tree(T, root, Q_default=Q_compound)
         likelihood = get_restricted_likelihood(
                 T_aug, root, node_to_allowed_states, compound_distn)
         log_likelihood += np.log(likelihood)
@@ -663,7 +663,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # transition probability matrices which account for
         # the compound process transition rate matrix
         # and the length of the edge.
-        T_trans = get_expm_augmented_tree(T, Q_compound, root)
+        T_trans = get_expm_augmented_tree(T, root, Q_default=Q_compound)
         node_to_pmap = construct_node_to_restricted_pmap(
                 T_trans, root, node_to_allowed_states)
         posterior_node_to_distn = get_node_to_distn(
