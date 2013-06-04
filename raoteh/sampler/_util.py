@@ -139,8 +139,6 @@ def expm_frechet_is_simple(Q):
         return False
     if w < 0:
         return False
-    if w == 0 and a == r:
-        return False
     return True
 
 
@@ -150,9 +148,12 @@ def simple_expm_frechet(Q, ai, bi, ci, di, t):
     if w:
         return pyfelscore.get_mmpp_frechet_all_positive(
                 a, w, r, t, ai, bi, ci, di)
-    else:
+    elif a != r:
         return pyfelscore.get_mmpp_frechet_diagonalizable_w_zero(
                 a, r, t, ai, bi, ci, di)
+    else:
+        return pyfelscore.get_mmpp_frechet_defective_w_zero(
+                a, t, ai, bi, ci, di)
 
 
 def dict_random_choice(d):
