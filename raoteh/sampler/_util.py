@@ -4,6 +4,8 @@ Exception classes and utility functions for the Rao-Teh sampler.
 """
 from __future__ import division, print_function, absolute_import
 
+import random
+
 import numpy as np
 import networkx as nx
 import scipy.linalg
@@ -54,7 +56,11 @@ def get_dense_rate_matrix(Q_sparse):
     return states, Q_dense
 
 def _get_awr(Q):
-    # helper function
+    # Helper function.
+    # This is in a tight inner loop so checking Q.has_edge is too slow.
+    # Also (if 0 in Q and 1 in Q[0]) is too slow.
+    # I can't figure out how to speed up this function,
+    # so I'm changing it back to use has_edge.
     a = 0
     w = 0
     r = 0
@@ -82,12 +88,14 @@ def sparse_expm_mmpp_block(Q, t):
         P = pyfelscore.get_mmpp_block(a, w, r, t)
     else:
         P = pyfelscore.get_mmpp_block_zero_off_rate(a, r, t)
+    """
     if np.any(np.isnan(P)):
         print('got nan')
         print(a, w, r)
         print(P)
         print()
         raise Exception
+    """
     P_nx = nx.DiGraph()
     # Add diagonal entries.
     P_nx.add_edge(0, 0, weight=P[0, 0])
@@ -135,9 +143,7 @@ def expm_frechet_is_simple(Q):
     if not (set(observed_edges) <= set(allowed_edges)):
         return False
     a, w, r = _get_awr(Q)
-    if a <= 0 or r <= 0:
-        return False
-    if w < 0:
+    if a < 0 or r < 0 or w < 0:
         return False
     return True
 
@@ -157,9 +163,17 @@ def simple_expm_frechet(Q, ai, bi, ci, di, t):
 
 
 def dict_random_choice(d):
-    choices, p = zip(*d.items())
-    return np.random.choice(choices, p=p)
-
+    # This algorithm is not appropriate for multiple random samples
+    # from the same dictionary.
+    # If you want to do that, then use np.random.choice instead.
+    #
+    #choices, p = zip(*d.items())
+    #return np.random.choice(choices, p=p)
+    x = random.random()
+    for i, p in d.items():
+        x -= p
+        if x < 0:
+            return i
 
 def get_normalized_dict_distn(d):
     if not d:
