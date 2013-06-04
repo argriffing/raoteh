@@ -696,7 +696,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 100
+        nsamples = 1000
         sqrt_nsamples = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,

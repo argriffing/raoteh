@@ -53,6 +53,19 @@ def get_dense_rate_matrix(Q_sparse):
     Q_dense = Q_dense - np.diag(np.sum(Q_dense, axis=1))
     return states, Q_dense
 
+def _get_awr(Q):
+    # helper function
+    a = 0
+    w = 0
+    r = 0
+    if Q.has_edge(0, 1):
+        a = Q[0][1]['weight']
+    if Q.has_edge(1, 0):
+        w = Q[1][0]['weight']
+    if Q.has_edge(1, 2):
+        r = Q[1][2]['weight']
+    return a, w, r
+
 def sparse_expm(Q, t):
     # This is a wrapper that dispatches to either clever or naive expm.
     # Check if the matrix has a certain extremely restrictive known form.
@@ -64,15 +77,7 @@ def sparse_expm(Q, t):
         return sparse_expm_naive(Q, t)
 
 def sparse_expm_mmpp_block(Q, t):
-    a = 0
-    w = 0
-    r = 0
-    if Q.has_edge(0, 1):
-        a = Q[0][1]['weight']
-    if Q.has_edge(1, 0):
-        w = Q[1][0]['weight']
-    if Q.has_edge(1, 2):
-        r = Q[1][2]['weight']
+    a, w, r = _get_awr(Q)
     if w:
         P = pyfelscore.get_mmpp_block(a, w, r, t)
     else:
@@ -120,21 +125,33 @@ def sparse_expm_naive(Q, t):
                     P_nx.add_edge(sa, sb, weight=P_dense[a, b])
     return P_nx
 
-
 def expm_frechet_is_simple(Q):
-    edges = Q.edges()
-    has_positive_weights = all(Q[sa][sb]['weight'] > 0 for sa, sb in edges)
-    has_good_edges = (set(edges) == set(((0, 1), (1, 0), (1, 2))))
-    return has_positive_weights and has_good_edges
+    allowed_edges = ((0, 1), (1, 0), (1, 2))
+    if Q.size() > len(allowed_edges):
+        return False
+    observed_edges = Q.edges()
+    if not (set(observed_edges) <= set(allowed_edges)):
+        return False
+    a, w, r = _get_awr(Q)
+    if a <= 0 or r <= 0:
+        return False
+    if w < 0:
+        return False
+    if w == 0 and a == r:
+        return False
+    return True
 
 
 def simple_expm_frechet(Q, ai, bi, ci, di, t):
     if not expm_frechet_is_simple(Q):
         raise ValueError('the rate matrix is too intricate for this function')
-    a = Q[0][1]['weight']
-    w = Q[1][0]['weight']
-    r = Q[1][2]['weight']
-    return pyfelscore.get_mmpp_frechet_all_positive(a, w, r, t, ai, bi, ci, di)
+    a, w, r = _get_awr(Q)
+    if w:
+        return pyfelscore.get_mmpp_frechet_all_positive(
+                a, w, r, t, ai, bi, ci, di)
+    else:
+        return pyfelscore.get_mmpp_frechet_diagonalizable_w_zero(
+                a, r, t, ai, bi, ci, di)
 
 
 def dict_random_choice(d):
