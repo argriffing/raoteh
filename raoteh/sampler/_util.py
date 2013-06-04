@@ -99,6 +99,7 @@ def sparse_expm_mmpp_block(Q, t):
         P_nx.add_edge(1, 2, weight = 1 - P[1, 0] - P[1, 1])
     return P_nx
 
+
 def sparse_expm_naive(Q, t):
     states = sorted(Q)
     n = len(states)
@@ -118,6 +119,22 @@ def sparse_expm_naive(Q, t):
                 if sb in path_lengths[sa]:
                     P_nx.add_edge(sa, sb, weight=P_dense[a, b])
     return P_nx
+
+
+def expm_frechet_is_simple(Q):
+    edges = Q.edges()
+    has_positive_weights = all(Q[sa][sb]['weight'] > 0 for sa, sb in edges)
+    has_good_edges = (set(edges) == set(((0, 1), (1, 0), (1, 2))))
+    return has_positive_weights and has_good_edges
+
+
+def simple_expm_frechet(Q, ai, bi, ci, di, t):
+    if not expm_frechet_is_simple(Q):
+        raise ValueError('the rate matrix is too intricate for this function')
+    a = Q[0][1]['weight']
+    w = Q[1][0]['weight']
+    r = Q[1][2]['weight']
+    return pyfelscore.get_mmpp_frechet_all_positive(a, w, r, t, ai, bi, ci, di)
 
 
 def dict_random_choice(d):
