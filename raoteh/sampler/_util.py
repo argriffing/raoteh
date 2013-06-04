@@ -126,6 +126,8 @@ def sparse_expm_naive(Q, t):
     return P_nx
 
 def expm_frechet_is_simple(Q):
+    if len(Q) > 3:
+        return False
     allowed_edges = ((0, 1), (1, 0), (1, 2))
     if Q.size() > len(allowed_edges):
         return False
@@ -143,8 +145,7 @@ def expm_frechet_is_simple(Q):
 
 
 def simple_expm_frechet(Q, ai, bi, ci, di, t):
-    if not expm_frechet_is_simple(Q):
-        raise ValueError('the rate matrix is too intricate for this function')
+    # validating the simpleness of the matrix is too slow
     a, w, r = _get_awr(Q)
     if w:
         return pyfelscore.get_mmpp_frechet_all_positive(
