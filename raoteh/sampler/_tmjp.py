@@ -17,6 +17,7 @@ import scipy.linalg
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_arbitrary_tip,
+        sparse_expm,
         )
 
 from raoteh.sampler._mc import (
@@ -303,16 +304,19 @@ def get_tolerance_class_likelihood(
         if 'absorption' in edge:
             local_absorption_rate = edge['absorption']
 
-        # Construct the tolerance rate matrix as a dense ndarray.
-        # Then convert it to a transition matrix using expm.
-        # Then convert the transition matrix to a networkx digraph.
-        R_local = get_tolerance_micro_rate_matrix(
-                local_rate_off, local_rate_on, local_absorption_rate)
-        P_local_ndarray = scipy.linalg.expm(weight * R_local)
-        P_local_nx = nx.DiGraph()
-        for i in range(3):
-            for j in range(3):
-                P_local_nx.add_edge(i, j, weight=P_local_ndarray[i, j])
+        # Construct the local tolerance rate matrix.
+        Q_tol = nx.DiGraph()
+        if local_rate_on:
+            Q_tol.add_edge(0, 1, weight=local_rate_on)
+        if local_rate_off:
+            Q_tol.add_edge(1, 0, weight=local_rate_off)
+        if local_absorption_rate:
+            Q_tol.add_edge(1, 2, weight=local_absorption_rate)
+
+        # Construct the local transition matrix.
+        P_local_nx = sparse_expm(Q_tol, weight)
+
+        # Add the transition matrix.
         T_aug.add_edge(a, b, P=P_local_nx)
 
     # Get the likelihood from the augmented tree and the root distribution.

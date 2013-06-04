@@ -7,6 +7,7 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 import networkx as nx
 import scipy.linalg
+import pyfelscore
 
 __all__ = []
 
@@ -52,8 +53,53 @@ def get_dense_rate_matrix(Q_sparse):
     Q_dense = Q_dense - np.diag(np.sum(Q_dense, axis=1))
     return states, Q_dense
 
-
 def sparse_expm(Q, t):
+    # This is a wrapper that dispatches to either clever or naive expm.
+    # Check if the matrix has a certain extremely restrictive known form.
+    edges = Q.edges()
+    has_nonneg_weights = all(Q[sa][sb]['weight'] >= 0 for sa, sb in edges)
+    if has_nonneg_weights and (set(edges) <= set(((0, 1), (1, 0), (1, 2)))):
+        return sparse_expm_mmpp_block(Q, t)
+    else:
+        return sparse_expm_naive(Q, t)
+
+def sparse_expm_mmpp_block(Q, t):
+    a = 0
+    w = 0
+    r = 0
+    if Q.has_edge(0, 1):
+        a = Q[0][1]['weight']
+    if Q.has_edge(1, 0):
+        w = Q[1][0]['weight']
+    if Q.has_edge(1, 2):
+        r = Q[1][2]['weight']
+    if w:
+        P = pyfelscore.get_mmpp_block(a, w, r, t)
+    else:
+        P = pyfelscore.get_mmpp_block_zero_off_rate(a, r, t)
+    if np.any(np.isnan(P)):
+        print('got nan')
+        print(a, w, r)
+        print(P)
+        print()
+        raise Exception
+    P_nx = nx.DiGraph()
+    # Add diagonal entries.
+    P_nx.add_edge(0, 0, weight=P[0, 0])
+    P_nx.add_edge(1, 1, weight=P[1, 1])
+    P_nx.add_edge(2, 2, weight=1)
+    # Conditionally add other entries.
+    if a:
+        P_nx.add_edge(0, 1, weight = P[0, 1])
+    if a and r:
+        P_nx.add_edge(0, 2, weight = 1 - P[0, 0] - P[0, 1])
+    if w:
+        P_nx.add_edge(1, 0, weight = P[1, 0])
+    if r:
+        P_nx.add_edge(1, 2, weight = 1 - P[1, 0] - P[1, 1])
+    return P_nx
+
+def sparse_expm_naive(Q, t):
     states = sorted(Q)
     n = len(states)
     Q_dense = np.zeros((n, n), dtype=float)

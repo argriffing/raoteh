@@ -593,6 +593,7 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
 
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
+    #@decorators.skipif(True)
     def test_tmjp_monte_carlo_rao_teh_differential_entropy(self):
         # In this test, we look at conditional expected log likelihoods.
         # These are computed in two ways.
@@ -695,7 +696,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 1000
+        nsamples = 100
         sqrt_nsamples = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,
