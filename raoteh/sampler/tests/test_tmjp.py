@@ -598,6 +598,144 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
                 rate_off, rate_on, primary_distn, root)
 
 
+#TODO move this function into _tmjp
+def get_tolerance_expectations(
+        primary_to_part, rate_on, rate_off, Q_primary, T_primary, root):
+    """
+    Get tolerance process expectations conditional on a primary trajectory.
+
+    Given a primary process trajectory,
+    compute some log likelihood contributions
+    related to the tolerance process.
+
+    Parameters
+    ----------
+    primary_to_part : x
+        x
+    T_primary : x
+        x
+    Q_primary : x
+        x
+    root : x
+        x
+    rate_on : x
+        x
+    rate_off : x
+        x
+
+    Returns
+    -------
+    dwell_ll_contrib : float
+        Log likelihood contribution of the conditional
+        tolerance state dwell times.
+    init_ll_contrib : float
+        Log likelihood contribution of the conditional
+        initial distribution of tolerance states.
+    trans_ll_contrib : float
+        Log likelihood contribution of the conditional
+        tolerance process transition counts and types.
+
+    Notes
+    -----
+    This function assumes that no tolerance process data is observed
+    at the leaves, other than what could be inferred through
+    the primary process observations at the leaves.
+    The ordering of the arguments of this function was chosen haphazardly.
+    The ordering of the return values corresponds to the ordering of
+    the return values of the _mjp function that returns
+    statistics of a trajectory.
+
+    """
+    # Summarize the tolerance process.
+    nparts = len(set(primary_to_part.values()))
+    total_tolerance_rate = rate_on + rate_off
+    tolerance_distn = {
+            0 : rate_off / total_tolerance_rate,
+            1 : rate_on / total_tolerance_rate}
+
+    # Compute conditional expectations of statistics
+    # of the tolerance process.
+    # This requires constructing independent piecewise homogeneous
+    # Markov jump processes for each tolerance class.
+    expected_ngains = 0.0
+    expected_nlosses = 0.0
+    expected_dwell_on = 0.0
+    for tolerance_class in range(nparts):
+
+        # Define the set of allowed tolerances at each node.
+        # These may be further constrained
+        # by the sampled primary process trajectory.
+        node_to_allowed_tolerances = dict(
+                (n, {0, 1}) for n in T_primary)
+
+        # Construct the tree whose edges are in correspondence
+        # to the edges of the sampled primary trajectory,
+        # and whose edges are annotated with weights
+        # and with edge-specific 3-state transition rate matrices.
+        # The third state of each edge-specific rate matrix is an
+        # absorbing state which will never be entered.
+        T_tol = nx.Graph()
+        for na, nb in nx.bfs_edges(T_primary, root):
+            edge = T_primary[na][nb]
+            primary_state = edge['state']
+            local_tolerance_class = primary_to_part[primary_state]
+            weight = edge['weight']
+
+            # Define the local on->off rate, off->on rate,
+            # and absorption rate.
+            local_rate_on = rate_on
+            if tolerance_class == local_tolerance_class:
+                local_rate_off = 0
+            else:
+                local_rate_off = rate_off
+            absorption_rate = 0
+            if primary_state in Q_primary:
+                for sb in Q_primary[primary_state]:
+                    if primary_to_part[sb] == tolerance_class:
+                        rate = Q_primary[primary_state][sb]['weight']
+                        absorption_rate += rate
+
+            # Construct the local tolerance rate matrix.
+            Q_tol = nx.DiGraph()
+            if local_rate_on:
+                Q_tol.add_edge(0, 1, weight=local_rate_on)
+            if local_rate_off:
+                Q_tol.add_edge(1, 0, weight=local_rate_off)
+            if absorption_rate:
+                Q_tol.add_edge(1, 2, weight=absorption_rate)
+
+            # Add the edge.
+            T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
+
+            # Possibly restrict the set of allowed tolerances
+            # at the endpoints of the edge.
+            if tolerance_class == local_tolerance_class:
+                for n in (na, nb):
+                    node_to_allowed_tolerances[n].discard(0)
+
+        # Compute conditional expectations of dwell times
+        # and transitions for this tolerance class.
+        dwell_times, transitions = get_expected_history_statistics(
+                T_tol, node_to_allowed_tolerances,
+                root, root_distn=tolerance_distn)
+
+        # Get the dwell time log likelihood contribution.
+        if transitions.has_edge(0, 1):
+            expected_ngains += transitions[0][1]['weight']
+        if transitions.has_edge(1, 0):
+            expected_nlosses += transitions[1][0]['weight']
+        if 1 in dwell_times:
+            expected_dwell_on += dwell_times[1]
+
+    # Return the log likelihood contributions.
+    dwell_ll_contrib = 0 #FIXME
+    init_ll_contrib = 0 #FIXME
+    trans_ll_contrib = (
+            special.xlogy(expected_ngains, rate_on) +
+            special.xlogy(expected_nlosses, rate_off))
+    return dwell_ll_contrib, init_ll_contrib, trans_ll_contrib
+
+
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
     #TODO split this function into multiple parts
@@ -760,7 +898,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             # Get a tree annotated with only the primary process,
             # after having thrown away the sampled tolerance
             # process data.
-            pm_ll_trans = 0.0
 
             # First copy the unbiased compound state trajectory tree.
             # Then convert the state annotation from compound state
@@ -781,96 +918,22 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             dwell_times, root_state, transitions = primary_info
 
             # Add the transition stat contribution of the primary process.
-            ll = 0.0
+            trans_prim_ll = 0.0
             for sa, sb in transitions.edges():
                 ntransitions = transitions[sa][sb]['weight']
                 rate = Q_primary[sa][sb]['weight']
-                pm_ll_trans += special.xlogy(ntransitions, rate)
+                trans_prim_ll += special.xlogy(ntransitions, rate)
 
             # Get pm_ ll contributions of expectations of
             # tolerance process transitions.
-
-            # XXX Truly heinous copypasting begins here.
-
-            # Compute conditional expectations of statistics
-            # of the tolerance process.
-            # This requires constructing independent piecewise homogeneous
-            # Markov jump processes for each tolerance class.
-            expected_ngains = 0.0
-            expected_nlosses = 0.0
-            expected_dwell_on = 0.0
-            for tolerance_class in range(nparts):
-
-                # Define the set of allowed tolerances at each node.
-                # These may be further constrained
-                # by the sampled primary process trajectory.
-                node_to_allowed_tolerances = dict(
-                        (n, {0, 1}) for n in T_primary_aug)
-
-                # Construct the tree whose edges are in correspondence
-                # to the edges of the sampled primary trajectory,
-                # and whose edges are annotated with weights
-                # and with edge-specific 3-state transition rate matrices.
-                # The third state of each edge-specific rate matrix is an
-                # absorbing state which will never be entered.
-                T_tol = nx.Graph()
-                for na, nb in nx.bfs_edges(T_primary_aug, root):
-                    edge = T_primary_aug[na][nb]
-                    primary_state = edge['state']
-                    local_tolerance_class = primary_to_part[primary_state]
-                    weight = edge['weight']
-
-                    # Define the local on->off rate, off->on rate,
-                    # and absorption rate.
-                    local_rate_on = rate_on
-                    if tolerance_class == local_tolerance_class:
-                        local_rate_off = 0
-                    else:
-                        local_rate_off = rate_off
-                    absorption_rate = 0
-                    if primary_state in Q_primary:
-                        for sb in Q_primary[primary_state]:
-                            if primary_to_part[sb] == tolerance_class:
-                                rate = Q_primary[primary_state][sb]['weight']
-                                absorption_rate += rate
-
-                    # Construct the local tolerance rate matrix.
-                    Q_tol = nx.DiGraph()
-                    if local_rate_on:
-                        Q_tol.add_edge(0, 1, weight=local_rate_on)
-                    if local_rate_off:
-                        Q_tol.add_edge(1, 0, weight=local_rate_off)
-                    if absorption_rate:
-                        Q_tol.add_edge(1, 2, weight=absorption_rate)
-
-                    # Add the edge.
-                    T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
-
-                    # Possibly restrict the set of allowed tolerances
-                    # at the endpoints of the edge.
-                    if tolerance_class == local_tolerance_class:
-                        for n in (na, nb):
-                            node_to_allowed_tolerances[n].discard(0)
-
-                # Compute conditional expectations of dwell times
-                # and transitions for this tolerance class.
-                dwell_times, transitions = get_expected_history_statistics(
-                        T_tol, node_to_allowed_tolerances,
-                        root, root_distn=tolerance_distn)
-
-                # Get the dwell time log likelihood contribution.
-                if transitions.has_edge(0, 1):
-                    expected_ngains += transitions[0][1]['weight']
-                if transitions.has_edge(1, 0):
-                    expected_nlosses += transitions[1][0]['weight']
-                if 1 in dwell_times:
-                    expected_dwell_on += dwell_times[1]
+            tol_info = get_tolerance_expectations(
+                    primary_to_part, rate_on, rate_off,
+                    Q_primary, T_primary_aug, root)
+            dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
 
             # Append the pm_ neg ll trans component of log likelihood.
-            pm_ll_trans  += special.xlogy(expected_ngains, rate_on)
-            pm_ll_trans  += special.xlogy(expected_nlosses, rate_off)
-            pm_neg_ll_contribs_trans.append(-pm_ll_trans)
-
+            pm_trans_ll = trans_prim_ll + trans_tol_ll
+            pm_neg_ll_contribs_trans.append(-pm_trans_ll)
 
         # Define a rate matrix for a primary process proposal distribution.
         # This is intended to define a Markov jump process for primary states
@@ -997,81 +1060,15 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                     rate_off, rate_on, primary_distn, root)
             importance_weight = np.exp(tolerance_ll - proposal_ll)
 
-            # Compute conditional expectations of statistics
-            # of the tolerance process.
-            # This requires constructing independent piecewise homogeneous
-            # Markov jump processes for each tolerance class.
-            expected_ngains = 0.0
-            expected_nlosses = 0.0
-            expected_dwell_on = 0.0
-            for tolerance_class in range(nparts):
-
-                # Define the set of allowed tolerances at each node.
-                # These may be further constrained
-                # by the sampled primary process trajectory.
-                node_to_allowed_tolerances = dict((n, {0, 1}) for n in T_aug)
-
-                # Construct the tree whose edges are in correspondence
-                # to the edges of the sampled primary trajectory,
-                # and whose edges are annotated with weights
-                # and with edge-specific 3-state transition rate matrices.
-                # The third state of each edge-specific rate matrix is an
-                # absorbing state which will never be entered.
-                T_tol = nx.Graph()
-                for na, nb in nx.bfs_edges(T_aug, root):
-                    edge = T_aug[na][nb]
-                    primary_state = edge['state']
-                    local_tolerance_class = primary_to_part[primary_state]
-                    weight = edge['weight']
-
-                    # Define the local on->off rate, off->on rate,
-                    # and absorption rate.
-                    local_rate_on = rate_on
-                    if tolerance_class == local_tolerance_class:
-                        local_rate_off = 0
-                    else:
-                        local_rate_off = rate_off
-                    absorption_rate = 0
-                    if primary_state in Q_primary:
-                        for sb in Q_primary[primary_state]:
-                            if primary_to_part[sb] == tolerance_class:
-                                rate = Q_primary[primary_state][sb]['weight']
-                                absorption_rate += rate
-
-                    # Construct the local tolerance rate matrix.
-                    Q_tol = nx.DiGraph()
-                    if local_rate_on:
-                        Q_tol.add_edge(0, 1, weight=local_rate_on)
-                    if local_rate_off:
-                        Q_tol.add_edge(1, 0, weight=local_rate_off)
-                    if absorption_rate:
-                        Q_tol.add_edge(1, 2, weight=absorption_rate)
-
-                    # Add the edge.
-                    T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
-
-                    # Possibly restrict the set of allowed tolerances
-                    # at the endpoints of the edge.
-                    if tolerance_class == local_tolerance_class:
-                        for n in (na, nb):
-                            node_to_allowed_tolerances[n].discard(0)
-
-                # Compute conditional expectations of dwell times
-                # and transitions for this tolerance class.
-                dwell_times, transitions = get_expected_history_statistics(
-                        T_tol, node_to_allowed_tolerances,
-                        root, root_distn=tolerance_distn)
-
-                # Get the dwell time log likelihood contribution.
-                if transitions.has_edge(0, 1):
-                    expected_ngains += transitions[0][1]['weight']
-                if transitions.has_edge(1, 0):
-                    expected_nlosses += transitions[1][0]['weight']
-                if 1 in dwell_times:
-                    expected_dwell_on += dwell_times[1]
-
-            # Add the importance weight to the list.
+            # Append the importance weight to the list.
             importance_weights.append(importance_weight)
+
+            # Get log likelihood contributions of expectations of
+            # tolerance process transitions.
+            tol_info = get_tolerance_expectations(
+                    primary_to_part, rate_on, rate_off,
+                    Q_primary, T_aug, root)
+            dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
 
             # XXX for now ignore the contribution
             # Add the log likelihood contribution
@@ -1080,10 +1077,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             imp_neg_ll_contribs_init.append(0.0)
 
             # Add the log likelihood contributions of the primary transitions.
-            imp_tolerance_trans_ll = 0.0
-            imp_tolerance_trans_ll += special.xlogy(expected_ngains, rate_on)
-            imp_tolerance_trans_ll += special.xlogy(expected_nlosses, rate_off)
-            imp_trans_ll = primary_trans_ll + imp_tolerance_trans_ll
+            imp_trans_ll = primary_trans_ll + trans_tol_ll
             imp_neg_ll_contribs_trans.append(-imp_trans_ll)
 
             # XXX for now ignore this contribution
@@ -1146,86 +1140,15 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 ll += special.xlogy(ntransitions, rate)
             primary_trans_ll = ll
 
-            # XXX extensive copypasting below here
-            #
-            # Compute conditional expectations of statistics
-            # of the tolerance process.
-            # This requires constructing independent piecewise homogeneous
-            # Markov jump processes for each tolerance class.
-            expected_ngains = 0.0
-            expected_nlosses = 0.0
-            expected_dwell_on = 0.0
-            for tolerance_class in range(nparts):
-
-                # Define the set of allowed tolerances at each node.
-                # These may be further constrained
-                # by the sampled primary process trajectory.
-                node_to_allowed_tolerances = dict((n, {0, 1}) for n in T_aug)
-
-                # Construct the tree whose edges are in correspondence
-                # to the edges of the sampled primary trajectory,
-                # and whose edges are annotated with weights
-                # and with edge-specific 3-state transition rate matrices.
-                # The third state of each edge-specific rate matrix is an
-                # absorbing state which will never be entered.
-                T_tol = nx.Graph()
-                for na, nb in nx.bfs_edges(T_aug, root):
-                    edge = T_aug[na][nb]
-                    primary_state = edge['state']
-                    local_tolerance_class = primary_to_part[primary_state]
-                    weight = edge['weight']
-
-                    # Define the local on->off rate, off->on rate,
-                    # and absorption rate.
-                    local_rate_on = rate_on
-                    if tolerance_class == local_tolerance_class:
-                        local_rate_off = 0
-                    else:
-                        local_rate_off = rate_off
-                    absorption_rate = 0
-                    if primary_state in Q_primary:
-                        for sb in Q_primary[primary_state]:
-                            if primary_to_part[sb] == tolerance_class:
-                                rate = Q_primary[primary_state][sb]['weight']
-                                absorption_rate += rate
-
-                    # Construct the local tolerance rate matrix.
-                    Q_tol = nx.DiGraph()
-                    if local_rate_on:
-                        Q_tol.add_edge(0, 1, weight=local_rate_on)
-                    if local_rate_off:
-                        Q_tol.add_edge(1, 0, weight=local_rate_off)
-                    if absorption_rate:
-                        Q_tol.add_edge(1, 2, weight=absorption_rate)
-
-                    # Add the edge.
-                    T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
-
-                    # Possibly restrict the set of allowed tolerances
-                    # at the endpoints of the edge.
-                    if tolerance_class == local_tolerance_class:
-                        for n in (na, nb):
-                            node_to_allowed_tolerances[n].discard(0)
-
-                # Compute conditional expectations of dwell times
-                # and transitions for this tolerance class.
-                dwell_times, transitions = get_expected_history_statistics(
-                        T_tol, node_to_allowed_tolerances,
-                        root, root_distn=tolerance_distn)
-
-                # Get the dwell time log likelihood contribution.
-                if transitions.has_edge(0, 1):
-                    expected_ngains += transitions[0][1]['weight']
-                if transitions.has_edge(1, 0):
-                    expected_nlosses += transitions[1][0]['weight']
-                if 1 in dwell_times:
-                    expected_dwell_on += dwell_times[1]
+            # Get log likelihood contributions of expectations of
+            # tolerance process transitions.
+            tol_info = get_tolerance_expectations(
+                    primary_to_part, rate_on, rate_off,
+                    Q_primary, T_aug, root)
+            dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
 
             # Add the log likelihood contributions of the primary transitions.
-            met_tolerance_trans_ll = 0.0
-            met_tolerance_trans_ll += special.xlogy(expected_ngains, rate_on)
-            met_tolerance_trans_ll += special.xlogy(expected_nlosses, rate_off)
-            met_trans_ll = primary_trans_ll + met_tolerance_trans_ll
+            met_trans_ll = primary_trans_ll + trans_tol_ll
             met_neg_ll_contribs_trans.append(-met_trans_ll)
 
         print()
