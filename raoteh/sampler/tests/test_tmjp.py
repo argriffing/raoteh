@@ -22,6 +22,8 @@ from numpy.testing import (
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
+        expm_frechet_is_simple,
+        simple_expm_frechet,
         )
 
 from raoteh.sampler._graph_transform import(
@@ -43,6 +45,7 @@ from raoteh.sampler._mjp import (
         get_conditional_transition_matrix,
         get_expm_augmented_tree,
         get_expected_history_statistics,
+        get_joint_endpoint_distn,
         )
 
 from raoteh.sampler._tmjp import (
@@ -599,6 +602,125 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
                 rate_off, rate_on, primary_distn, root)
 
 
+# XXX
+# This function is copypasted from get_expected_history_statistics in _mjp.
+# Its purpose is to compute a single weird thing -- the expectation
+# over all tolerance processes and over all edges,
+# of the "absorption rate" multiplied by the expected amount of time
+# spent in the "on" tolerance state.
+# So this is similar to the on-dwell-time expectation calculation,
+# except it has a weird per-branch weighting.
+def get_absorption_integral(T, node_to_allowed_states,
+        root, root_distn=None, Q_default=None):
+    """
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Edges of this tree are annotated with weights and possibly with
+        edge-specific Q rate matrices.
+    node_to_allowed_states : dict
+        Maps each node to a set of allowed states.
+    root : integer
+        Root node.
+    root_distn : dict, optional
+        Sparse distribution over states at the root.
+        This is optional if only one state is allowed at the root.
+    Q_default : directed weighted networkx graph, optional
+        A sparse rate matrix.
+
+    Returns
+    -------
+    x : x
+        expectation
+
+    """
+    # Do some input validation for this restricted variant.
+    if root not in T:
+        raise ValueError('the specified root is not in the tree')
+
+    # Attempt to define the state space.
+    # This will use the default rate matrix if available,
+    # and it will try to use all available edge-specific rate matrices.
+    full_state_set = set()
+    if Q_default is not None:
+        full_state_set.update(Q_default)
+    for na, nb in nx.bfs_edges(T, root):
+        Q = T[na][nb].get('Q', None)
+        if Q is not None:
+            full_state_set.update(Q)
+    states = sorted(full_state_set)
+    nstates = len(states)
+
+    # Construct the augmented tree by annotating each edge
+    # with the appropriate state transition probability matrix.
+    T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
+
+    # Construct the node to pmap dict.
+    node_to_pmap = construct_node_to_restricted_pmap(
+            T_aug, root, node_to_allowed_states)
+
+    # Get the marginal state distribution for each node in the tree,
+    # conditional on the known states.
+    node_to_distn = get_node_to_distn(
+            T_aug, node_to_allowed_states, node_to_pmap, root, root_distn)
+
+    # For each edge in the tree, get the joint distribution
+    # over the states at the endpoints of the edge.
+    T_joint = get_joint_endpoint_distn(
+            T_aug, node_to_pmap, node_to_distn, root)
+
+    # Compute the expectations of the dwell times and the transition counts
+    # by iterating over all edges and using the edge-specific
+    # joint distribution of the states at the edge endpoints.
+    absorption_expectation = 0.0
+    for na, nb in nx.bfs_edges(T, root):
+
+        # Get the sparse rate matrix to use for this edge.
+        Q = T[na][nb].get('Q', Q_default)
+        if Q is None:
+            raise ValueError('no rate matrix is available for this edge')
+
+        Q_is_simple = expm_frechet_is_simple(Q)
+        if not Q_is_simple:
+            raise ValueError(
+                    'this function requires a rate matrix '
+                    'of a certain form')
+
+        # Get the elapsed time along the edge.
+        t = T[na][nb]['weight']
+
+        # Get the conditional probability matrix associated with the edge.
+        P = T_aug[na][nb]['P']
+
+        # Get the joint probability matrix associated with the edge.
+        J = T_joint[na][nb]['J']
+
+        # Compute contributions to dwell time expectations along the path.
+        # The sc_index = 1 signifies the tolerance "on" state.
+        branch_absorption_rate = 0
+        if Q.has_edge(1, 2):
+            branch_absorption_rate = Q[1][2]['weight']
+        branch_absorption_expectation = 0.0
+        sc_index = 1
+        for sa_index, sa in enumerate(states):
+            for sb_index, sb in enumerate(states):
+                if not J.has_edge(sa, sb):
+                    continue
+                cond_prob = P[sa][sb]['weight']
+                joint_prob = J[sa][sb]['weight']
+                x = simple_expm_frechet(
+                        Q, sa_index, sb_index, sc_index, sc_index, t)
+                # XXX simplify the joint_prob / cond_prob
+                branch_absorption_expectation += (joint_prob * x) / cond_prob
+        absorption_expectation += (
+                branch_absorption_rate *
+                branch_absorption_expectation)
+
+    # Return the expectation.
+    return absorption_expectation
+
+
 #TODO move this function into _tmjp
 def get_tolerance_expectations(
         primary_to_part, rate_on, rate_off, Q_primary, T_primary, root):
@@ -648,6 +770,7 @@ def get_tolerance_expectations(
 
     """
     # Summarize the tolerance process.
+    total_weight = T_primary.size(weight='weight')
     nparts = len(set(primary_to_part.values()))
     total_tolerance_rate = rate_on + rate_off
     tolerance_distn = {
@@ -662,6 +785,7 @@ def get_tolerance_expectations(
     expected_nlosses = 0.0
     expected_dwell_on = 0.0
     expected_initial_on = 0.0
+    expected_nabsorptions = 0.0
     for tolerance_class in range(nparts):
 
         # Define the set of allowed tolerances at each node.
@@ -736,11 +860,25 @@ def get_tolerance_expectations(
         if 1 in post_root_distn:
             expected_initial_on += post_root_distn[1]
 
+        # Get an expectation that connects
+        # the blinking process to the primary process.
+        # This is the expected number of times that
+        # a non-forbidden primary process "absorption"
+        # into the current blinking state
+        # would have been expected to occur.
+        expected_nabsorptions += get_absorption_integral(
+                T_tol, node_to_allowed_tolerances,
+                root, root_distn=tolerance_distn)
+
     # Summarize expectations.
     expected_initial_off = nparts - expected_initial_on
+    expected_dwell_off = total_weight * nparts - expected_dwell_on
 
     # Return the log likelihood contributions.
-    dwell_ll_contrib = 0 #FIXME
+    dwell_ll_contrib = -(
+            expected_dwell_off * rate_on +
+            (expected_dwell_on - total_weight) * rate_off +
+            expected_nabsorptions)
     init_ll_contrib = (
             special.xlogy(expected_initial_on - 1, tolerance_distn[1]) +
             special.xlogy(expected_initial_off, tolerance_distn[0]))
@@ -869,7 +1007,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # by integrating over the possible tolerance trajectories.
         # This allows us to test this integration without worrying that
         # the primary process history samples are biased.
-        #pm_neg_ll_contribs_dwell = []
+        pm_neg_ll_contribs_dwell = []
         pm_neg_ll_contribs_init = []
         pm_neg_ll_contribs_trans = []
         #
@@ -947,6 +1085,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             # Append the pm_ neg ll init component of log likelihood.
             pm_init_ll = init_prim_ll + init_tol_ll
             pm_neg_ll_contribs_init.append(-pm_init_ll)
+
+            # Append the pm_ neg ll dwell component of log likelihood.
+            pm_neg_ll_contribs_dwell.append(-dwell_tol_ll)
 
         # Define a rate matrix for a primary process proposal distribution.
         # This is intended to define a Markov jump process for primary states
@@ -1092,16 +1233,17 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             imp_trans_ll = primary_trans_ll + trans_tol_ll
             imp_neg_ll_contribs_trans.append(-imp_trans_ll)
 
-            # XXX for now ignore this contribution
             # Add the log likelihood contributions
             # of the dwell times.
-            imp_neg_ll_contribs_dwell.append(0.0)
+            imp_neg_ll_contribs_dwell.append(-dwell_tol_ll)
 
         # define some expectations
         normalized_imp_trans = (np.array(importance_weights) * np.array(
                 imp_neg_ll_contribs_trans)) / np.mean(importance_weights)
         normalized_imp_init = (np.array(importance_weights) * np.array(
                 imp_neg_ll_contribs_init)) / np.mean(importance_weights)
+        normalized_imp_dwell = (np.array(importance_weights) * np.array(
+                imp_neg_ll_contribs_dwell)) / np.mean(importance_weights)
 
 
         # Get Rao-Teh samples of primary process trajectories
@@ -1169,6 +1311,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             met_neg_ll_contribs_trans.append(-met_trans_ll)
             met_init_ll = primary_init_ll + init_tol_ll
             met_neg_ll_contribs_init.append(-met_init_ll)
+            met_neg_ll_contribs_dwell.append(-dwell_tol_ll)
 
 
         print()
@@ -1191,6 +1334,12 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('diff ent dwell:', diff_ent_dwell)
         print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
         print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
+        print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
+        print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
+        print('imp dwell     :', np.mean(normalized_imp_dwell))
+        print('error         :', np.std(normalized_imp_dwell) / sqrt_nsamp)
+        print('met dwell     :', np.mean(met_neg_ll_contribs_dwell))
+        print('error         :', np.std(met_neg_ll_contribs_dwell) / sqrt_nsamp)
         print()
         print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
