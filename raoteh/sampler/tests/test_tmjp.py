@@ -24,6 +24,11 @@ from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
         )
 
+from raoteh.sampler._graph_transform import(
+        get_redundant_degree_two_nodes,
+        remove_redundant_nodes,
+        )
+
 from raoteh.sampler._mc import (
         get_restricted_likelihood,
         construct_node_to_restricted_pmap,
@@ -595,6 +600,7 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
 
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
+    #TODO split this function into multiple parts
     #@decorators.skipif(True)
     def test_tmjp_monte_carlo_rao_teh_differential_entropy(self):
         # In this test, we look at conditional expected log likelihoods.
@@ -698,15 +704,31 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 5000
+        nsamples = 500
         sqrt_nsamp = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,
         # and get the negative expected log likelihood.
+        #
+        # statistics for the full process samples
         sampled_root_distn = defaultdict(float)
         neg_ll_contribs_init = []
         neg_ll_contribs_dwell = []
         neg_ll_contribs_trans = []
+        #
+        # Statistics for the partial process samples.
+        # The idea for the pm_ prefix is that we can use the compound
+        # process Rao-Teh to sample the pure primary process without bias
+        # if we throw away the tolerance process information.
+        # Then with these unbiased primary process history samples,
+        # we can compute conditional expectations of statistics of interest
+        # by integrating over the possible tolerance trajectories.
+        # This allows us to test this integration without worrying that
+        # the primary process history samples are biased.
+        #pm_neg_ll_contribs_init = []_
+        #pm_neg_ll_contribs_dwell = []
+        pm_neg_ll_contribs_trans = []
+        #
         for T_aug in gen_restricted_histories(
                 T, Q_compound, node_to_allowed_states,
                 root=root, root_distn=compound_distn,
@@ -734,6 +756,121 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 rate = Q_compound[sa][sb]['weight']
                 ll += special.xlogy(ntransitions, rate)
             neg_ll_contribs_trans.append(-ll)
+
+            # Get a tree annotated with only the primary process,
+            # after having thrown away the sampled tolerance
+            # process data.
+            pm_ll_trans = 0.0
+
+            # First copy the unbiased compound state trajectory tree.
+            # Then convert the state annotation from compound state
+            # to primary state.
+            # Then use graph transformations to detect and remove
+            # degree-2 vertices whose adjacent states are identical.
+            T_primary_aug = T_aug.copy()
+            for na, nb in nx.bfs_edges(T_primary_aug, root):
+                edge = T_primary_aug[na][nb]
+                compound_state = edge['state']
+                primary_state = compound_to_primary[compound_state]
+                edge['state'] = primary_state
+            extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
+            T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
+
+            # Get primary trajectory stats.
+            primary_info = get_history_statistics(T_primary_aug, root=root)
+            dwell_times, root_state, transitions = primary_info
+
+            # Add the transition stat contribution of the primary process.
+            ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_primary[sa][sb]['weight']
+                pm_ll_trans += special.xlogy(ntransitions, rate)
+
+            # Get pm_ ll contributions of expectations of
+            # tolerance process transitions.
+
+            # XXX Truly heinous copypasting begins here.
+
+            # Compute conditional expectations of statistics
+            # of the tolerance process.
+            # This requires constructing independent piecewise homogeneous
+            # Markov jump processes for each tolerance class.
+            expected_ngains = 0.0
+            expected_nlosses = 0.0
+            expected_dwell_on = 0.0
+            for tolerance_class in range(nparts):
+
+                # Define the set of allowed tolerances at each node.
+                # These may be further constrained
+                # by the sampled primary process trajectory.
+                node_to_allowed_tolerances = dict(
+                        (n, {0, 1}) for n in T_primary_aug)
+
+                # Construct the tree whose edges are in correspondence
+                # to the edges of the sampled primary trajectory,
+                # and whose edges are annotated with weights
+                # and with edge-specific 3-state transition rate matrices.
+                # The third state of each edge-specific rate matrix is an
+                # absorbing state which will never be entered.
+                T_tol = nx.Graph()
+                for na, nb in nx.bfs_edges(T_primary_aug, root):
+                    edge = T_primary_aug[na][nb]
+                    primary_state = edge['state']
+                    local_tolerance_class = primary_to_part[primary_state]
+                    weight = edge['weight']
+
+                    # Define the local on->off rate, off->on rate,
+                    # and absorption rate.
+                    local_rate_on = rate_on
+                    if tolerance_class == local_tolerance_class:
+                        local_rate_off = 0
+                    else:
+                        local_rate_off = rate_off
+                    absorption_rate = 0
+                    if primary_state in Q_primary:
+                        for sb in Q_primary[primary_state]:
+                            if primary_to_part[sb] == tolerance_class:
+                                rate = Q_primary[primary_state][sb]['weight']
+                                absorption_rate += rate
+
+                    # Construct the local tolerance rate matrix.
+                    Q_tol = nx.DiGraph()
+                    if local_rate_on:
+                        Q_tol.add_edge(0, 1, weight=local_rate_on)
+                    if local_rate_off:
+                        Q_tol.add_edge(1, 0, weight=local_rate_off)
+                    if absorption_rate:
+                        Q_tol.add_edge(1, 2, weight=absorption_rate)
+
+                    # Add the edge.
+                    T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
+
+                    # Possibly restrict the set of allowed tolerances
+                    # at the endpoints of the edge.
+                    if tolerance_class == local_tolerance_class:
+                        for n in (na, nb):
+                            node_to_allowed_tolerances[n].discard(0)
+
+                # Compute conditional expectations of dwell times
+                # and transitions for this tolerance class.
+                dwell_times, transitions = get_expected_history_statistics(
+                        T_tol, node_to_allowed_tolerances,
+                        root, root_distn=tolerance_distn)
+
+                # Get the dwell time log likelihood contribution.
+                if transitions.has_edge(0, 1):
+                    expected_ngains += transitions[0][1]['weight']
+                if transitions.has_edge(1, 0):
+                    expected_nlosses += transitions[1][0]['weight']
+                if 1 in dwell_times:
+                    expected_dwell_on += dwell_times[1]
+
+            # Append the pm_ neg ll trans component of log likelihood.
+            pm_ll_trans  += special.xlogy(expected_ngains, rate_on)
+            pm_ll_trans  += special.xlogy(expected_nlosses, rate_off)
+            pm_neg_ll_contribs_trans.append(-pm_ll_trans)
+
 
         # Define a rate matrix for a primary process proposal distribution.
         # This is intended to define a Markov jump process for primary states
@@ -1109,6 +1246,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
         print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
+        print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
+        print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
         print('imp trans     :', np.mean(normalized_imp_trans))
         print('error         :', np.std(normalized_imp_trans) / sqrt_nsamp)
         print('met trans     :', np.mean(met_neg_ll_contribs_trans))
