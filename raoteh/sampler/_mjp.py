@@ -10,6 +10,7 @@ import numpy as np
 import networkx as nx
 import scipy.linalg
 import scipy.stats
+from scipy import special
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
@@ -184,6 +185,68 @@ def get_history_statistics(T, root=None):
     root_state, transitions = get_history_root_state_and_transitions(
             T, root=root)
     return dwell_times, root_state, transitions
+
+
+#TODO add tests
+def get_trajectory_log_likelihood(
+        T_aug, root, prior_root_distn, Q_default):
+    """
+
+    Parameters
+    ----------
+    T_aug : undirected weighted networkx graph
+        Trajectory with weighted edges annotated with states.
+    root : integer
+        Root node.
+    prior_root_distn : dict
+        Prior distribution over states at the root.
+    Q_default : directed weighted networkx graph
+        Rate matrix which applies to all edges.
+
+    Returns
+    -------
+    log_likelihood : float
+        Logarithm of the trajectory likelihood
+        according to the given Markov jump process.
+
+    Notes
+    -----
+    Regarding the order of the arguments of this function, T_aug is first
+    to facilitate functools.partial wrapping for MCMC callback.
+
+    """
+    # Compute the total rates.
+    total_rates = get_total_rates(Q_default)
+
+    # Compute primary process statistics.
+    # These will be used for two purposes.
+    # One of the purposes is as the denominator of the
+    # importance sampling ratio.
+    # The second purpose is to compute contributions
+    # to the neg log likelihood estimate.
+    info = get_history_statistics(T_aug, root=root)
+    dwell_times, root_state, transitions = info
+
+    # contribution of root state to log likelihood
+    init_ll = np.log(prior_root_distn[root_state])
+
+    # contribution of dwell times
+    ll = 0.0
+    for state, dwell in dwell_times.items():
+        ll -= dwell * total_rates[state]
+    dwell_ll = ll
+
+    # contribution of transitions
+    ll = 0.0
+    for sa, sb in transitions.edges():
+        ntransitions = transitions[sa][sb]['weight']
+        rate = Q_default[sa][sb]['weight']
+        ll += special.xlogy(ntransitions, rate)
+    trans_ll = ll
+
+    # Return the sum of the log likelihood contributions.
+    log_likelihood = init_ll + dwell_ll + trans_ll
+    return log_likelihood
 
 
 def get_reversible_differential_entropy(Q, stationary_distn, t):

@@ -10,6 +10,7 @@ from sampling trajectories on paths to sampling trajectories on trees.
 from __future__ import division, print_function, absolute_import
 
 import itertools
+import random
 
 import numpy as np
 import networkx as nx
@@ -18,6 +19,11 @@ from raoteh.sampler import _graph_transform, _mjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
+
+from raoteh.sampler._mjp import (
+        get_total_rates,
+        get_trajectory_log_likelihood,
+        )
 
 from raoteh.sampler._sample_mc import (
         resample_edge_states,
@@ -53,6 +59,44 @@ class _FastRandomChoice:
         return sampled_state
 
 
+def get_uniformized_transition_matrix(Q, uniformization_factor=2):
+    """
+
+    Parameters
+    ----------
+    Q : directed weighted networkx graph
+        Rate matrix.
+    uniformization_factor : float, optional
+        A value greater than 1.
+
+    Returns
+    -------
+    P : directed weighted networkx graph
+        Transition probability matrix.
+
+    """
+    
+    # Get the total rate away from each state.
+    total_rates = get_total_rates(Q)
+
+    # Initialize omega as the uniformization rate.
+    omega = uniformization_factor * max(total_rates.values())
+
+    # Construct a uniformized transition matrix from the rate matrix
+    # and the uniformization rate.
+    P = nx.DiGraph()
+    for a in Q:
+        if Q[a]:
+            weight = 1.0 - total_rates[a] / omega
+            P.add_edge(a, a, weight=weight)
+            for b in Q[a]:
+                weight = Q[a][b]['weight'] / omega
+                P.add_edge(a, b, weight=weight)
+
+    # Return the uniformized transition matrix.
+    return P
+
+
 def gen_forward_samples(T, Q, root, root_distn, nsamples=None):
     """
     Use simple unconditional forward sampling to generate history samples.
@@ -78,7 +122,7 @@ def gen_forward_samples(T, Q, root, root_distn, nsamples=None):
 
     """
     # Summarize the rate matrix.
-    total_rates = _mjp.get_total_rates(Q)
+    total_rates = get_total_rates(Q)
     P = _mjp.get_conditional_transition_matrix(Q, total_rates)
     state_sampler = _FastRandomChoice(P)
 
@@ -172,7 +216,7 @@ def get_forward_sample(T, Q, root, root_distn):
 
     """
     # Summarize the rate matrix.
-    total_rates = _mjp.get_total_rates(Q)
+    total_rates = get_total_rates(Q)
     P = _mjp.get_conditional_transition_matrix(Q, total_rates)
 
     # Initialize some stuff.
@@ -325,21 +369,13 @@ def gen_restricted_histories(T, Q, node_to_allowed_states,
             raise ValueError('the rate matrix should have no loops')
     
     # Get the total rate away from each state.
-    total_rates = _mjp.get_total_rates(Q)
+    total_rates = get_total_rates(Q)
 
     # Initialize omega as the uniformization rate.
     omega = uniformization_factor * max(total_rates.values())
 
-    # Construct a uniformized transition matrix from the rate matrix
-    # and the uniformization rate.
-    P = nx.DiGraph()
-    for a in Q:
-        if Q[a]:
-            weight = 1.0 - total_rates[a] / omega
-            P.add_edge(a, a, weight=weight)
-            for b in Q[a]:
-                weight = Q[a][b]['weight'] / omega
-                P.add_edge(a, b, weight=weight)
+    # Get the uniformized transition matrix.
+    P = get_uniformized_transition_matrix(Q, uniformization_factor)
 
     # Define the uniformized poisson rates for Rao-Teh resampling.
     poisson_rates = dict((a, omega - q) for a, q in total_rates.items())
@@ -362,6 +398,166 @@ def gen_restricted_histories(T, Q, node_to_allowed_states,
 
         # Yield the sampled history on the tree.
         yield T
+
+        # If we have sampled enough histories, then return.
+        if nhistories is not None:
+            nsampled = i + 1
+            if nsampled >= nhistories:
+                return
+
+        # Resample poisson events.
+        T = resample_poisson(T, poisson_rates)
+
+        # Resample edge states.
+        event_nodes = set(T) - initial_nodes
+        T = resample_restricted_edge_states(
+                T, P, node_to_allowed_states, event_nodes,
+                root=root, prior_root_distn=root_distn)
+
+
+def gen_mh_histories(T, Q, node_to_allowed_states,
+        target_log_likelihood_callback,
+        root, root_distn=None, uniformization_factor=2, nhistories=None):
+    """
+    Rao-Teh with Metropolis-Hastings to sample histories on trees.
+
+    Yield pairs of (tree, indicator) where the indicator communicates
+    whether or not the sampled value is new.
+    If the proposal was accepted or if it is the initial sample
+    then this indicator is True.
+    If the proposal was rejected then this indicator is False.
+    In both cases the caller should treat the yielded tree as a
+    Metropolis-Hastings sample from the target distribution.
+    Edges of the yielded trees will be augmented with weights and states.
+    The weighted size of each yielded tree should be the same
+    as the weighted size of the input tree.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree.
+    Q : directed weighted networkx graph
+        A sparse rate matrix.
+    node_to_allowed_states : dict
+        A map from each node to a set of allowed states.
+    target_log_likelihood_callback : callable
+        This function gets the log likelihood of the given proposal,
+        under the target distribution.
+    root : integer
+        Root of the tree.
+    root_distn : dict, optional
+        Map from root state to probability.
+    uniformization_factor : float, optional
+        A value greater than 1.
+    nhistories : integer, optional
+        Sample this many histories.
+        If None, then sample an unlimited number of histories.
+
+    """
+    # Validate some input.
+    if uniformization_factor <= 1:
+        raise ValueError('the uniformization factor must be greater than 1')
+    if not Q:
+        raise ValueError('the rate matrix is empty')
+    for a, b in Q.edges():
+        if a == b:
+            raise ValueError('the rate matrix should have no loops')
+    
+    # Get the total rate away from each state.
+    total_rates = get_total_rates(Q)
+
+    # Initialize omega as the uniformization rate.
+    omega = uniformization_factor * max(total_rates.values())
+
+    # Get the uniformized transition matrix.
+    P = get_uniformized_transition_matrix(Q, uniformization_factor)
+
+    # Define the uniformized poisson rates for Rao-Teh resampling.
+    poisson_rates = dict((a, omega - q) for a, q in total_rates.items())
+
+    # Define the initial set of nodes.
+    initial_nodes = set(T)
+
+    # Define the biased log likelihood callback function.
+    # This is required for determining ratios of proposal densities
+    # for the Metropolis-Hastings acceptance or rejection.
+    def biased_log_likelihood_callback(T_aug):
+        return get_trajectory_log_likelihood(T_aug, root, root_distn, Q)
+
+    # No previous sample.
+    T_prev = None
+    ll_biased_prev = None
+    ll_target_prev = None
+
+    # Construct an initial feasible history,
+    # possibly with redundant event nodes.
+    T = get_restricted_feasible_history(T, P, node_to_allowed_states,
+            root=root, root_distn=root_distn)
+
+    # Generate histories using Rao-Teh proposals for Metropolis-Hastings.
+    # This could possibly be abstracted into a more general framework.
+    for i in itertools.count():
+
+        # Identify and remove the non-original redundant nodes.
+        all_rnodes = _graph_transform.get_redundant_degree_two_nodes(T)
+        expendable_rnodes = all_rnodes - initial_nodes
+        T = _graph_transform.remove_redundant_nodes(T, expendable_rnodes)
+
+        # If this is the first sample, then accept it without
+        # computing anything related to Metropolis-Hastings.
+        # Otherwise, compute a Metropolis-Hastings ratio
+        # and determine whether to accept or reject the proposed tree.
+        # This requires the log likelihoods of both the previous
+        # and the proposed samples, computed under both the
+        # sampling and the target distributions.
+        if T_prev is None:
+            accept_flag = True
+        else:
+
+            # Compute the log likelihood
+            # according to the biased distribution used for sampling.
+            if ll_biased_prev is None:
+                ll_biased_prev = biased_log_likelihood_callback(T_prev)
+            ll_biased_curr = biased_log_likelihood_callback(T)
+
+            # Compute the log likelihood
+            # according to the target distribution.
+            if ll_target_prev is None:
+                ll_target_prev = target_log_likelihood_callback(T_prev)
+            ll_target_curr = target_log_likelihood_callback(T)
+
+            # Compute the log Metropolis-Hastings ratio.
+            log_mh_ratio = sum((
+                ll_target_curr,
+                -ll_target_prev,
+                -ll_biased_curr,
+                ll_biased_prev))
+
+            # If the M-H ratio is favorable then always accept.
+            # If the M-H ratio is unfavoarable
+            # then accept with some probability.
+            if log_mh_ratio > 0:
+                accept_flag = True
+            else:
+                if random.random() < np.exp(log_mh_ratio):
+                    accept_flag = True
+                else:
+                    accept_flag = False
+
+            # If accepted, store the log likelihoods for the next iteration.
+            if accept_flag:
+                ll_biased_prev = ll_biased_curr
+                ll_target_prev = ll_target_curr
+
+        # If the proposal was rejected then revert to the previous sample.
+        if not accept_flag:
+            T = T_prev
+
+        # Yield a sample
+        yield T, accept_flag
+
+        # Store the tree for the next iteration.
+        T_prev = T
 
         # If we have sampled enough histories, then return.
         if nhistories is not None:

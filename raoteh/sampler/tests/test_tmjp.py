@@ -44,7 +44,9 @@ from raoteh.sampler._tmjp import (
         )
 
 from raoteh.sampler._sampler import (
-        gen_histories, gen_restricted_histories,
+        gen_histories,
+        gen_restricted_histories,
+        gen_mh_histories,
         get_forward_sample,
         )
 
@@ -620,7 +622,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 1 : rate_on / total_tolerance_rate}
 
         # Sample a non-tiny random tree without branch lengths.
-        T = get_random_agglom_tree(maxnodes=10)
+        T = get_random_agglom_tree(maxnodes=30)
         root = 0
 
         # Add some random branch lengths onto the edges of the tree.
@@ -697,7 +699,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Define the number of samples.
         nsamples = 5000
-        sqrt_nsamples = np.sqrt(nsamples)
+        sqrt_nsamp = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,
         # and get the negative expected log likelihood.
@@ -777,14 +779,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 T, Q_primary_proposal, leaf_to_primary_state,
                 root=root, root_distn=primary_distn,
                 uniformization_factor=2, nhistories=nsamples):
-
-            #print('rao teh sample of the primary process:')
-            #for na, nb in nx.bfs_edges(T_aug, root):
-                #edge = T_aug[na][nb]
-                #primary_state = edge['state']
-                #tolerance_state = primary_to_part[primary_state]
-                #print(na, nb, edge['weight'], primary_state, tolerance_state)
-            #print()
 
             # Compute primary process statistics.
             # These will be used for two purposes.
@@ -915,12 +909,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                         Q_tol.add_edge(1, 0, weight=local_rate_off)
                     if absorption_rate:
                         Q_tol.add_edge(1, 2, weight=absorption_rate)
-                    #print('nparts:', nparts)
-                    #print('tolerance class:', tolerance_class)
-                    #print('local tolerance class:', local_tolerance_class)
-                    #print('Q_tol:')
-                    #for sa, sb in Q_tol.edges():
-                        #print(sa, sb, Q_tol[sa][sb]['weight'])
 
                     # Add the edge.
                     T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
@@ -933,18 +921,11 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
                 # Compute conditional expectations of dwell times
                 # and transitions for this tolerance class.
-                #for na, nb in nx.bfs_edges(T_tol, root):
-                    #Q_tmp = T_tol[na][nb]['Q']
-                    #for sa, sb in Q_tmp.edges():
-                        #print(na, nb, sa, sb, Q_tmp[sa][sb]['weight'])
-                #print()
                 dwell_times, transitions = get_expected_history_statistics(
                         T_tol, node_to_allowed_tolerances,
                         root, root_distn=tolerance_distn)
 
                 # Get the dwell time log likelihood contribution.
-                #for sa, sb in transitions.edges():
-                    #print(sa, sb, transitions[sa][sb]['weight'])
                 if transitions.has_edge(0, 1):
                     expected_ngains += transitions[0][1]['weight']
                 if transitions.has_edge(1, 0):
@@ -977,6 +958,139 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         normalized_imp_trans = (np.array(importance_weights) * np.array(
                 imp_neg_ll_contribs_trans)) / np.mean(importance_weights)
 
+
+        # Get Rao-Teh samples of primary process trajectories
+        # conditional on the primary states at the leaves.
+        # The met_ prefix denotes Metropolis-Hastings.
+        met_sampled_root_distn = defaultdict(float)
+        met_neg_ll_contribs_init = []
+        met_neg_ll_contribs_dwell = []
+        met_neg_ll_contribs_trans = []
+        naccepted = 0
+        nrejected = 0
+
+        # Define the callback.
+        def target_log_likelihood_callback(T_aug):
+            node_to_tmap = {}
+            return get_tolerance_process_log_likelihood(
+                    Q_primary, primary_to_part, T_aug, node_to_tmap,
+                    rate_off, rate_on, primary_distn, root)
+
+        # Convert between restricted state formats.
+        node_to_allowed_primary_states = {}
+        for node in T:
+            if node in leaf_to_primary_state:
+                allowed = {leaf_to_primary_state[node]}
+            else:
+                allowed = set(primary_to_part)
+            node_to_allowed_primary_states[node] = allowed
+
+        # Sample the histories.
+        for T_aug, accept_flag in gen_mh_histories(
+                T, Q_primary_proposal, node_to_allowed_primary_states,
+                target_log_likelihood_callback,
+                root, root_distn=primary_distn,
+                uniformization_factor=2, nhistories=nsamples):
+
+            if accept_flag:
+                naccepted += 1
+            else:
+                nrejected += 1
+
+            # Compute primary process statistics.
+            info = get_history_statistics(T_aug, root=root)
+            dwell_times, root_state, transitions = info
+
+            # Count the contribution of primary process transitions.
+            ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_primary[sa][sb]['weight']
+                ll += special.xlogy(ntransitions, rate)
+            primary_trans_ll = ll
+
+            # XXX extensive copypasting below here
+            #
+            # Compute conditional expectations of statistics
+            # of the tolerance process.
+            # This requires constructing independent piecewise homogeneous
+            # Markov jump processes for each tolerance class.
+            expected_ngains = 0.0
+            expected_nlosses = 0.0
+            expected_dwell_on = 0.0
+            for tolerance_class in range(nparts):
+
+                # Define the set of allowed tolerances at each node.
+                # These may be further constrained
+                # by the sampled primary process trajectory.
+                node_to_allowed_tolerances = dict((n, {0, 1}) for n in T_aug)
+
+                # Construct the tree whose edges are in correspondence
+                # to the edges of the sampled primary trajectory,
+                # and whose edges are annotated with weights
+                # and with edge-specific 3-state transition rate matrices.
+                # The third state of each edge-specific rate matrix is an
+                # absorbing state which will never be entered.
+                T_tol = nx.Graph()
+                for na, nb in nx.bfs_edges(T_aug, root):
+                    edge = T_aug[na][nb]
+                    primary_state = edge['state']
+                    local_tolerance_class = primary_to_part[primary_state]
+                    weight = edge['weight']
+
+                    # Define the local on->off rate, off->on rate,
+                    # and absorption rate.
+                    local_rate_on = rate_on
+                    if tolerance_class == local_tolerance_class:
+                        local_rate_off = 0
+                    else:
+                        local_rate_off = rate_off
+                    absorption_rate = 0
+                    if primary_state in Q_primary:
+                        for sb in Q_primary[primary_state]:
+                            if primary_to_part[sb] == tolerance_class:
+                                rate = Q_primary[primary_state][sb]['weight']
+                                absorption_rate += rate
+
+                    # Construct the local tolerance rate matrix.
+                    Q_tol = nx.DiGraph()
+                    if local_rate_on:
+                        Q_tol.add_edge(0, 1, weight=local_rate_on)
+                    if local_rate_off:
+                        Q_tol.add_edge(1, 0, weight=local_rate_off)
+                    if absorption_rate:
+                        Q_tol.add_edge(1, 2, weight=absorption_rate)
+
+                    # Add the edge.
+                    T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
+
+                    # Possibly restrict the set of allowed tolerances
+                    # at the endpoints of the edge.
+                    if tolerance_class == local_tolerance_class:
+                        for n in (na, nb):
+                            node_to_allowed_tolerances[n].discard(0)
+
+                # Compute conditional expectations of dwell times
+                # and transitions for this tolerance class.
+                dwell_times, transitions = get_expected_history_statistics(
+                        T_tol, node_to_allowed_tolerances,
+                        root, root_distn=tolerance_distn)
+
+                # Get the dwell time log likelihood contribution.
+                if transitions.has_edge(0, 1):
+                    expected_ngains += transitions[0][1]['weight']
+                if transitions.has_edge(1, 0):
+                    expected_nlosses += transitions[1][0]['weight']
+                if 1 in dwell_times:
+                    expected_dwell_on += dwell_times[1]
+
+            # Add the log likelihood contributions of the primary transitions.
+            met_tolerance_trans_ll = 0.0
+            met_tolerance_trans_ll += special.xlogy(expected_ngains, rate_on)
+            met_tolerance_trans_ll += special.xlogy(expected_nlosses, rate_off)
+            met_trans_ll = primary_trans_ll + met_tolerance_trans_ll
+            met_neg_ll_contribs_trans.append(-met_trans_ll)
+
         print()
         print('--- tmjp experiment ---')
         print('nsamples:', nsamples)
@@ -986,17 +1100,22 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print()
         print('diff ent init:', diff_ent_init)
         print('neg ll init  :', np.mean(neg_ll_contribs_init))
-        print('error        :', np.std(neg_ll_contribs_init) / sqrt_nsamples)
+        print('error        :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
         print()
         print('diff ent dwell:', diff_ent_dwell)
         print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
-        print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamples)
+        print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
         print()
         print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
-        print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamples)
+        print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
         print('imp trans     :', np.mean(normalized_imp_trans))
-        print('error         :', np.std(normalized_imp_trans) / sqrt_nsamples)
+        print('error         :', np.std(normalized_imp_trans) / sqrt_nsamp)
+        print('met trans     :', np.mean(met_neg_ll_contribs_trans))
+        print('error         :', np.std(met_neg_ll_contribs_trans) / sqrt_nsamp)
+        print()
+        print('number of accepted M-H samples:', naccepted)
+        print('number of rejected M-H samples:', nrejected)
         print()
         print('importance weights:', importance_weights)
         print('mean of importance weights:', np.mean(importance_weights))
