@@ -39,7 +39,8 @@ from raoteh.sampler._mjp import (
         get_history_dwell_times,
         get_history_root_state_and_transitions,
         get_history_statistics,
-        get_total_rates, get_conditional_transition_matrix,
+        get_total_rates,
+        get_conditional_transition_matrix,
         get_expm_augmented_tree,
         get_expected_history_statistics,
         )
@@ -660,6 +661,7 @@ def get_tolerance_expectations(
     expected_ngains = 0.0
     expected_nlosses = 0.0
     expected_dwell_on = 0.0
+    expected_initial_on = 0.0
     for tolerance_class in range(nparts):
 
         # Define the set of allowed tolerances at each node.
@@ -715,21 +717,33 @@ def get_tolerance_expectations(
 
         # Compute conditional expectations of dwell times
         # and transitions for this tolerance class.
-        dwell_times, transitions = get_expected_history_statistics(
+        expectation_info = get_expected_history_statistics(
                 T_tol, node_to_allowed_tolerances,
                 root, root_distn=tolerance_distn)
+        dwell_times, post_root_distn, transitions = expectation_info
 
         # Get the dwell time log likelihood contribution.
+        if 1 in dwell_times:
+            expected_dwell_on += dwell_times[1]
+
+        # Get the transition log likelihood contribution.
         if transitions.has_edge(0, 1):
             expected_ngains += transitions[0][1]['weight']
         if transitions.has_edge(1, 0):
             expected_nlosses += transitions[1][0]['weight']
-        if 1 in dwell_times:
-            expected_dwell_on += dwell_times[1]
+
+        # Get the initial state log likelihood contribution.
+        if 1 in post_root_distn:
+            expected_initial_on += post_root_distn[1]
+
+    # Summarize expectations.
+    expected_initial_off = nparts - expected_initial_on
 
     # Return the log likelihood contributions.
     dwell_ll_contrib = 0 #FIXME
-    init_ll_contrib = 0 #FIXME
+    init_ll_contrib = (
+            special.xlogy(expected_initial_on - 1, tolerance_distn[1]) +
+            special.xlogy(expected_initial_off, tolerance_distn[0]))
     trans_ll_contrib = (
             special.xlogy(expected_ngains, rate_on) +
             special.xlogy(expected_nlosses, rate_off))
@@ -771,7 +785,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
-            scale = 0.5
+            scale = 0.4
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
         # Use forward sampling to jointly sample compound states on the tree,
@@ -811,20 +825,24 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # the compound process transition rate matrix
         # and the length of the edge.
         T_trans = get_expm_augmented_tree(T, root, Q_default=Q_compound)
-        node_to_pmap = construct_node_to_restricted_pmap(
-                T_trans, root, node_to_allowed_states)
-        posterior_node_to_distn = get_node_to_distn(
-                T_trans, node_to_allowed_states, node_to_pmap,
-                root, prior_root_distn=compound_distn)
-        posterior_root_distn = posterior_node_to_distn[root]
-        diff_ent_init = 0.0
-        for state, prob in posterior_node_to_distn[root].items():
-            diff_ent_init -= special.xlogy(prob, compound_distn[state])
+        #node_to_pmap = construct_node_to_restricted_pmap(
+                #T_trans, root, node_to_allowed_states)
+        #posterior_node_to_distn = get_node_to_distn(
+                #T_trans, node_to_allowed_states, node_to_pmap,
+                #root, prior_root_distn=compound_distn)
+        #posterior_root_distn = posterior_node_to_distn[root]
 
         # Get some posterior expectations.
-        dwell_times, transitions = get_expected_history_statistics(
+        expectation_info = get_expected_history_statistics(
                 T, node_to_allowed_states,
                 root, root_distn=compound_distn, Q_default=Q_compound)
+        dwell_times, post_root_distn, transitions = expectation_info
+
+        # Use some posterior expectations
+        # to get the root distribution contribution to differential entropy.
+        diff_ent_init = 0.0
+        for state, prob in post_root_distn.items():
+            diff_ent_init -= special.xlogy(prob, compound_distn[state])
 
         # Use some posterior expectations
         # to get the dwell time contribution to differential entropy.
@@ -863,8 +881,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # by integrating over the possible tolerance trajectories.
         # This allows us to test this integration without worrying that
         # the primary process history samples are biased.
-        #pm_neg_ll_contribs_init = []_
         #pm_neg_ll_contribs_dwell = []
+        pm_neg_ll_contribs_init = []
         pm_neg_ll_contribs_trans = []
         #
         for T_aug in gen_restricted_histories(
@@ -917,6 +935,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             primary_info = get_history_statistics(T_primary_aug, root=root)
             dwell_times, root_state, transitions = primary_info
 
+            # Add primary process initial contribution.
+            init_prim_ll = np.log(primary_distn[root_state])
+
             # Add the transition stat contribution of the primary process.
             trans_prim_ll = 0.0
             for sa, sb in transitions.edges():
@@ -934,6 +955,10 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             # Append the pm_ neg ll trans component of log likelihood.
             pm_trans_ll = trans_prim_ll + trans_tol_ll
             pm_neg_ll_contribs_trans.append(-pm_trans_ll)
+
+            # Append the pm_ neg ll init component of log likelihood.
+            pm_init_ll = init_prim_ll + init_tol_ll
+            pm_neg_ll_contribs_init.append(-pm_init_ll)
 
         # Define a rate matrix for a primary process proposal distribution.
         # This is intended to define a Markov jump process for primary states
@@ -1070,11 +1095,10 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                     Q_primary, T_aug, root)
             dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
 
-            # XXX for now ignore the contribution
             # Add the log likelihood contribution
             # of the initial state distribution.
-            #imp_neg_ll_contribs_init = []
-            imp_neg_ll_contribs_init.append(0.0)
+            imp_init_ll = primary_init_ll + init_tol_ll
+            imp_neg_ll_contribs_init.append(-imp_init_ll)
 
             # Add the log likelihood contributions of the primary transitions.
             imp_trans_ll = primary_trans_ll + trans_tol_ll
@@ -1088,6 +1112,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # define some expectations
         normalized_imp_trans = (np.array(importance_weights) * np.array(
                 imp_neg_ll_contribs_trans)) / np.mean(importance_weights)
+        normalized_imp_init = (np.array(importance_weights) * np.array(
+                imp_neg_ll_contribs_init)) / np.mean(importance_weights)
 
 
         # Get Rao-Teh samples of primary process trajectories
@@ -1132,6 +1158,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             info = get_history_statistics(T_aug, root=root)
             dwell_times, root_state, transitions = info
 
+            # Contribution of root state to log likelihood.
+            primary_init_ll = np.log(primary_distn[root_state])
+
             # Count the contribution of primary process transitions.
             ll = 0.0
             for sa, sb in transitions.edges():
@@ -1147,20 +1176,29 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                     Q_primary, T_aug, root)
             dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
 
-            # Add the log likelihood contributions of the primary transitions.
+            # Add the log likelihood contributions.
             met_trans_ll = primary_trans_ll + trans_tol_ll
             met_neg_ll_contribs_trans.append(-met_trans_ll)
+            met_init_ll = primary_init_ll + init_tol_ll
+            met_neg_ll_contribs_init.append(-met_init_ll)
+
 
         print()
         print('--- tmjp experiment ---')
         print('nsamples:', nsamples)
         print()
         print('sampled root distn :', sampled_root_distn)
-        print('analytic root distn:', posterior_root_distn)
+        print('analytic root distn:', post_root_distn)
         print()
-        print('diff ent init:', diff_ent_init)
-        print('neg ll init  :', np.mean(neg_ll_contribs_init))
-        print('error        :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
+        print('diff ent init :', diff_ent_init)
+        print('neg ll init   :', np.mean(neg_ll_contribs_init))
+        print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
+        print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
+        print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
+        print('imp init      :', np.mean(normalized_imp_init))
+        print('error         :', np.std(normalized_imp_init) / sqrt_nsamp)
+        print('met init      :', np.mean(met_neg_ll_contribs_init))
+        print('error         :', np.std(met_neg_ll_contribs_init) / sqrt_nsamp)
         print()
         print('diff ent dwell:', diff_ent_dwell)
         print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))

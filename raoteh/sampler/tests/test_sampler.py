@@ -336,7 +336,6 @@ class TestMJP_Entropy(TestCase):
                 ll += special.xlogy(ntransitions, rate)
             neg_ll_contribs_trans.append(-ll)
 
-        # Get the diff_ent_init through the root posterior marginal distn.
         node_to_allowed_states = {}
         for node in T:
             if node in node_to_state:
@@ -344,21 +343,24 @@ class TestMJP_Entropy(TestCase):
             else:
                 allowed = set(range(nstates))
             node_to_allowed_states[node] = allowed
-        T_trans = get_expm_augmented_tree(T, root, Q_default=Q)
-        node_to_pmap = construct_node_to_restricted_pmap(
-                T_trans, root, node_to_allowed_states)
-        posterior_node_to_distn = get_node_to_distn(
-                T_trans, node_to_allowed_states, node_to_pmap,
-                root, prior_root_distn=distn)
-        posterior_root_distn = posterior_node_to_distn[root]
-        diff_ent_init = 0.0
-        for state, prob in posterior_node_to_distn[root].items():
-            diff_ent_init -= special.xlogy(prob, distn[state])
+        #T_trans = get_expm_augmented_tree(T, root, Q_default=Q)
+        #node_to_pmap = construct_node_to_restricted_pmap(
+                #T_trans, root, node_to_allowed_states)
+        #posterior_node_to_distn = get_node_to_distn(
+                #T_trans, node_to_allowed_states, node_to_pmap,
+                #root, prior_root_distn=distn)
+        #posterior_root_distn = posterior_node_to_distn[root]
 
         # Get some posterior expectations.
-        dwell_times, transitions = get_expected_history_statistics(
+        expectation_info = get_expected_history_statistics(
                 T, node_to_allowed_states,
                 root, root_distn=distn, Q_default=Q)
+        dwell_times, post_init_distn, transitions = expectation_info
+
+        # Get the diff_ent_init through the root posterior marginal distn.
+        diff_ent_init = 0.0
+        for state, prob in post_init_distn.items():
+            diff_ent_init -= special.xlogy(prob, distn[state])
 
         # Use some posterior expectations
         # to get the dwell time contribution to differential entropy.
@@ -379,7 +381,7 @@ class TestMJP_Entropy(TestCase):
         print('nsamples:', nsamples)
         print()
         print('sampled root distn :', sampled_root_distn)
-        print('analytic root distn:', posterior_root_distn)
+        print('analytic root distn:', post_init_distn)
         print()
         print('diff ent init:', diff_ent_init)
         print('neg ll init  :', np.mean(neg_ll_contribs_init))
@@ -483,12 +485,12 @@ class TestRaoTehSampler(TestCase):
         # Get the MJP expected history statistics.
         info = get_expected_history_statistics(
                 T, node_to_allowed_states, root, Q_default=Q)
-        mjp_expected_dwell_times, mjp_expected_transitions = info
+        mjp_dwell, mjp_init, mjp_trans = info
 
         # Compare to the expected dwell times.
         print(observed_dwell_times)
         print(expected_dwell_times)
-        print(mjp_expected_dwell_times)
+        print(mjp_dwell)
         raise Exception
 
 

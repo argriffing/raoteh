@@ -353,6 +353,8 @@ def get_expected_history_statistics(T, node_to_allowed_states,
     dwell_times : dict
         Map from the state to the expected dwell time on the tree.
         This does not depend on the root.
+    posterior_root_distn : dict
+        Posterior distribution of states at the root.
     transitions : directed weighted networkx graph
         A networkx graph that tracks the expected number of times
         each transition type appears in the history.
@@ -477,7 +479,11 @@ def get_expected_history_statistics(T, node_to_allowed_states,
                             expected_transitions.add_edge(sc, sd, weight=0.0)
                         expected_transitions[sc][sd]['weight'] += contrib
 
-    return dict(expected_dwell_times), expected_transitions
+    # Return some expectations.
+    dwell_expectation = dict(expected_dwell_times)
+    init_expectation = node_to_distn[root]
+    trans_expectation = expected_transitions
+    return dwell_expectation, init_expectation, trans_expectation
 
 
 #XXX under construction
