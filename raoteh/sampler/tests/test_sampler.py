@@ -343,13 +343,6 @@ class TestMJP_Entropy(TestCase):
             else:
                 allowed = set(range(nstates))
             node_to_allowed_states[node] = allowed
-        #T_trans = get_expm_augmented_tree(T, root, Q_default=Q)
-        #node_to_pmap = construct_node_to_restricted_pmap(
-                #T_trans, root, node_to_allowed_states)
-        #posterior_node_to_distn = get_node_to_distn(
-                #T_trans, node_to_allowed_states, node_to_pmap,
-                #root, prior_root_distn=distn)
-        #posterior_root_distn = posterior_node_to_distn[root]
 
         # Get some posterior expectations.
         expectation_info = get_expected_history_statistics(

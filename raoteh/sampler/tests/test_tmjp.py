@@ -820,18 +820,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # Compute the conditional expected log likelihood explicitly
         # using some Markov jump process functions.
 
-        # Annotate the edges of the tree
-        # transition probability matrices which account for
-        # the compound process transition rate matrix
-        # and the length of the edge.
-        T_trans = get_expm_augmented_tree(T, root, Q_default=Q_compound)
-        #node_to_pmap = construct_node_to_restricted_pmap(
-                #T_trans, root, node_to_allowed_states)
-        #posterior_node_to_distn = get_node_to_distn(
-                #T_trans, node_to_allowed_states, node_to_pmap,
-                #root, prior_root_distn=compound_distn)
-        #posterior_root_distn = posterior_node_to_distn[root]
-
         # Get some posterior expectations.
         expectation_info = get_expected_history_statistics(
                 T, node_to_allowed_states,
