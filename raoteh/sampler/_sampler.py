@@ -359,7 +359,14 @@ def gen_restricted_histories(T, Q, node_to_allowed_states,
         If None, then sample an unlimited number of histories.
 
     """
-    # Validate some input.
+    # Check for state restrictions of nodes that are not even in the tree.
+    bad = set(node_to_allowed_states) - set(T)
+    if bad:
+        raise ValueError('some of the nodes which have been annotated '
+                'with state restrictions '
+                'are not even in the tree: ' + str(sorted(bad)))
+
+    # Validate some more input.
     if uniformization_factor <= 1:
         raise ValueError('the uniformization factor must be greater than 1')
     if not Q:
@@ -734,6 +741,12 @@ def get_restricted_feasible_history(
     It is up to the caller to remove redundant self-transitions.
 
     """
+    # Check for state restrictions of nodes that are not even in the tree.
+    bad = set(node_to_allowed_states) - set(T)
+    if bad:
+        raise ValueError('some of the nodes which have been annotated '
+                'with state restrictions '
+                'are not even in the tree: ' + str(sorted(bad)))
 
     # Bookkeeping.
     non_event_nodes = set(T)

@@ -46,7 +46,7 @@ __all__ = []
 
 
 def get_tolerance_substrate(
-        Q, state_to_part, T, part, node_to_tolerance_in, root=None):
+        Q, state_to_part, T, part, node_to_tolerance_in, root):
     """
     Get a substrate for a tolerance class of interest.
 
@@ -91,9 +91,11 @@ def get_tolerance_substrate(
         whose primary state belongs to the tolerance class of interest.
 
     """
-    # Pick a root with only one neighbor if no root was specified.
+    # Check the root.
     if root is None:
-        root = get_arbitrary_tip(T)
+        raise ValueError('unspecified root')
+    if root not in T:
+        raise ValueError('the specified root is not a node in the tree')
 
     # Build the output tree, edge by edge,
     # and populate the map from node to known tolerance state.
@@ -129,7 +131,7 @@ def get_tolerance_substrate(
         # If the absorption rate is structurally zero
         # because no such transitions are allowed,
         # then do not add the absorption rate to the annotation.
-        sbs = [sb for sb in Q[state] if state_to_part[state] == part]
+        sbs = [sb for sb in Q[state] if state_to_part[sb] == part]
         if sbs:
             absorption_rate = sum(Q[state][sb]['weight'] for sb in sbs)
             T_out[a][b]['absorption'] = absorption_rate
@@ -140,7 +142,7 @@ def get_tolerance_substrate(
 
 def get_tolerance_class_likelihood(
         Q, state_to_part, T, part, node_to_tolerance_in,
-        rate_off, rate_on, root=None):
+        rate_off, rate_on, root):
     """
     Compute a likelihood associated with a tolerance class.
 
@@ -183,26 +185,38 @@ def get_tolerance_class_likelihood(
         The likelihood for the tolerance class of interest.
 
     """
-    # Pick an arbitrary root.
-    # Because this particular conditional process is time-reversible,
-    # there is no constraint on which nodes are allowed to be roots.
+    # Check the root.
     if root is None:
-        root = get_first_element(T)
+        raise ValueError('unspecified root')
+    if root not in T:
+        raise ValueError('the specified root is not a node in the tree')
 
-    # Define the prior distribution on the tolerance state at the root.
-    # The location of the root does not matter for this purpose,
-    # because the binary tolerance process is time-reversible.
-    # This is sparsely defined to allow extreme rates.
-    root_prior = {}
+    # Get the root state.
+    root_neighbor = get_first_element(T[root])
+    root_primary_state = T[root][root_neighbor]['state']
+
+    # Define the distribution over tolerance states.
+    tolerance_distn = {}
     total_rate = rate_off + rate_on
     if (rate_off < 0) or (rate_off < 0) or (total_rate <= 0):
         raise ValueError(
                 'the tolerance rate_on and rate_off must both be nonzero '
                 'and at least one of them must be positive')
     if rate_off:
-        root_prior[0] = rate_off / total_rate
+        tolerance_distn[0] = rate_off / total_rate
     if rate_on:
-        root_prior[1] = rate_on / total_rate
+        tolerance_distn[1] = rate_on / total_rate
+
+    # If the tolerance class of the primary state of the root
+    # is equal to the current tolerance class,
+    # then the root tolerance state does not have an interesting
+    # prior distribution.
+    # Otherwise, the root tolerance state prior distribution is
+    # given by the equilibrium tolerance state distribution.
+    if state_to_part[root_primary_state] == part:
+        root_prior = {1 : 1}
+    else:
+        root_prior = tolerance_distn
 
     # Get a tree with edges annotated
     # with tolerance state (if known and constant along the edge)
@@ -210,7 +224,7 @@ def get_tolerance_class_likelihood(
     # The tolerance states of the nodes are further specified
     # to be consistent with edges that have known constant tolerance state.
     T_tol, node_to_tolerance = get_tolerance_substrate(
-            Q, state_to_part, T, part, node_to_tolerance_in)
+            Q, state_to_part, T, part, node_to_tolerance_in, root)
 
     # Construct the map from nodes to allowed states.
     # This implicitly includes the restriction
@@ -260,7 +274,8 @@ def get_tolerance_class_likelihood(
 
     # Get the likelihood from the augmented tree and the root distribution.
     likelihood = _mc.get_restricted_likelihood(
-            T_aug, root, node_to_allowed_states, root_prior)
+            T_aug, root, node_to_allowed_states,
+            root_distn=root_prior, P_default=None)
 
     # Return the likelihood.
     return likelihood

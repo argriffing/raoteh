@@ -83,12 +83,14 @@ def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
 
     """
     # Define a distribution over some primary states.
-    nprimary = 4
+    nprimary = 6
     primary_distn = {
-            0 : 0.1,
-            1 : 0.2,
-            2 : 0.3,
-            3 : 0.4}
+            0 : 0.05,
+            1 : 0.1,
+            2 : 0.15,
+            3 : 0.2,
+            4 : 0.25,
+            5 : 0.25}
 
     # Define the transition rates.
     primary_transition_rates = [
@@ -98,8 +100,12 @@ def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
             (2, 1, primary_distn[1]),
             (2, 3, 3 * primary_distn[3]),
             (3, 2, 3 * primary_distn[2]),
-            (3, 0, primary_distn[0]),
-            (0, 3, primary_distn[3]),
+            (3, 4, primary_distn[4]),
+            (4, 3, primary_distn[3]),
+            (4, 5, primary_distn[5]),
+            (5, 4, primary_distn[4]),
+            (5, 0, primary_distn[0]),
+            (0, 5, primary_distn[5]),
             ]
 
     # Define the primary process through its transition rate matrix.
@@ -113,12 +119,14 @@ def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
             1 : tolerance_rate_on / total_tolerance_rate}
 
     # Define a couple of tolerance classes.
-    nparts = 2
+    nparts = 3
     primary_to_part = {
             0 : 0,
             1 : 0,
             2 : 1,
-            3 : 1}
+            3 : 1,
+            4 : 2,
+            5 : 2}
 
     # Define a compound state space.
     compound_to_primary = []
@@ -210,6 +218,97 @@ def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
 
 class TestMonteCarloLikelihoodRatio(TestCase):
 
+    @decorators.skipif(True)
+    def test_tmjp_primary_leaf_marginal_distn_sum(self):
+        # Test that a set of marginal probabilities adds up to 1.
+
+        # Define the tolerance process rates.
+        rate_on = 0.5
+        rate_off = 1.5
+
+        # Define some other properties of the process,
+        # in a way that is not object-oriented.
+        (primary_distn, Q_primary, primary_to_part,
+                compound_to_primary, compound_to_tolerances, compound_distn,
+                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+
+        # Summarize properties of the process.
+        nprimary = len(primary_distn)
+        nparts = len(set(primary_to_part.values()))
+        total_tolerance_rate = rate_on + rate_off
+        tolerance_distn = {
+                0 : rate_off / total_tolerance_rate,
+                1 : rate_on / total_tolerance_rate}
+        ordered_primary_states = sorted(primary_distn)
+        ordered_compound_states = sorted(compound_distn)
+
+        # Use an arbitrary tree with few enough leaves for enumeration.
+        T = nx.Graph()
+        T.add_edge(0, 1)
+        T.add_edge(0, 2)
+        T.add_edge(0, 3)
+        T.add_edge(3, 4)
+        T.add_edge(3, 5)
+
+        # Define the set of leaf nodes.
+        # Define the root of the tree.
+        root = 0
+        ordered_leaves = [1, 2, 4, 5]
+        leaf_set = set(ordered_leaves)
+        nleaves = len(ordered_leaves)
+
+        # Add some random branch lengths onto the edges of the tree.
+        for na, nb in nx.bfs_edges(T, root):
+            scale = 0.1
+            T[na][nb]['weight'] = np.random.exponential(scale=scale)
+
+        # Sum over all possible combinations of leaf states.
+        obs_likelihoods = []
+        for ordered_leaf_states in itertools.product(
+                ordered_primary_states, repeat=nleaves):
+
+            # Define the leaf states.
+            leaf_to_state = dict(zip(ordered_leaves, ordered_leaf_states))
+
+            # Define the primary and compound state restrictions
+            # at all nodes on the tree.
+            node_to_allowed_compound_states = {}
+            node_to_allowed_primary_states = {}
+            for node in T:
+                if node in leaf_set:
+                    primary_state = leaf_to_state[node]
+                    allowed_primary = {primary_state}
+                    allowed_compound = set()
+                    for c in ordered_compound_states:
+                        if compound_to_primary[c] == primary_state:
+                            allowed_compound.add(c)
+                else:
+                    allowed_primary = set(ordered_primary_states)
+                    allowed_compound = set(ordered_compound_states)
+                node_to_allowed_primary_states[node] = allowed_primary
+                node_to_allowed_compound_states[node] = allowed_compound
+
+            # Compute the observation likelihood under the compound model.
+            #compound_distn_unnormal = {}
+            #for compound_state, primary_state in enumerate(compound_to_primary):
+                #primary_prob = primary_distn[primary_state]
+                #compound_distn_unnormal[compound_state] = primary_prob
+            obs_likelihood_target = _mjp.get_likelihood(
+                    T, node_to_allowed_compound_states, root,
+                    #root_distn=compound_distn_unnormal,
+                    root_distn=compound_distn,
+                    Q_default=Q_compound)
+
+            # Add the observation likelihood to the list.
+            obs_likelihoods.append(obs_likelihood_target)
+
+        # Check the sum of observation likelihoods.
+        # Because this is a sum of marginal leaf data probabilities
+        # over all possible leaf data combinations,
+        # the sum should be 1.
+        assert_allclose(sum(obs_likelihoods), 1)
+
+    #@decorators.skipif(True)
     def test_monte_carlo_likelihood_ratio(self):
         # Define a tree with some branch lengths.
         # Use forward sampling from some process to get primary state
@@ -231,7 +330,6 @@ class TestMonteCarloLikelihoodRatio(TestCase):
                 Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
 
         # Summarize properties of the process.
-        ncompound = len(compound_to_primary)
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
         total_tolerance_rate = rate_on + rate_off
@@ -239,15 +337,22 @@ class TestMonteCarloLikelihoodRatio(TestCase):
                 0 : rate_off / total_tolerance_rate,
                 1 : rate_on / total_tolerance_rate}
         all_primary_states = set(primary_distn)
-        all_compound_states = set(range(ncompound))
+        all_compound_states = set(compound_distn)
 
         # Sample a random tree without branch lengths.
-        T = get_random_agglom_tree(maxnodes=5)
+        #T = get_random_agglom_tree(maxnodes=10)
+        # Use an arbitrary tree with few enough leaves for enumeration.
+        T = nx.Graph()
+        T.add_edge(0, 1)
+        T.add_edge(0, 2)
+        T.add_edge(0, 3)
+        T.add_edge(3, 4)
+        T.add_edge(3, 5)
         root = 0
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
-            scale = 0.1
+            scale = 1.0
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
         # Sample a single unconditional history on the tree
@@ -256,14 +361,22 @@ class TestMonteCarloLikelihoodRatio(TestCase):
         T_forward_sample = get_forward_sample(
                 T, Q_primary, root, primary_distn)
 
-        # Get the state restrictions associated with the single forward sample.
-        node_to_allowed_compound_states = {}
-        node_to_allowed_primary_states = {}
+        # Get the sampled leaf states from the forward sample.
+        leaf_to_primary_state = {}
         for node in T_forward_sample:
             if len(T_forward_sample[node]) == 1:
                 nb = get_first_element(T_forward_sample[node])
                 edge = T_forward_sample[node][nb]
                 primary_state = edge['state']
+                leaf_to_primary_state[node] = primary_state
+
+        # Get the state restrictions
+        # associated with the sampled leaf states.
+        node_to_allowed_compound_states = {}
+        node_to_allowed_primary_states = {}
+        for node in T:
+            if node in leaf_to_primary_state:
+                primary_state = leaf_to_primary_state[node]
                 allowed_primary = {primary_state}
                 allowed_compound = set()
                 for c in all_compound_states:
@@ -276,13 +389,14 @@ class TestMonteCarloLikelihoodRatio(TestCase):
             node_to_allowed_compound_states[node] = allowed_compound
 
         # Compute the observation likelihood under the compound model.
-        compound_distn_unnormal = {}
-        for compound_state, primary_state in enumerate(compound_to_primary):
-            primary_prob = primary_distn[primary_state]
-            compound_distn_unnormal[compound_state] = primary_prob
+        #compound_distn_unnormal = {}
+        #for compound_state, primary_state in enumerate(compound_to_primary):
+            #primary_prob = primary_distn[primary_state]
+            #compound_distn_unnormal[compound_state] = primary_prob
         obs_likelihood_target = _mjp.get_likelihood(
                 T, node_to_allowed_compound_states, root,
-                root_distn=compound_distn_unnormal,
+                #root_distn=compound_distn_unnormal,
+                root_distn=compound_distn,
                 Q_default=Q_compound)
 
         # Compute the observation likelihood under the primary model.
@@ -322,7 +436,15 @@ class TestMonteCarloLikelihoodRatio(TestCase):
         # Report the likelihood ratios.
         print()
         print('--- monte carlo likelihood test ---')
-        print('target/proposal likelihood ratio for observed data:',
+        print('sample tree:')
+        for na, nb in nx.bfs_edges(T, root):
+            print(na, nb, T[na][nb]['weight'])
+        print('leaf primary state samples:')
+        for n, s in sorted(leaf_to_primary_state.items()):
+            print(n, s)
+        print('obs likelihood target  :', obs_likelihood_target)
+        print('obs likelihood proposal:', obs_likelihood_proposal)
+        print('obs likelihood ratio   :',
                 obs_likelihood_target / obs_likelihood_proposal)
         print('sample average of importance weights:',
                 np.mean(importance_weights))

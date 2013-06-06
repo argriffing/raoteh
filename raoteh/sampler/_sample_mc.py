@@ -389,6 +389,13 @@ def resample_restricted_edge_states(T, P, node_to_allowed_states, event_nodes,
     # Bookkeeping.
     non_event_nodes = set(T) - event_nodes
 
+    # Check for state restrictions of nodes that are not even in the tree.
+    bad = set(node_to_allowed_states) - set(T)
+    if bad:
+        raise ValueError('some of the nodes which have been annotated '
+                'with state restrictions '
+                'are not even in the tree: ' + str(sorted(bad)))
+
     # Check the state restrictions.
     bad = set(event_nodes) & set(node_to_allowed_states)
     if bad:
