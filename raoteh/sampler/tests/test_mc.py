@@ -99,6 +99,7 @@ def _get_random_test_setup(nstates):
 
 def _assert_distn_allclose(da, db):
     # This is a helper function for testing.
+    assert_equal(set(da), set(db))
     da_vector = np.array(
             [v for k, v in sorted(da.items())], dtype=float)
     db_vector = np.array(
@@ -177,9 +178,10 @@ class TestMarkovChain(TestCase):
             # Get the node distributions more cleverly,
             # through the restricted pmap.
             node_to_pmap = construct_node_to_restricted_pmap(
-                    T, root, node_to_allowed_states)
+                    T, root, node_to_allowed_states, P_default=P)
             node_to_distn_fast = get_node_to_distn(
-                    T, node_to_allowed_states, node_to_pmap, root, P)
+                    T, node_to_allowed_states, node_to_pmap,
+                    root, prior_root_distn=root_distn, P_default=P)
 
             # Convert distributions to ndarrays for approximate comparison.
             for node, distn in node_to_distn_naive.items():
@@ -187,13 +189,14 @@ class TestMarkovChain(TestCase):
             for node, distn in node_to_distn_fast.items():
                 _assert_distn_allclose(root_distn, distn)
 
-    def test_node_to_distn(self):
+    def test_node_to_distn_naive_vs_fast_random(self):
         # Test the marginal distributions of node states.
 
         # This test uses a complicated tree with complicated transitions.
         # It checks the naive way of computing node_to_distn against
         # the more clever fast way to compute node_to_distn.
         # The two methods should give the same answer.
+        np.random.seed(1234)
         nstates = 4
         nsamples = 10
         for i in range(nsamples):
@@ -251,7 +254,7 @@ class TestMarkovChain(TestCase):
                     T, root, node_to_allowed_states)
             node_to_distn_fast = get_node_to_distn(
                     T, node_to_allowed_states, node_to_pmap,
-                    root, root_distn)
+                    root=root, prior_root_distn=root_distn)
 
             # Convert distributions to ndarrays for approximate comparison.
             for node in T:

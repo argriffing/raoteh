@@ -387,7 +387,7 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
 
 
 def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
-        root, prior_root_distn=None):
+        root, prior_root_distn=None, P_default=None):
     """
     Get marginal state distributions at nodes in a tree.
 
@@ -446,11 +446,15 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
             parent_node = predecessors[node]
             parent_distn = node_to_distn[parent_node]
 
+            # Get the transition matrix associated with this edge.
+            P = T[parent_node][node].get('P', P_default)
+            if P is None:
+                raise ValueError('no transition matrix is available')
+
             # For each parent state,
             # get the distribution over child states;
             # this distribution will include both the P matrix
             # and the pmap of the child node.
-            P = T[parent_node][node]['P']
             distn = defaultdict(float)
             for sa, pa in parent_distn.items():
 
