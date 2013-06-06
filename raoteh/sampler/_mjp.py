@@ -12,6 +12,8 @@ import scipy.linalg
 import scipy.stats
 from scipy import special
 
+from raoteh.sampler import _mc
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_dense_rate_matrix, sparse_expm,
@@ -361,27 +363,10 @@ def get_likelihood(T, node_to_allowed_states,
     # with the appropriate state transition probability matrix.
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
-    # TODO code below here should probably be replaced
-    # TODO with a call to an _mc function...
-
-    # Construct the node to pmap dict.
-    node_to_pmap = construct_node_to_restricted_pmap(
-            T_aug, root, node_to_allowed_states)
-
-    # Get subtree likelihoods conditional on the root state.
-    root_pmap = node_to_pmap[root]
-
-    # Get feasible initial states.
-    feasible_states = set(root_pmap)
-    if root_distn is not None:
-        feasible_states.intersection_update(set(root_distn))
-
-    # Return likelihood.
-    if root_distn is None:
-        likelihood = sum(root_pmap.values())
-    else:
-        likelihood = sum(root_distn[s] * root_pmap[s] for s in feasible_states)
-    return likelihood
+    # Return the Markov chain likelihood.
+    return _mc.get_restricted_likelihood(
+            T_aug, root, node_to_allowed_states,
+            root_distn=root_distn, P_default=None)
 
 
 def get_expected_history_statistics(T, node_to_allowed_states,

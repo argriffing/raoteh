@@ -38,6 +38,7 @@ from raoteh.sampler._mjp import (
         get_total_rates,
         get_expm_augmented_tree,
         get_expected_history_statistics,
+        get_trajectory_log_likelihood,
         )
 
 from raoteh.sampler._tmjp import (
@@ -225,7 +226,7 @@ class TestMonteCarloLikelihoodRatio(TestCase):
 
         # Define some other properties of the process,
         # in a way that is not object-oriented.
-        (primary_distn, Q, primary_to_part,
+        (primary_distn, Q_primary, primary_to_part,
                 compound_to_primary, compound_to_tolerances, compound_distn,
                 Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
 
@@ -237,6 +238,8 @@ class TestMonteCarloLikelihoodRatio(TestCase):
         tolerance_distn = {
                 0 : rate_off / total_tolerance_rate,
                 1 : rate_on / total_tolerance_rate}
+        all_primary_states = set(primary_distn)
+        all_compound_states = set(range(ncompound))
 
         # Sample a random tree without branch lengths.
         T = get_random_agglom_tree(maxnodes=5)
@@ -247,6 +250,85 @@ class TestMonteCarloLikelihoodRatio(TestCase):
             scale = 0.1
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
+        # Sample a single unconditional history on the tree
+        # using some arbitrary process.
+        # The purpose is really to sample the states at the leaves.
+        T_forward_sample = get_forward_sample(
+                T, Q_primary, root, primary_distn)
+
+        # Get the state restrictions associated with the single forward sample.
+        node_to_allowed_compound_states = {}
+        node_to_allowed_primary_states = {}
+        for node in T_forward_sample:
+            if len(T_forward_sample[node]) == 1:
+                nb = get_first_element(T_forward_sample[node])
+                edge = T_forward_sample[node][nb]
+                primary_state = edge['state']
+                allowed_primary = {primary_state}
+                allowed_compound = set()
+                for c in all_compound_states:
+                    if compound_to_primary[c] == primary_state:
+                        allowed_compound.add(c)
+            else:
+                allowed_primary = all_primary_states
+                allowed_compound = all_compound_states
+            node_to_allowed_primary_states[node] = allowed_primary
+            node_to_allowed_compound_states[node] = allowed_compound
+
+        # Compute the observation likelihood under the compound model.
+        compound_distn_unnormal = {}
+        for compound_state, primary_state in enumerate(compound_to_primary):
+            primary_prob = primary_distn[primary_state]
+            compound_distn_unnormal[compound_state] = primary_prob
+        obs_likelihood_target = _mjp.get_likelihood(
+                T, node_to_allowed_compound_states, root,
+                root_distn=compound_distn_unnormal,
+                Q_default=Q_compound)
+
+        # Compute the observation likelihood under the primary model.
+        obs_likelihood_proposal = _mjp.get_likelihood(
+                T, node_to_allowed_primary_states, root,
+                root_distn=primary_distn,
+                Q_default=Q_primary)
+
+        # Sample primary state trajectories
+        # according to the pure primary process.
+        nhistories = 1000
+        importance_weights = []
+        for T_primary_traj in gen_restricted_histories(
+                T, Q_primary, node_to_allowed_primary_states,
+                root, root_distn=primary_distn, nhistories=nhistories):
+            
+            # Compute the trajectory log likelihood
+            # under the inhomogeneous primary component of the
+            # tolerance Markov jump process.
+            node_to_tmap = {}
+            traj_ll_target = get_tolerance_process_log_likelihood(
+                    Q_primary, primary_to_part, T_primary_traj,
+                    node_to_tmap, rate_off, rate_on, primary_distn, root)
+
+            # Compute the trajectory log likelihood
+            # under the distribution used for sampling the histories.
+            traj_ll_proposal = _mjp.get_trajectory_log_likelihood(
+                    T_primary_traj, root, primary_distn,
+                    Q_default=Q_primary)
+
+            # Calculate the importance weight as a trajectory likelihood ratio.
+            traj_likelihood_ratio = np.exp(traj_ll_target - traj_ll_proposal)
+
+            # Append the importance weight to the list.
+            importance_weights.append(traj_likelihood_ratio)
+
+        # Report the likelihood ratios.
+        print()
+        print('--- monte carlo likelihood test ---')
+        print('target/proposal likelihood ratio for observed data:',
+                obs_likelihood_target / obs_likelihood_proposal)
+        print('sample average of importance weights:',
+                np.mean(importance_weights))
+        print('sample average error:',
+                np.std(importance_weights) / np.sqrt(nhistories))
+        print()
 
 
 
