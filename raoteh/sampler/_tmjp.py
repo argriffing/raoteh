@@ -14,14 +14,12 @@ import numpy as np
 import networkx as nx
 import scipy.linalg
 
+from raoteh.sampler import _mc
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_arbitrary_tip,
         sparse_expm,
-        )
-
-from raoteh.sampler._mc import (
-        get_restricted_likelihood,
         )
 
 from raoteh.sampler._mjp import (
@@ -320,7 +318,7 @@ def get_tolerance_class_likelihood(
         T_aug.add_edge(a, b, P=P_local_nx)
 
     # Get the likelihood from the augmented tree and the root distribution.
-    likelihood = get_restricted_likelihood(
+    likelihood = _mc.get_restricted_likelihood(
             T_aug, root, node_to_allowed_states, root_prior)
 
     # Return the likelihood.

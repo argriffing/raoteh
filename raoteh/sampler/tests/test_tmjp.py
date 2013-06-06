@@ -20,7 +20,7 @@ from numpy.testing import (
         assert_equal, assert_allclose, assert_, assert_raises, decorators,
         )
 
-from raoteh.sampler import _mjp
+from raoteh.sampler import _mc, _mjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
@@ -34,7 +34,6 @@ from raoteh.sampler._graph_transform import(
         )
 
 from raoteh.sampler._mc import (
-        get_restricted_likelihood,
         construct_node_to_restricted_pmap,
         get_node_to_distn,
         )
@@ -254,7 +253,7 @@ def _neg_log_likelihood_for_minimization(
         # and put them on the edges of the tree,
         # respecting edge state restrictions.
         T_aug = get_expm_augmented_tree(T, root, Q_default=Q_compound)
-        likelihood = get_restricted_likelihood(
+        likelihood = _mc.get_restricted_likelihood(
                 T_aug, root, node_to_allowed_states, compound_distn)
         log_likelihood += np.log(likelihood)
     neg_log_likelihood = -log_likelihood

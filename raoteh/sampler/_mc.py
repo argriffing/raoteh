@@ -170,12 +170,13 @@ def construct_node_to_restricted_pmap(
     return node_to_pmap
 
 
-def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
+def get_restricted_likelihood(T, root, node_to_allowed_states,
+        root_distn=None, P_default=None):
     """
-    Compute a likelihood.
+    Compute a likelihood or raise an exception if the likelihood is zero.
 
-    This is a general likelihood calculator for piecewise
-    homegeneous Markov jump processes on tree-structured domains.
+    This is a general likelihood calculator for
+    a Markov chain on tree-structured domains.
     At each node in the tree, the set of possible states may be restricted.
     Lack of state restriction at a node corresponds to missing data;
     a common example of such missing data would be missing states
@@ -196,8 +197,14 @@ def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
         The root node.
     node_to_allowed_states : dict
         A map from a node to a set of allowed states.
-    root_distn : dict
-        A finite distribution over root states.
+    root_distn : dict, optional
+        A sparse finite distribution or weights over root states.
+        Values should be positive but are not required to sum to 1.
+        If the distribution is not provided,
+        then it will be assumed to have values of 1 for each possible state.
+    P_default : directed weighted networkx graph, optional
+        If an edge is not annotated with a transition matrix P,
+        then this default transition matrix will be used.
 
     Returns
     -------
@@ -205,20 +212,40 @@ def get_restricted_likelihood(T, root, node_to_allowed_states, root_distn):
         The likelihood.
 
     """
-    if not root_distn:
-        raise StructuralZeroProb('empty root distribution')
+    # Check whether the prior by itself causes the likelihood to be zero.
+    if (root_distn is not None) and not root_distn:
+        raise StructuralZeroProb('no root state has nonzero prior likelihood')
+
+    # Get likelihoods conditional on the root state.
     node_to_pmap = construct_node_to_restricted_pmap(
-            T, root, node_to_allowed_states)
+            T, root, node_to_allowed_states, P_default=P_default)
     root_pmap = node_to_pmap[root]
+
+    # Check whether the likelihoods at the root, by themselves,
+    # cause the likelihood to be zero.
     if not root_pmap:
         raise StructuralZeroProb(
                 'all root states give a subtree likelihood of zero')
-    feasible_root_states = set(root_distn) & set(root_pmap)
-    if not feasible_root_states:
+
+    # Construct the set of possible root states.
+    # If no root state is possible raise the exception indicating
+    # that the likelihood is zero by sparsity.
+    feasible_rstates = set(root_pmap)
+    if root_distn is not None:
+        feasible_rstates.intersection_update(set(root_distn))
+    if not feasible_rstates:
         raise StructuralZeroProb(
-                'all root states have either no prior support '
+                'all root states have either zero prior likelihood '
                 'or give a subtree likelihood of zero')
-    return sum(root_distn[s] * root_pmap[s] for s in feasible_root_states)
+
+    # Compute the likelihood.
+    if root_distn is not None:
+        likelihood = sum(root_distn[s] * root_pmap[s] for s in feasible_rstates)
+    else:
+        likelihood = sum(root_pmap[s].values())
+
+    # Return the likelihood.
+    return likelihood
 
 
 def get_zero_step_posterior_distn(prior_distn, pmap):
