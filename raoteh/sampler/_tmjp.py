@@ -46,7 +46,7 @@ __all__ = []
 
 
 def get_tolerance_substrate(
-        Q, state_to_part, T, part, node_to_tolerance_in, root):
+        Q, primary_to_part, T, part, root):
     """
     Get a substrate for a tolerance class of interest.
 
@@ -60,7 +60,7 @@ def get_tolerance_substrate(
     Q : directed networkx graph
         A sparse rate matrix
         for which edge weights are interpreted as instantaneous rates.
-    state_to_part : dict
+    primary_to_part : dict
         Maps the primary state to the tolerance class.
     T : weighted undirected networkx tree
         The primary process history on a tree.
@@ -68,12 +68,6 @@ def get_tolerance_substrate(
         The edge weight is interpreted as a distance or length.
     part : integer
         The tolerance class of interest.
-    node_to_tolerance_in : dict
-        Maps some nodes to known tolerance states.
-        May be empty if no tolerance states are known.
-        Some nodes may be adjacent to edges with known tolerance states;
-        the tolerance states of these nodes can be deduced,
-        but they are not required to be included in this map.
 
     Returns
     -------
@@ -99,28 +93,28 @@ def get_tolerance_substrate(
 
     # Build the output tree, edge by edge,
     # and populate the map from node to known tolerance state.
-    node_to_tolerance_out = dict(node_to_tolerance_in)
+    node_to_tolerance_out = {}
     T_out = nx.Graph()
-    for a, b in nx.bfs_edges(T, root):
+    for na, nb in nx.bfs_edges(T, root):
 
         # Get the weight and the primary process state associated with the edge.
-        state = T[a][b]['state']
-        weight = T[a][b]['weight']
+        primary_state = T[na][nb]['state']
+        weight = T[na][nb]['weight']
         
         # Add the edge, annotated with the weight.
-        T_out.add_edge(a, b, weight=weight)
+        T_out.add_edge(na, nb, weight=weight)
 
         # If the primary process state of the edge
         # belongs to the tolerance class of interest,
         # then the tolerance state along the edge
         # and at both edge endpoints must be 1.
-        if state_to_part[state] == part:
+        if primary_to_part[primary_state] == part:
 
             # Set the edge tolerance state.
-            T_out[a][b]['tolerance'] = 1
+            T_out[na][nb]['tolerance'] = 1
 
             # Set the node tolerance states.
-            for node in (a, b):
+            for node in (na, nb):
                 if node in node_to_tolerance_out:
                     if node_to_tolerance_out[node] != 1:
                         raise ValueError('incompatible tolerance state')
@@ -131,17 +125,17 @@ def get_tolerance_substrate(
         # If the absorption rate is structurally zero
         # because no such transitions are allowed,
         # then do not add the absorption rate to the annotation.
-        sbs = [sb for sb in Q[state] if state_to_part[sb] == part]
+        sbs = [sb for sb in Q[primary_state] if primary_to_part[sb] == part]
         if sbs:
-            absorption_rate = sum(Q[state][sb]['weight'] for sb in sbs)
-            T_out[a][b]['absorption'] = absorption_rate
+            absorption_rate = sum(Q[primary_state][sb]['weight'] for sb in sbs)
+            T_out[na][nb]['absorption'] = absorption_rate
 
     # Return the annotated networkx tree and the node to tolerance state map.
     return T_out, node_to_tolerance_out
 
 
 def get_tolerance_class_likelihood(
-        Q, state_to_part, T, part, node_to_tolerance_in,
+        Q, primary_to_part, T, part,
         rate_off, rate_on, root):
     """
     Compute a likelihood associated with a tolerance class.
@@ -156,7 +150,7 @@ def get_tolerance_class_likelihood(
     Q : directed networkx graph
         A sparse rate matrix
         for which edge weights are interpreted as instantaneous rates.
-    state_to_part : dict
+    primary_to_part : dict
         Maps the primary state to the tolerance class.
     T : weighted undirected networkx tree
         The primary process history on a tree.
@@ -164,12 +158,6 @@ def get_tolerance_class_likelihood(
         The edge weight is interpreted as a distance or length.
     part : integer
         The tolerance class of interest.
-    node_to_tolerance_in : dict
-        Maps some nodes to known tolerance states.
-        May be empty if no tolerance states are known.
-        Some nodes may be adjacent to edges with known tolerance states;
-        the tolerance states of these nodes can be deduced,
-        but they are not required to be included in this map.
     rate_off : float
         Transition rate from tolerance state 1 to tolerance state 0.
     rate_on : float
@@ -213,7 +201,7 @@ def get_tolerance_class_likelihood(
     # prior distribution.
     # Otherwise, the root tolerance state prior distribution is
     # given by the equilibrium tolerance state distribution.
-    if state_to_part[root_primary_state] == part:
+    if primary_to_part[root_primary_state] == part:
         root_prior = {1 : 1}
     else:
         root_prior = tolerance_distn
@@ -224,7 +212,7 @@ def get_tolerance_class_likelihood(
     # The tolerance states of the nodes are further specified
     # to be consistent with edges that have known constant tolerance state.
     T_tol, node_to_tolerance = get_tolerance_substrate(
-            Q, state_to_part, T, part, node_to_tolerance_in, root)
+            Q, primary_to_part, T, part, root)
 
     # Construct the map from nodes to allowed states.
     # This implicitly includes the restriction
@@ -281,7 +269,7 @@ def get_tolerance_class_likelihood(
     return likelihood
 
 
-def get_tolerance_process_log_likelihood(Q, state_to_part, T, node_to_tmap,
+def get_tolerance_process_log_likelihood(Q, primary_to_part, T,
         rate_off, rate_on, root_distn, root=None):
     """
 
@@ -293,17 +281,11 @@ def get_tolerance_process_log_likelihood(Q, state_to_part, T, node_to_tmap,
     ----------
     Q : networkx graph
         Primary process state transition rate matrix.
-    state_to_part : dict
+    primary_to_part : dict
         Maps the primary state to the tolerance class.
     T : networkx tree
         Primary process history,
         with edges annotated with primary state and with weights.
-    node_to_tmap : dict
-        A map from a node to a known tolerance map.
-        The map of known tolerances maps tolerance classes to sets
-        of allowed tolerance states.
-        This map is sparse and is meant to represent known or partially
-        known data at the tips of the tree.
     rate_off : float
         Transition rate from tolerance state 1 to tolerance state 0.
     rate_on : float
@@ -352,16 +334,10 @@ def get_tolerance_process_log_likelihood(Q, state_to_part, T, node_to_tmap,
 
     # Add the log likelihood contribution of the process
     # associated with each tolerance class.
-    tolerance_classes = set(state_to_part.values())
+    tolerance_classes = set(primary_to_part.values())
     for part in tolerance_classes:
-        node_to_tolerance_in = {}
-        for node in T:
-            if node in node_to_tmap:
-                tmap = node_to_tmap[node]
-                if part in tmap:
-                    node_to_tolerance_in[node] = tmap[part]
         tolerance_class_likelihood = get_tolerance_class_likelihood(
-                Q, state_to_part, T, part, node_to_tolerance_in,
+                Q, primary_to_part, T, part,
                 rate_off, rate_on, root=root)
         log_likelihood += np.log(tolerance_class_likelihood)
 

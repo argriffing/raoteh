@@ -344,10 +344,10 @@ class TestMonteCarloLikelihoodRatio(TestCase):
         # Use an arbitrary tree with few enough leaves for enumeration.
         T = nx.Graph()
         T.add_edge(0, 1)
-        T.add_edge(0, 2)
-        T.add_edge(0, 3)
-        T.add_edge(3, 4)
-        T.add_edge(3, 5)
+        #T.add_edge(0, 2)
+        #T.add_edge(0, 3)
+        #T.add_edge(3, 4)
+        #T.add_edge(3, 5)
         root = 0
 
         # Add some random branch lengths onto the edges of the tree.
@@ -407,7 +407,7 @@ class TestMonteCarloLikelihoodRatio(TestCase):
 
         # Sample primary state trajectories
         # according to the pure primary process.
-        nhistories = 1000
+        nhistories = 10000
         importance_weights = []
         for T_primary_traj in gen_restricted_histories(
                 T, Q_primary, node_to_allowed_primary_states,
@@ -416,10 +416,9 @@ class TestMonteCarloLikelihoodRatio(TestCase):
             # Compute the trajectory log likelihood
             # under the inhomogeneous primary component of the
             # tolerance Markov jump process.
-            node_to_tmap = {}
             traj_ll_target = get_tolerance_process_log_likelihood(
                     Q_primary, primary_to_part, T_primary_traj,
-                    node_to_tmap, rate_off, rate_on, primary_distn, root)
+                    rate_off, rate_on, primary_distn, root)
 
             # Compute the trajectory log likelihood
             # under the distribution used for sampling the histories.
@@ -835,7 +834,7 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
         neg_ll_direct = _neg_log_likelihood_for_minimization(
                 T, root, node_to_allowed_states_seq, X_true)
         neg_ll_clever = -get_tolerance_process_log_likelihood(
-                Q, state_to_part, T, node_to_tmap,
+                Q, state_to_part, T,
                 rate_off, rate_on, primary_distn, root)
 
 
@@ -1187,9 +1186,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             # constrained by the sampled primary trajectory.
             # If we begin to include disease data into the analysis,
             # the tolerance histories will become more constrained.
-            node_to_tmap = {}
             tolerance_ll = get_tolerance_process_log_likelihood(
-                    Q_primary, primary_to_part, T_aug, node_to_tmap,
+                    Q_primary, primary_to_part, T_aug,
                     rate_off, rate_on, primary_distn, root)
             importance_weight = np.exp(tolerance_ll - proposal_ll)
 
@@ -1237,9 +1235,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Define the callback.
         def target_log_likelihood_callback(T_aug):
-            node_to_tmap = {}
             return get_tolerance_process_log_likelihood(
-                    Q_primary, primary_to_part, T_aug, node_to_tmap,
+                    Q_primary, primary_to_part, T_aug,
                     rate_off, rate_on, primary_distn, root)
 
         # Sample the histories.
