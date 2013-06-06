@@ -53,26 +53,24 @@ def construct_node_to_pmap(T, P, node_to_state, root):
         A map from a node to a map from a state to a subtree likelihood.
 
     """
-    # Construct the augmented tree by annotating each edge with P.
-    T_aug = nx.Graph()
-    for a, b in T.edges():
-        T_aug.add_edge(a, b, P=P)
+    # Define a set of states for the unrestricted nodes.
+    all_states = set(P) | set(node_to_state.values())
 
-    # Construct the map from node to allowed state set.
+    # Construct the map from each restricted node to its allowed state set.
+    # In this case, the set will have only a single state.
     node_to_allowed_states = {}
-    all_states = set(P)
     for restricted_node, state in node_to_state.items():
         node_to_allowed_states[restricted_node] = {state}
-    for unrestricted_node in set(T) - set(node_to_state):
-        node_to_allowed_states[unrestricted_node] = all_states
 
     # Return the node to pmap dict.
     return construct_node_to_restricted_pmap(
-            T_aug, root, node_to_allowed_states)
+            T, root, node_to_allowed_states,
+            P_default=P, states_default=all_states)
 
 
 def construct_node_to_restricted_pmap(
-        T, root, node_to_allowed_states, P_default=None):
+        T, root, node_to_allowed_states=None,
+        P_default=None, states_default=None):
     """
     For each node, construct the map from state to subtree likelihood.
 
@@ -94,10 +92,13 @@ def construct_node_to_restricted_pmap(
         as the weight attribute of the edge.
     root : integer
         The root node.
-    node_to_allowed_states : dict
+    node_to_allowed_states : dict, optional
         A map from a node to a set of allowed states.
     P_default : directed weighted acyclic networkx graph, optional
         A default transition matrix.
+    states_default : dict, optional
+        Nodes that are not in the node_to_allowed_states map
+        will use this default set of allowed states.
 
     Returns
     -------
@@ -105,6 +106,10 @@ def construct_node_to_restricted_pmap(
         A map from a node to a map from a state to a subtree likelihood.
 
     """
+    # Input validation.
+    if (node_to_allowed_states is None) and (states_default is None):
+        raise ValueError('expected either a map from nodes to allowed states '
+                'or a set of default allowed states or both')
 
     # Bookkeeping.
     if root not in T:
@@ -114,7 +119,18 @@ def construct_node_to_restricted_pmap(
     # For each node, get a sparse map from state to subtree probability.
     node_to_pmap = {}
     for node in nx.dfs_postorder_nodes(T, root):
-        valid_node_states = node_to_allowed_states[node]
+
+        # Get the set of valid states at this node.
+        if node_to_allowed_states is None:
+            valid_node_states = states_default
+        else:
+            valid_node_states = node_to_allowed_states.get(node, states_default)
+        if valid_node_states is None:
+            raise ValueError(
+                    'the set of valid states is undefined at this node '
+                    '(note that this is not the same as a defined but '
+                    'empty set of valid states)')
+
         if node not in successors:
             node_to_pmap[node] = dict((s, 1.0) for s in valid_node_states)
         else:
