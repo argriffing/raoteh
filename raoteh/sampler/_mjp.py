@@ -320,6 +320,70 @@ def get_expm_augmented_tree(T, root, Q_default=None):
     return T_aug
 
 
+def get_likelihood(T, node_to_allowed_states,
+        root, root_distn=None, Q_default=None):
+    """
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Edges of this tree are annotated with weights and possibly with
+        edge-specific Q rate matrices.
+    node_to_allowed_states : dict
+        Maps each node to a set of allowed states.
+    root : integer
+        Root node.
+    root_distn : dict, optional
+        Sparse distribution over states at the root.
+        This is optional if only one state is allowed at the root.
+    Q_default : directed weighted networkx graph, optional
+        A sparse rate matrix.
+
+    Returns
+    -------
+    likelihood : float
+        A marginal likelihood.
+
+    Notes
+    -----
+    This function is meaningful even when the root_distn is not technically
+    a distribution in the sense of summing to 1.
+    If the root distribution is not specified,
+    then it is treated as all ones; this is different than
+    treating it as a uniform distribution on some set of states.
+
+    """
+    # Do some input validation for this restricted variant.
+    if root not in T:
+        raise ValueError('the specified root is not in the tree')
+
+    # Construct the augmented tree by annotating each edge
+    # with the appropriate state transition probability matrix.
+    T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
+
+    # TODO code below here should probably be replaced
+    # TODO with a call to an _mc function...
+
+    # Construct the node to pmap dict.
+    node_to_pmap = construct_node_to_restricted_pmap(
+            T_aug, root, node_to_allowed_states)
+
+    # Get subtree likelihoods conditional on the root state.
+    root_pmap = node_to_pmap[root]
+
+    # Get feasible initial states.
+    feasible_states = set(root_pmap)
+    if root_distn is not None:
+        feasible_states.intersection_update(set(root_distn))
+
+    # Return likelihood.
+    if root_distn is None:
+        likelihood = sum(root_pmap.values())
+    else:
+        likelihood = sum(root_distn[s] * root_pmap[s] for s in feasible_states)
+    return likelihood
+
+
 def get_expected_history_statistics(T, node_to_allowed_states,
         root, root_distn=None, Q_default=None):
     """

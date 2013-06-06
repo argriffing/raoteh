@@ -20,6 +20,8 @@ from numpy.testing import (
         assert_equal, assert_allclose, assert_, assert_raises, decorators,
         )
 
+from raoteh.sampler import _mjp
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
         expm_frechet_is_simple,
@@ -918,12 +920,12 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 1 : rate_on / total_tolerance_rate}
 
         # Sample a non-tiny random tree without branch lengths.
-        T = get_random_agglom_tree(maxnodes=30)
+        T = get_random_agglom_tree(maxnodes=2)
         root = 0
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
-            scale = 0.4
+            scale = 10.0
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
         # Use forward sampling to jointly sample compound states on the tree,
@@ -954,6 +956,18 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             else:
                 allowed_states = set(range(len(compound_to_primary)))
             node_to_allowed_states[node] = allowed_states
+
+        # Compute the marginal likelihood of the leaf distribution
+        # of the forward sample, according to the compound process.
+        measure_for_marginal_likelihood = {}
+        for compound_state, prob in compound_distn.items():
+            primary_state = compound_to_primary[compound_state]
+            primary_prob = primary_distn[primary_state]
+            measure_for_marginal_likelihood[compound_state] = primary_prob
+        target_marginal_likelihood = _mjp.get_likelihood(
+                T, node_to_allowed_states,
+                root, root_distn=measure_for_marginal_likelihood,
+                Q_default=Q_compound)
 
         # Compute the conditional expected log likelihood explicitly
         # using some Markov jump process functions.
@@ -986,7 +1000,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 500
+        nsamples = 1000
         sqrt_nsamp = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,
@@ -1100,9 +1114,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         for sa, sb in Q_primary.edges():
             primary_rate = Q_primary[sa][sb]['weight']
             if primary_to_part[sa] == primary_to_part[sb]:
-                proposal_rate = primary_rate * tolerance_distn[1]
-            else:
                 proposal_rate = primary_rate
+            else:
+                proposal_rate = primary_rate * tolerance_distn[1]
             Q_primary_proposal.add_edge(sa, sb, weight=proposal_rate)
 
         # Summarize the primary proposal rates.
@@ -1120,6 +1134,22 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 compound_state = T_forward_sample[node][neighbor]['state']
                 primary_state = compound_to_primary[compound_state]
                 leaf_to_primary_state[node] = primary_state
+
+        # Convert between restricted state formats.
+        node_to_allowed_primary_states = {}
+        for node in T:
+            if node in leaf_to_primary_state:
+                allowed = {leaf_to_primary_state[node]}
+            else:
+                allowed = set(primary_to_part)
+            node_to_allowed_primary_states[node] = allowed
+
+        # Get the probability of leaf states according
+        # to the proposal distribution.
+        proposal_marginal_likelihood = _mjp.get_likelihood(
+                T, node_to_allowed_primary_states,
+                root, root_distn=primary_distn,
+                Q_default=Q_primary)
 
         # Get Rao-Teh samples of primary process trajectories
         # conditional on the primary states at the leaves.
@@ -1190,7 +1220,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 ll += special.xlogy(ntransitions, rate)
             primary_trans_ll = ll
 
-            # Get the proposal log likelihood
+            # Get the primary log likelihood
             # by summing the log likelihood contributions.
             primary_ll = sum((
                 primary_init_ll,
@@ -1263,15 +1293,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                     Q_primary, primary_to_part, T_aug, node_to_tmap,
                     rate_off, rate_on, primary_distn, root)
 
-        # Convert between restricted state formats.
-        node_to_allowed_primary_states = {}
-        for node in T:
-            if node in leaf_to_primary_state:
-                allowed = {leaf_to_primary_state[node]}
-            else:
-                allowed = set(primary_to_part)
-            node_to_allowed_primary_states[node] = allowed
-
         # Sample the histories.
         for T_aug, accept_flag in gen_mh_histories(
                 T, Q_primary_proposal, node_to_allowed_primary_states,
@@ -1321,6 +1342,9 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('sampled root distn :', sampled_root_distn)
         print('analytic root distn:', post_root_distn)
         print()
+        print('target marginal likelihood  :', target_marginal_likelihood)
+        print('proposal marginal likelihood:', proposal_marginal_likelihood)
+        print()
         print('diff ent init :', diff_ent_init)
         print('neg ll init   :', np.mean(neg_ll_contribs_init))
         print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
@@ -1355,7 +1379,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('number of rejected M-H samples:', nrejected)
         print()
         print('importance weights:', importance_weights)
-        print('mean of importance weights:', np.mean(importance_weights))
+        print('mean of weights:', np.mean(importance_weights))
+        print('error          :', np.std(importance_weights) / sqrt_nsamp)
         print()
         raise Exception('print tmjp entropy stuff')
 

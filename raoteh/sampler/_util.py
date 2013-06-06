@@ -169,9 +169,10 @@ def dict_random_choice(d):
     #
     #choices, p = zip(*d.items())
     #return np.random.choice(choices, p=p)
-    x = random.random()
-    for i, p in d.items():
-        x -= p
+    total = sum(d.values())
+    x = random.random() * total
+    for i, w in d.items():
+        x -= w
         if x < 0:
             return i
 
