@@ -323,15 +323,11 @@ def get_tolerance_process_log_likelihood(
     info = get_history_root_state_and_transitions(T_primary, root=root)
     primary_root_state, primary_transitions = info
 
-    # Construct a transition matrix conditional on a state change.
-    #P_conditional_primary = get_conditional_transition_matrix(Q_primary)
-
     # Add the log likelihood contribution of the primary thread.
     log_likelihood += np.log(primary_root_distn[primary_root_state])
     for sa in set(primary_transitions) & set(Q_primary):
         for sb in set(primary_transitions[sa]) & set(Q_primary[sa]):
             ntransitions = primary_transitions[sa][sb]['weight']
-            #ptrans = P[sa][sb]['weight']
             rate = Q_primary[sa][sb]['weight']
             log_likelihood += scipy.special.xlogy(ntransitions, rate)
 

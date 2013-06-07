@@ -289,10 +289,6 @@ class TestMonteCarloLikelihoodRatio(TestCase):
                 node_to_allowed_compound_states[node] = allowed_compound
 
             # Compute the observation likelihood under the compound model.
-            #compound_distn_unnormal = {}
-            #for compound_state, primary_state in enumerate(compound_to_primary):
-                #primary_prob = primary_distn[primary_state]
-                #compound_distn_unnormal[compound_state] = primary_prob
             obs_likelihood_target = _mjp.get_likelihood(
                     T, node_to_allowed_compound_states, root,
                     #root_distn=compound_distn_unnormal,
@@ -389,13 +385,8 @@ class TestMonteCarloLikelihoodRatio(TestCase):
             node_to_allowed_compound_states[node] = allowed_compound
 
         # Compute the observation likelihood under the compound model.
-        #compound_distn_unnormal = {}
-        #for compound_state, primary_state in enumerate(compound_to_primary):
-            #primary_prob = primary_distn[primary_state]
-            #compound_distn_unnormal[compound_state] = primary_prob
         obs_likelihood_target = _mjp.get_likelihood(
                 T, node_to_allowed_compound_states, root,
-                #root_distn=compound_distn_unnormal,
                 root_distn=compound_distn,
                 Q_default=Q_compound)
 
@@ -912,11 +903,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Compute the marginal likelihood of the leaf distribution
         # of the forward sample, according to the compound process.
-        #measure_for_marginal_likelihood = {}
-        #for compound_state, prob in compound_distn.items():
-            #primary_state = compound_to_primary[compound_state]
-            #primary_prob = primary_distn[primary_state]
-            #measure_for_marginal_likelihood[compound_state] = primary_prob
         target_marginal_likelihood = _mjp.get_likelihood(
                 T, node_to_allowed_compound_states,
                 root, root_distn=compound_distn,
