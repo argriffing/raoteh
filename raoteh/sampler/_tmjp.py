@@ -15,7 +15,7 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _mc
+from raoteh.sampler import _mc, _mjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb,
@@ -316,12 +316,24 @@ def get_tolerance_process_log_likelihood(
     if root not in T_primary:
         raise ValueError('the specified root is not a node in the tree')
 
-    # Initialize the log likelihood.
-    log_likelihood = 0.0
+    # Define the distribution over tolerance states.
+    tolerance_distn = {}
+    total_rate = rate_off + rate_on
+    if (rate_off < 0) or (rate_off < 0) or (total_rate <= 0):
+        raise ValueError(
+                'the tolerance rate_on and rate_off must both be nonzero '
+                'and at least one of them must be positive')
+    if rate_off:
+        tolerance_distn[0] = rate_off / total_rate
+    if rate_on:
+        tolerance_distn[1] = rate_on / total_rate
 
     # Get the root state and the transitions of the primary process.
     info = get_history_root_state_and_transitions(T_primary, root=root)
     primary_root_state, primary_transitions = info
+
+    # Initialize the log likelihood.
+    log_likelihood = 0.0
 
     # Add the log likelihood contribution of the primary thread.
     log_likelihood += np.log(primary_root_distn[primary_root_state])
@@ -334,11 +346,36 @@ def get_tolerance_process_log_likelihood(
     # Add the log likelihood contribution of the process
     # associated with each tolerance class.
     tolerance_classes = set(primary_to_part.values())
-    for part in tolerance_classes:
-        tolerance_class_likelihood = get_tolerance_class_likelihood(
-                Q_primary, primary_to_part, T_primary, part,
-                rate_off, rate_on, root=root)
-        log_likelihood += np.log(tolerance_class_likelihood)
+    for tolerance_class in tolerance_classes:
+
+        # If the tolerance class of the primary state of the root
+        # is equal to the current tolerance class,
+        # then the root tolerance state does not have an interesting
+        # prior distribution.
+        # Otherwise, the root tolerance state prior distribution is
+        # given by the equilibrium tolerance state distribution.
+        if primary_to_part[primary_root_state] == tolerance_class:
+            root_tolerance_prior = {1 : 1}
+        else:
+            root_tolerance_prior = tolerance_distn
+
+        # Construct the piecewise homogeneous  Markov jump process.
+        T_tol, node_to_allowed_tolerances = get_inhomogeneous_mjp(
+                primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
+                tolerance_class)
+
+        # Get the likelihood from the augmented tree and the root distribution.
+        likelihood = _mjp.get_likelihood(
+                T_tol, node_to_allowed_tolerances,
+                root, root_distn=root_tolerance_prior, Q_default=None)
+
+        # Contribute to the log likelihod.
+        log_likelihood += np.log(likelihood)
+
+        #tolerance_class_likelihood = get_tolerance_class_likelihood(
+                #Q_primary, primary_to_part, T_primary, part,
+                #rate_off, rate_on, root=root)
+        #log_likelihood += np.log(tolerance_class_likelihood)
 
     # Return the log likelihood for the entire process.
     return log_likelihood

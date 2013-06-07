@@ -191,7 +191,7 @@ def get_history_statistics(T, root=None):
 
 #TODO add tests
 def get_trajectory_log_likelihood(
-        T_aug, root, prior_root_distn, Q_default):
+        T_aug, root, prior_root_distn, Q_default=None):
     """
 
     Parameters
