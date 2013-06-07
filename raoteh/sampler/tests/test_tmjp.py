@@ -861,60 +861,65 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # Summarize properties of the process.
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
-        total_rates = get_total_rates(Q_compound)
+        compound_total_rates = get_total_rates(Q_compound)
+        primary_total_rates = get_total_rates(Q_primary)
         total_tolerance_rate = rate_on + rate_off
         tolerance_distn = {
                 0 : rate_off / total_tolerance_rate,
                 1 : rate_on / total_tolerance_rate}
 
         # Sample a non-tiny random tree without branch lengths.
-        T = get_random_agglom_tree(maxnodes=2)
+        T = get_random_agglom_tree(maxnodes=10)
         root = 0
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
-            scale = 10.0
+            scale = 0.6
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
-        # Use forward sampling to jointly sample compound states on the tree,
-        # according to the compound process and its stationary distribution
-        # at the root.
+        # Sample a single unconditional history on the tree
+        # using some arbitrary process.
+        # The purpose is really to sample the states at the leaves.
         T_forward_sample = get_forward_sample(
-                T, Q_compound, root, compound_distn)
+                T, Q_primary, root, primary_distn)
 
-        # Track only the primary process information at leaves.
-        # Do not track the any tolerance process information at leaves,
-        # and track neither primary nor tolerance process information
-        # at non-leaf vertices or on any edge.
-        node_to_allowed_states = {}
+        # Get the sampled leaf states from the forward sample.
+        leaf_to_primary_state = {}
+        for node in T_forward_sample:
+            if len(T_forward_sample[node]) == 1:
+                nb = get_first_element(T_forward_sample[node])
+                edge = T_forward_sample[node][nb]
+                primary_state = edge['state']
+                leaf_to_primary_state[node] = primary_state
+
+        # Get the state restrictions
+        # associated with the sampled leaf states.
+        node_to_allowed_compound_states = {}
+        node_to_allowed_primary_states = {}
         for node in T:
-
-            # For nodes of degree 1, allow only compound states
-            # that share the primary state with the sampled compound state.
-            # For the remaining nodes, allow all possible compound states.
-            deg = len(T[node])
-            if deg == 1:
-                neighbor = get_first_element(T_forward_sample[node])
-                compound_state = T_forward_sample[node][neighbor]['state']
-                primary_state = compound_to_primary[compound_state]
-                allowed_states = set()
+            if node in leaf_to_primary_state:
+                primary_state = leaf_to_primary_state[node]
+                allowed_primary = {primary_state}
+                allowed_compound = set()
                 for comp, prim in enumerate(compound_to_primary):
                     if prim == primary_state:
-                        allowed_states.add(comp)
+                        allowed_compound.add(comp)
             else:
-                allowed_states = set(range(len(compound_to_primary)))
-            node_to_allowed_states[node] = allowed_states
+                allowed_primary = set(primary_distn)
+                allowed_compound = set(compound_distn)
+            node_to_allowed_primary_states[node] = allowed_primary
+            node_to_allowed_compound_states[node] = allowed_compound
 
         # Compute the marginal likelihood of the leaf distribution
         # of the forward sample, according to the compound process.
-        measure_for_marginal_likelihood = {}
-        for compound_state, prob in compound_distn.items():
-            primary_state = compound_to_primary[compound_state]
-            primary_prob = primary_distn[primary_state]
-            measure_for_marginal_likelihood[compound_state] = primary_prob
+        #measure_for_marginal_likelihood = {}
+        #for compound_state, prob in compound_distn.items():
+            #primary_state = compound_to_primary[compound_state]
+            #primary_prob = primary_distn[primary_state]
+            #measure_for_marginal_likelihood[compound_state] = primary_prob
         target_marginal_likelihood = _mjp.get_likelihood(
-                T, node_to_allowed_states,
-                root, root_distn=measure_for_marginal_likelihood,
+                T, node_to_allowed_compound_states,
+                root, root_distn=compound_distn,
                 Q_default=Q_compound)
 
         # Compute the conditional expected log likelihood explicitly
@@ -922,7 +927,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Get some posterior expectations.
         expectation_info = get_expected_history_statistics(
-                T, node_to_allowed_states,
+                T, node_to_allowed_compound_states,
                 root, root_distn=compound_distn, Q_default=Q_compound)
         dwell_times, post_root_distn, transitions = expectation_info
 
@@ -935,7 +940,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # Use some posterior expectations
         # to get the dwell time contribution to differential entropy.
         diff_ent_dwell = 0.0
-        for s, rate in total_rates.items():
+        for s, rate in compound_total_rates.items():
             diff_ent_dwell += dwell_times[s] * rate
 
         # Use some posterior expectations
@@ -948,7 +953,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 100
+        nsamples = 1000
         sqrt_nsamp = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,
@@ -974,7 +979,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         pm_neg_ll_contribs_trans = []
         #
         for T_aug in gen_restricted_histories(
-                T, Q_compound, node_to_allowed_states,
+                T, Q_compound, node_to_allowed_compound_states,
                 root=root, root_distn=compound_distn,
                 uniformization_factor=2, nhistories=nsamples):
 
@@ -990,7 +995,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             # contribution of dwell times
             ll = 0.0
             for state, dwell in dwell_times.items():
-                ll -= dwell * total_rates[state]
+                ll -= dwell * compound_total_rates[state]
             neg_ll_contribs_dwell.append(-ll)
 
             # contribution of transitions
@@ -1058,46 +1063,24 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         # This biased proposal primary process can be used for either
         # importance sampling or for a Metropolis-Hastings step
         # within the Rao-Teh sampling.
-        Q_primary_proposal = nx.DiGraph()
+        Q_proposal = nx.DiGraph()
         for sa, sb in Q_primary.edges():
             primary_rate = Q_primary[sa][sb]['weight']
             if primary_to_part[sa] == primary_to_part[sb]:
                 proposal_rate = primary_rate
             else:
                 proposal_rate = primary_rate * tolerance_distn[1]
-            Q_primary_proposal.add_edge(sa, sb, weight=proposal_rate)
+            Q_proposal.add_edge(sa, sb, weight=proposal_rate)
 
         # Summarize the primary proposal rates.
-        primary_proposal_total_rates = get_total_rates(Q_primary_proposal)
-
-        # Summarize the primary rates.
-        primary_total_rates = get_total_rates(Q_primary)
-
-        # Get the map from leaf node to primary state.
-        leaf_to_primary_state = {}
-        for node in T:
-            deg = len(T[node])
-            if deg == 1:
-                neighbor = get_first_element(T_forward_sample[node])
-                compound_state = T_forward_sample[node][neighbor]['state']
-                primary_state = compound_to_primary[compound_state]
-                leaf_to_primary_state[node] = primary_state
-
-        # Convert between restricted state formats.
-        node_to_allowed_primary_states = {}
-        for node in T:
-            if node in leaf_to_primary_state:
-                allowed = {leaf_to_primary_state[node]}
-            else:
-                allowed = set(primary_to_part)
-            node_to_allowed_primary_states[node] = allowed
+        proposal_total_rates = get_total_rates(Q_proposal)
 
         # Get the probability of leaf states according
         # to the proposal distribution.
         proposal_marginal_likelihood = _mjp.get_likelihood(
                 T, node_to_allowed_primary_states,
                 root, root_distn=primary_distn,
-                Q_default=Q_primary)
+                Q_default=Q_proposal)
 
         # Get Rao-Teh samples of primary process trajectories
         # conditional on the primary states at the leaves.
@@ -1108,7 +1091,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         imp_neg_ll_contribs_trans = []
         importance_weights = []
         for T_aug in gen_histories(
-                T, Q_primary_proposal, leaf_to_primary_state,
+                T, Q_proposal, leaf_to_primary_state,
                 root=root, root_distn=primary_distn,
                 uniformization_factor=2, nhistories=nsamples):
 
@@ -1130,14 +1113,14 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             # contribution of dwell times
             ll = 0.0
             for state, dwell in dwell_times.items():
-                ll -= dwell * primary_proposal_total_rates[state]
+                ll -= dwell * proposal_total_rates[state]
             proposal_dwell_ll = ll
 
             # contribution of transitions
             ll = 0.0
             for sa, sb in transitions.edges():
                 ntransitions = transitions[sa][sb]['weight']
-                rate = Q_primary_proposal[sa][sb]['weight']
+                rate = Q_proposal[sa][sb]['weight']
                 ll += special.xlogy(ntransitions, rate)
             proposal_trans_ll = ll
 
@@ -1241,7 +1224,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Sample the histories.
         for T_aug, accept_flag in gen_mh_histories(
-                T, Q_primary_proposal, node_to_allowed_primary_states,
+                T, Q_proposal, node_to_allowed_primary_states,
                 target_log_likelihood_callback,
                 root, root_distn=primary_distn,
                 uniformization_factor=2, nhistories=nsamples):
