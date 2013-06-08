@@ -22,6 +22,8 @@ from raoteh.sampler._util import (
         get_first_element, get_arbitrary_tip,
         get_normalized_dict_distn)
 
+from raoteh.sampler import _mc0
+
 
 __all__ = []
 
@@ -237,31 +239,8 @@ def get_restricted_likelihood(T, root, node_to_allowed_states,
             T, root, node_to_allowed_states, P_default=P_default)
     root_pmap = node_to_pmap[root]
 
-    # Check whether the likelihoods at the root, by themselves,
-    # cause the likelihood to be zero.
-    if not root_pmap:
-        raise StructuralZeroProb(
-                'all root states give a subtree likelihood of zero')
-
-    # Construct the set of possible root states.
-    # If no root state is possible raise the exception indicating
-    # that the likelihood is zero by sparsity.
-    feasible_rstates = set(root_pmap)
-    if root_distn is not None:
-        feasible_rstates.intersection_update(set(root_distn))
-    if not feasible_rstates:
-        raise StructuralZeroProb(
-                'all root states have either zero prior likelihood '
-                'or give a subtree likelihood of zero')
-
-    # Compute the likelihood.
-    if root_distn is not None:
-        likelihood = sum(root_distn[s] * root_pmap[s] for s in feasible_rstates)
-    else:
-        likelihood = sum(root_pmap[s].values())
-
     # Return the likelihood.
-    return likelihood
+    return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
 
 
 def get_zero_step_posterior_distn(prior_distn, pmap):

@@ -860,12 +860,12 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 1 : rate_on / total_tolerance_rate}
 
         # Sample a non-tiny random tree without branch lengths.
-        T = get_random_agglom_tree(maxnodes=10)
+        T = get_random_agglom_tree(maxnodes=5)
         root = 0
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
-            scale = 0.6
+            scale = 2.6
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
         # Sample a single unconditional history on the tree
