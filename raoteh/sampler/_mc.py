@@ -28,55 +28,6 @@ from raoteh.sampler import _mc0, _mcx
 __all__ = []
 
 
-
-# XXX under renovation
-def xxx_construct_node_to_pmap(T, P, node_to_state, root):
-    """
-    For each node, construct the map from state to subtree likelihood.
-
-    This variant is less general than construct_node_to_restricted pmap.
-    It is mainly a helper function for the state resampler,
-    and is possibly of not very general interest because of its lack
-    of flexibility to change the transition matrix on each branch.
-
-    Parameters
-    ----------
-    T : undirected acyclic networkx graph
-        A tree without required edge annotation.
-    P : networkx directed weighted graph
-        Sparse transition matrix.
-    node_to_state : dict
-        A sparse map from a node to its known state.
-    root : integer
-        The root node.
-
-    Returns
-    -------
-    node_to_pmap : dict
-        A map from a node to a map from a state to a subtree likelihood.
-
-    """
-
-    """
-    # Define a set of states for the unrestricted nodes.
-    all_states = set(P) | set(node_to_state.values())
-
-    # Construct the map from each restricted node to its allowed state set.
-    # In this case, the set will have only a single state.
-    node_to_allowed_states = {}
-    for restricted_node, state in node_to_state.items():
-        node_to_allowed_states[restricted_node] = {state}
-
-    # Return the node to pmap dict.
-    return construct_node_to_restricted_pmap(
-            T, root, node_to_allowed_states,
-            P_default=P, states_default=all_states)
-    """
-
-    return _mcx.construct_node_to_pmap(T, root,
-            node_to_state=node_to_state, P_default=P)
-
-
 def construct_node_to_restricted_pmap(
         T, root, node_to_allowed_states=None,
         P_default=None, states_default=None):
@@ -237,10 +188,6 @@ def get_restricted_likelihood(T, root, node_to_allowed_states,
         The likelihood.
 
     """
-    # Check whether the prior by itself causes the likelihood to be zero.
-    if (root_distn is not None) and not root_distn:
-        raise StructuralZeroProb('no root state has nonzero prior likelihood')
-
     # Get likelihoods conditional on the root state.
     node_to_pmap = construct_node_to_restricted_pmap(
             T, root, node_to_allowed_states, P_default=P_default)
@@ -285,6 +232,13 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
 
 
 def get_history_log_likelihood(T, node_to_state, root, root_distn,
+        P_default=None):
+        return _mcx.get_history_log_likelihood(T, root, node_to_state,
+                root_distn=root_distn, P_default=P_default)
+
+
+# TODO delete
+def xxx_get_history_log_likelihood(T, node_to_state, root, root_distn,
         P_default=None):
     """
     Compute the log likelihood for a fully augmented history.

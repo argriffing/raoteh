@@ -37,29 +37,8 @@ from raoteh.sampler._util import (
         get_normalized_dict_distn,
         )
 
-from raoteh.sampler import _mc0
-
 
 __all__ = []
-
-
-# TODO maybe delete this function
-def validate_root(T, root):
-    """
-    Assert that the root is a node in the tree.
-
-    Parameters
-    ----------
-    T : undirected networkx graph
-        The tree.
-    root : integer
-        The root node.
-
-    """
-    if root is None:
-        raise ValueError('a root must be provided')
-    if root not in T:
-        raise ValueError('the root must be a node in the tree')
 
 
 def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
@@ -106,15 +85,6 @@ def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
                 if sa in smap:
                     allowed_states.update(smap[sa])
 
-        # Apply the root constraint if available.
-        if nb == root:
-            if (node_to_state is not None) and (root in node_to_state):
-                root_state = node_to_state[root]
-                if allowed_states is None:
-                    allowed_states = {root_state}
-                else:
-                    allowed_states.intersection_update({root_state})
-
         # Get the state constraint induced by child state set constraints.
         if nb in successors:
             for nc in successors[nb]:
@@ -124,9 +94,17 @@ def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
                 else:
                     allowed_states.intersection_update(constraint)
 
-        # Define the allowed state set.
+        # The set of states might be empty but should be available.
         if allowed_states is None:
             raise ValueError('this node has no predecessors or successors')
+
+        # Optionally apply the root constraint.
+        if nb == root:
+            if (node_to_state is not None) and (root in node_to_state):
+                root_state = node_to_state[root]
+                allowed_states.intersection_update({root_state})
+
+        # Define the allowed state set.
         node_to_state_set[nb] = allowed_states
 
     # Return the map from node to state set.
@@ -226,9 +204,6 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
         A map from a node to a map from a state to a subtree likelihood.
 
     """
-    # Do some input validation.
-    validate_root(T, root)
-
     # Get the possible states for each node,
     # after accounting for the rooted tree shape
     # and the edge-specific transition matrix sparsity patterns
@@ -237,6 +212,16 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
             node_to_state=node_to_state, P_default=P_default)
     node_to_state_set = get_node_to_state_set(T, root,
             node_to_smap, node_to_state=node_to_state)
+
+    # Check the node to state set for consistency.
+    # Either the likelihood is structurally positive
+    # in which case all nodes should have possible states,
+    # or likelihood is structurally zero
+    # in which case all nodes should have no possible states.
+    npos = sum(1 for k, v in node_to_state_set.items() if v)
+    nneg = sum(1 for k, v in node_to_state_set.items() if not v)
+    if npos and nneg:
+        raise ValueError('internal error')
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
@@ -256,15 +241,7 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
                 nprob = 0.0
                 allowed_states = set(P[node_state]) & set(node_to_pmap[n])
                 if not allowed_states:
-                    print()
-                    print('fail xxx')
-                    print('node to state set', node_to_state_set)
-                    print('transition states', set(P[node_state]))
-                    print('pmap states', set(node_to_pmap[n]))
-                    print()
-                    raise ValueError(
-                            'internal error: ' + str((node, node_state)) +
-                            ' -> ' + str(n))
+                    raise ValueError('internal error')
                 for s in allowed_states:
                     a = P[node_state][s]['weight']
                     b = node_to_pmap[n][s]
@@ -279,7 +256,6 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
     return node_to_pmap
 
 
-# XXX depends on node_to_state and P_default only through root_pmap
 def get_likelihood(T, root,
         node_to_state=None, root_distn=None, P_default=None):
     """
@@ -314,90 +290,29 @@ def get_likelihood(T, root,
         The likelihood.
 
     """
-    # Check whether the prior by itself causes the likelihood to be zero.
-    if (root_distn is not None) and not root_distn:
-        raise StructuralZeroProb('no root state has nonzero prior likelihood')
-
     # Get likelihoods conditional on the root state.
     node_to_pmap = get_node_to_pmap(T, root,
             node_to_state=node_to_state, P_default=P_default)
     root_pmap = node_to_pmap[root]
 
-    # Check whether the likelihoods at the root, by themselves,
-    # cause the likelihood to be zero.
-    if not root_pmap:
-        raise StructuralZeroProb(
-                'all root states give a subtree likelihood of zero')
-
-    # Construct the set of possible root states.
-    # If no root state is possible raise the exception indicating
-    # that the likelihood is zero by sparsity.
-    feasible_rstates = set(root_pmap)
-    if root_distn is not None:
-        feasible_rstates.intersection_update(set(root_distn))
-    if not feasible_rstates:
-        raise StructuralZeroProb(
-                'all root states have either zero prior likelihood '
-                'or give a subtree likelihood of zero')
-
-    # Compute the likelihood.
-    if root_distn is not None:
-        likelihood = sum(root_distn[s] * root_pmap[s] for s in feasible_rstates)
-    else:
-        likelihood = sum(root_pmap[s].values())
-
     # Return the likelihood.
-    return likelihood
+    return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
 
 
-def get_zero_step_posterior_distn(prior_distn, pmap):
-    """
-    Do a kind of sparse dict-dict multiplication and normalize the result.
-
-    Parameters
-    ----------
-    prior_distn : dict
-        A sparse map from a state to a prior probability.
-    pmap : dict
-        A sparse map from a state to an observation likelihood.
-        In the MJP application, this likelihood observation corresponds to 
-        a subtree likelihood.
-
-    Returns
-    -------
-    posterior_distn : dict
-        A sparse map from a state to a posterior probability.
-
-    """
-    if not prior_distn:
-        raise StructuralZeroProb(
-                'no state is feasible according to the prior')
-    if not pmap:
-        raise StructuralZeroProb(
-                'no state is feasible according to the observations')
-    feasible_states = set(prior_distn) & set(pmap)
-    if not feasible_states:
-        raise StructuralZeroProb(
-                'no state is in the intersection of prior feasible '
-                'and observation feasible states')
-    d = dict((s, prior_distn[s] * pmap[s]) for s in feasible_states)
-    return get_normalized_dict_distn(d)
-
-
-def get_history_log_likelihood(T, node_to_state, root, root_distn,
-        P_default=None):
+def get_history_log_likelihood(T, root, node_to_state,
+        root_distn=None, P_default=None):
     """
     Compute the log likelihood for a fully augmented history.
 
     Parameters
     ----------
     T : undirected acyclic networkx graph
-        Tree annotated with transition matrices.
-    node_to_state : dict
-        Each node in the tree is mapped to an integer state.
+        Tree optionally annotated with transition matrices.
     root : integer
         Root node.
-    root_distn : dict
+    node_to_state : dict
+        Each node in the tree is mapped to an integer state.
+    root_distn : dict, optional
         Sparse prior distribution over states at the root.
     P_default : weighted directed networkx graph, optional
         A default universal probability transition matrix.
@@ -408,25 +323,15 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
         The log likelihood of the fully augmented history.
 
     """
-    # Check that the set of nodes for which the state is available
-    # exactly matches the set of nodes in the tree.
-    if set(T) != set(node_to_state):
-        raise ValueError(
-                'the set of nodes with known states in the history '
-                'should exactly match the set of known states on the tree')
-
-    # Check the root state.
-    root_state = node_to_state[root]
-    if root_state not in root_distn:
-        raise StructuralZeroProb(
-                'the prior state distribution at the root '
-                'does not include the root state in this history')
-
     # Initialize the log likelihood.
-    log_likelihood = 0.0
+    log_likelihood = 0
 
     # Add the log likelihood contribution from the root.
-    log_likelihood += np.log(root_distn[root_state])
+    root_state = node_to_state[root]
+    if root_distn is not None:
+        if root_state not in root_distn:
+            raise StructuralZeroProb('zero prior for the root')
+        log_likelihood += np.log(root_distn[root_state])
 
     # Add the log likelihood contribution from state transitions.
     for na, nb in nx.bfs_edges(T, root):
@@ -447,6 +352,7 @@ def get_history_log_likelihood(T, node_to_state, root, root_distn,
     return log_likelihood
 
 
+#TODO under construction
 def get_node_to_distn_naive(T, node_to_allowed_states,
         root, prior_root_distn, P_default=None):
     """
@@ -515,6 +421,7 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
     return node_to_distn
 
 
+#TODO under construction
 def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
         root, prior_root_distn=None, P_default=None):
     """
@@ -608,6 +515,7 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
     return node_to_distn
 
 
+#TODO under construction
 def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
         root, prior_root_distn, P_default=None):
     """
@@ -683,6 +591,7 @@ def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
     return T_aug
 
 
+#TODO under construction
 def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
     """
 
@@ -705,7 +614,7 @@ def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
         A tree whose edges are annotated with sparse joint endpoint
         state distributions as networkx digraphs.
         These annotations use the attribute 'J' which
-        is supposed to mean 'joint' and which is writeen in
+        is supposed to mean 'joint' and which is written in
         single letter caps reminiscent of matrix notation.
 
     """
