@@ -398,7 +398,7 @@ class TestMonteCarloLikelihoodRatio(TestCase):
 
         # Sample primary state trajectories
         # according to the pure primary process.
-        nhistories = 10000
+        nhistories = 1000
         importance_weights = []
         for T_primary_traj in gen_restricted_histories(
                 T, Q_primary, node_to_allowed_primary_states,
@@ -939,7 +939,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                 diff_ent_trans -= ntrans_expected * np.log(rate)
 
         # Define the number of samples.
-        nsamples = 1000
+        nsamples = 100
         sqrt_nsamp = np.sqrt(nsamples)
 
         # Do some Rao-Teh conditional samples,
