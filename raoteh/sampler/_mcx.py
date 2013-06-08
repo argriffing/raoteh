@@ -422,6 +422,7 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
 
 
 #TODO under construction
+#TODO this does not use node_to_allowed_states so it can be made generic
 def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
         root, prior_root_distn=None, P_default=None):
     """
@@ -592,6 +593,8 @@ def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
 
 
 #TODO under construction
+#TODO this uses generic observation type
+#TODO change arg order
 def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
     """
 
