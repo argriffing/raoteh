@@ -13,9 +13,12 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
 from raoteh.sampler._mc import (
-        get_history_log_likelihood, get_node_to_distn_naive, get_node_to_distn,
+        get_history_log_likelihood,
+        get_node_to_distn_naive,
+        get_node_to_distn,
         construct_node_to_restricted_pmap,
-        get_joint_endpoint_distn_naive, get_joint_endpoint_distn,
+        get_joint_endpoint_distn_naive,
+        get_joint_endpoint_distn,
         )
 
 from raoteh.sampler._sample_tree import get_random_branching_tree

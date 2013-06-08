@@ -16,7 +16,8 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
-def get_node_to_state_set(T, root, node_to_smap):
+#TODO under destruction
+def xxx_get_node_to_state_set(T, root, node_to_smap):
     """
     Get a map from each node to a set of valid states.
 
@@ -40,31 +41,33 @@ def get_node_to_state_set(T, root, node_to_smap):
     node_to_state_set = {}
     predecessors = nx.dfs_predecessors(T, root)
     successors = nx.dfs_successors(T, root)
-    for nb in nx.dfs_preorder(T, root):
+    for nb in nx.dfs_preorder_nodes(T, root):
+
+        # Initialize the set of allowed states.
+        allowed_states = None
 
         # Get the state constraint induced by the parent state set.
-        na_set = None
         if nb in predecessors:
-            na = predecessors[nb]
             smap = node_to_smap[nb]
-            na_set = set()
-            for sa in node_to_state_set[na]:
+            allowed_parent_states = node_to_state_set[predecessors[nb]]
+            allowed_states = set()
+            for sa in allowed_parent_states:
                 if sa in smap:
-                    na_set.update(smap[sa])
+                    allowed_states.update(smap[sa])
 
         # Get the state constraint induced by child state set constraints.
-        nc_set = None
         if nb in successors:
-            nc_set = set.intersection([
-                set(node_to_smap[nc]) for nc in successors[nb]])
+            for nc in successors[nb]:
+                constraint = set(node_to_smap[nc])
+                if allowed_states is None:
+                    allowed_states = constraint
+                else:
+                    allowed_states.intersection_update(constraint)
 
-        # Define the state set according to the na and nc constraints.
-        constraints = [x for x in (na_set, nc_set) if x is not None]
-        if not constraints:
-            raise ValueError(
-                    'each node in the rooted tree should have '
-                    'either a parent node or at least one child node')
-        node_to_state_set[nb] = set.intersection(constraints)
+        # Define the allowed state set.
+        if allowed_states is None:
+            raise ValueError('this a node has no predecessors or successors')
+        node_to_state_set[nb] = allowed_states
 
     # Return the map from node to state set.
     return node_to_state_set
@@ -113,9 +116,9 @@ def get_likelihood(root_pmap, root_distn=None):
 
     # Compute the likelihood.
     if root_distn is not None:
-        likelihood = sum(root_distn[s] * root_pmap[s] for s in feasible_rstates)
+        likelihood = sum(root_pmap[s] * root_distn[s] for s in feasible_rstates)
     else:
-        likelihood = sum(root_pmap[s].values())
+        likelihood = sum(root_pmap.values())
 
     # Return the likelihood.
     return likelihood

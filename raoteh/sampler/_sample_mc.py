@@ -7,6 +7,8 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 import networkx as nx
 
+from raoteh.sampler import _sample_mcx
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_normalized_dict_distn,
@@ -20,7 +22,6 @@ from raoteh.sampler._graph_transform import (
 from raoteh.sampler._mc import (
         get_zero_step_posterior_distn,
         construct_node_to_restricted_pmap,
-        construct_node_to_pmap,
         )
 
 
@@ -62,6 +63,7 @@ def get_test_transition_matrix():
     return P
 
 
+# TODO under destruction
 def resample_states(T, P, node_to_state, root=None, root_distn=None):
     """
     This function applies to a tree for which nodes will be assigned states.
@@ -101,6 +103,8 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     resample_restricted_states
 
     """
+
+    """
     # If the root has not been provided, then pick one with a known state.
     # If no state is known then pick an arbitrary root.
     if root is None:
@@ -125,6 +129,12 @@ def resample_states(T, P, node_to_state, root=None, root_distn=None):
     # Sample the state at each node.
     return resample_restricted_states(T, node_to_allowed_states,
             root, root_distn, P_default=P)
+    """
+
+    if root is None:
+        root = get_first_element(T)
+    return _sample_mcx.resample_states(T, root,
+            node_to_state=node_to_state, root_distn=root_distn, P_default=P)
 
 
 def resample_restricted_states(T, node_to_allowed_states,

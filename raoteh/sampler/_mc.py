@@ -22,14 +22,15 @@ from raoteh.sampler._util import (
         get_first_element, get_arbitrary_tip,
         get_normalized_dict_distn)
 
-from raoteh.sampler import _mc0
+from raoteh.sampler import _mc0, _mcx
 
 
 __all__ = []
 
 
 
-def construct_node_to_pmap(T, P, node_to_state, root):
+# XXX under renovation
+def xxx_construct_node_to_pmap(T, P, node_to_state, root):
     """
     For each node, construct the map from state to subtree likelihood.
 
@@ -55,6 +56,8 @@ def construct_node_to_pmap(T, P, node_to_state, root):
         A map from a node to a map from a state to a subtree likelihood.
 
     """
+
+    """
     # Define a set of states for the unrestricted nodes.
     all_states = set(P) | set(node_to_state.values())
 
@@ -68,6 +71,10 @@ def construct_node_to_pmap(T, P, node_to_state, root):
     return construct_node_to_restricted_pmap(
             T, root, node_to_allowed_states,
             P_default=P, states_default=all_states)
+    """
+
+    return _mcx.construct_node_to_pmap(T, root,
+            node_to_state=node_to_state, P_default=P)
 
 
 def construct_node_to_restricted_pmap(

@@ -13,6 +13,8 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises,
         decorators)
 
+from raoteh.sampler import _mcx
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
 
@@ -53,10 +55,20 @@ class TestNodeStateSampler(TestCase):
         # No value of the intermediate state can possibly connect
         # the states at the two endpoints of the path.
         node_to_state = {0: 0, 2: 3}
-        assert_raises(
-                StructuralZeroProb,
-                resample_states,
-                T, P, node_to_state)
+        for root in T:
+            node_to_smap = _mcx.get_node_to_smap(T, root,
+                    node_to_state=node_to_state, P_default=P)
+            node_to_state_set = _mcx.get_node_to_state_set(T, root,
+                    node_to_smap, node_to_state=node_to_state)
+            print()
+            print(root)
+            print(node_to_smap)
+            print(node_to_state_set)
+            assert_equal(node_to_state_set[root], set())
+            assert_raises(
+                    StructuralZeroProb,
+                    resample_states,
+                    T, P, node_to_state, root=root)
 
         # But if the path endpoints have states
         # that allow the intermediate state to act as a bridge,

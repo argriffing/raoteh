@@ -169,20 +169,38 @@ def dict_random_choice(d):
     #
     #choices, p = zip(*d.items())
     #return np.random.choice(choices, p=p)
+    if not d:
+        raise ValueError('the dictionary is empty')
     total = sum(d.values())
+    if total <= 0:
+        raise ValueError('weight is not positive')
     x = random.random() * total
     for i, w in d.items():
         x -= w
         if x < 0:
             return i
 
-def get_normalized_dict_distn(d):
+
+def get_unnormalized_dict_distn(d, prior=None):
     if not d:
-        raise StructuralZeroProb('cannot normalize an empty distribution')
-    total_weight = sum(d.values())
+        raise StructuralZeroProb('the main dict of weights is empty')
+    if prior is None:
+        return d
+    else:
+        if not prior:
+            raise StructuralZeroProb('empty prior')
+        states = set(d) & set(prior)
+        if not states:
+            raise StructuralZeroProb('empty intersection of main and prior')
+        return dict((k, d[k] * prior[k]) for k in states)
+
+
+def get_normalized_dict_distn(d, prior=None):
+    dpost = get_unnormalized_dict_distn(d, prior)
+    total_weight = sum(dpost.values())
     if not total_weight:
-        raise NumericalZeroProb('the normalizing denominator is zero')
-    return dict((k, v / total_weight) for k, v in d.items())
+        raise NumericalZeroProb('the denominator is zero')
+    return dict((k, v / total_weight) for k, v in dpost.items())
 
 
 def get_arbitrary_tip(T, degrees=None):

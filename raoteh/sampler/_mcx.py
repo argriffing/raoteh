@@ -37,12 +37,14 @@ from raoteh.sampler._util import (
         get_normalized_dict_distn,
         )
 
+from raoteh.sampler import _mc0
+
 
 __all__ = []
 
 
 # TODO maybe delete this function
-def _validate_root(T, root):
+def validate_root(T, root):
     """
     Assert that the root is a node in the tree.
 
@@ -60,8 +62,7 @@ def _validate_root(T, root):
         raise ValueError('the root must be a node in the tree')
 
 
-#XXX this is really more of a graph algorithm related to connectivity
-def _get_node_to_state_set(T, root, node_to_smap):
+def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
     """
     Get a map from each node to a set of valid states.
 
@@ -74,51 +75,65 @@ def _get_node_to_state_set(T, root, node_to_smap):
     node_to_smap : dict
         A map from each non-root node to a sparse map from a parent state
         to a nonempty set of valid states.
+    node_to_state : dict, optional
+        A sparse map from a node to its known state.
 
     Returns
     -------
     node_to_state_set : dict
         A map from each node to a set of valid states.
 
-    """
-    # Get the map from nodes to the map from parent state to state set.
-    node_to_smap = get_node_to_smap(T, root, node_to_state, P_default)
+    Notes
+    -----
+    The node_to_state argument is used only for the root node.
 
+    """
     # Build the map from node to state set.
     node_to_state_set = {}
     predecessors = nx.dfs_predecessors(T, root)
     successors = nx.dfs_successors(T, root)
-    for nb in nx.dfs_preorder(T, root):
+    for nb in nx.dfs_preorder_nodes(T, root):
+
+        # Initialize the set of allowed states.
+        allowed_states = None
 
         # Get the state constraint induced by the parent state set.
-        na_set = None
         if nb in predecessors:
-            na = predecessors[nb]
             smap = node_to_smap[nb]
-            na_set = set()
-            for sa in node_to_state_set[na]:
+            allowed_parent_states = node_to_state_set[predecessors[nb]]
+            allowed_states = set()
+            for sa in allowed_parent_states:
                 if sa in smap:
-                    na_set.update(smap[sa])
+                    allowed_states.update(smap[sa])
+
+        # Apply the root constraint if available.
+        if nb == root:
+            if (node_to_state is not None) and (root in node_to_state):
+                root_state = node_to_state[root]
+                if allowed_states is None:
+                    allowed_states = {root_state}
+                else:
+                    allowed_states.intersection_update({root_state})
 
         # Get the state constraint induced by child state set constraints.
-        nc_set = None
         if nb in successors:
-            nc_set = set.intersection([
-                set(node_to_smap[nc]) for nc in successors[nb]])
+            for nc in successors[nb]:
+                constraint = set(node_to_smap[nc])
+                if allowed_states is None:
+                    allowed_states = constraint
+                else:
+                    allowed_states.intersection_update(constraint)
 
-        # Define the state set according to the na and nc constraints.
-        constraints = [x for x in (na_set, nc_set) if x is not None]
-        if not constraints:
-            raise ValueError(
-                    'each node in the rooted tree should have '
-                    'either a parent node or at least one child node')
-        node_to_state_set[nb] = set.intersection(constraints)
+        # Define the allowed state set.
+        if allowed_states is None:
+            raise ValueError('this node has no predecessors or successors')
+        node_to_state_set[nb] = allowed_states
 
     # Return the map from node to state set.
     return node_to_state_set
 
 
-def _get_node_to_smap(T, root, node_to_state=None, P_default=None):
+def get_node_to_smap(T, root, node_to_state=None, P_default=None):
     """
     Get a map from each non-root node to a map from parent state to a state set.
 
@@ -144,6 +159,10 @@ def _get_node_to_smap(T, root, node_to_state=None, P_default=None):
         to a nonempty set of valid states.
 
     """
+    # Precompute the successors of each node in the tree.
+    successors = nx.dfs_successors(T, root)
+
+    # Compute the map from node to smap.
     node_to_smap = {}
     for na, nb in reversed(list(nx.bfs_edges(T, root))):
         edge = T[na][nb]
@@ -165,7 +184,7 @@ def _get_node_to_smap(T, root, node_to_state=None, P_default=None):
             # The posterior state set uses subtree information.
             posterior_sb_set = set()
             for sb in prior_sb_set:
-                if all(sb in node_to_smap[nc] for nc in T[nb]):
+                if all(sb in node_to_smap[nc] for nc in successors.get(nb, [])):
                     posterior_sb_set.add(sb)
 
             # The map from the parent state will be sparse.
@@ -176,7 +195,6 @@ def _get_node_to_smap(T, root, node_to_state=None, P_default=None):
                 smap[sa] = posterior_sb_set
         node_to_smap[nb] = smap
     return node_to_smap
-
 
 
 def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
@@ -215,9 +233,10 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
     # after accounting for the rooted tree shape
     # and the edge-specific transition matrix sparsity patterns
     # and the observed states.
-    node_to_smap = _get_node_to_smap(T, root,
+    node_to_smap = get_node_to_smap(T, root,
             node_to_state=node_to_state, P_default=P_default)
-    node_to_state_set = _get_node_to_state_set(T, root, node_to_smap)
+    node_to_state_set = get_node_to_state_set(T, root,
+            node_to_smap, node_to_state=node_to_state)
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
@@ -232,10 +251,21 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
 
             # Add the subtree likelihood to the node state pmap.
             cprob = 1.0
-            for n in successors[node]:
+            for n in successors.get(node, []):
                 P = T[node][n].get('P', P_default)
                 nprob = 0.0
-                for s in set(P[node_state]) & set(node_to_pmap[n]):
+                allowed_states = set(P[node_state]) & set(node_to_pmap[n])
+                if not allowed_states:
+                    print()
+                    print('fail xxx')
+                    print('node to state set', node_to_state_set)
+                    print('transition states', set(P[node_state]))
+                    print('pmap states', set(node_to_pmap[n]))
+                    print()
+                    raise ValueError(
+                            'internal error: ' + str((node, node_state)) +
+                            ' -> ' + str(n))
+                for s in allowed_states:
                     a = P[node_state][s]['weight']
                     b = node_to_pmap[n][s]
                     nprob += a * b
