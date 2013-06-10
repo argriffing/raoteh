@@ -198,7 +198,7 @@ def get_restricted_likelihood(T, root, node_to_allowed_states,
 
 
 #XXX this is kind of obsolete by the new get_normalized_dict_distn interface
-def get_zero_step_posterior_distn(prior_distn, pmap):
+def xxx_get_zero_step_posterior_distn(prior_distn, pmap):
     """
     Do a kind of sparse dict-dict multiplication and normalize the result.
 

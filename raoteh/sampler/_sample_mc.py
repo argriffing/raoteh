@@ -11,7 +11,9 @@ from raoteh.sampler import _sample_mcx
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
-        get_first_element, get_normalized_dict_distn,
+        get_first_element,
+        get_normalized_dict_distn,
+        get_unnormalized_dict_distn,
         dict_random_choice,
         )
 
@@ -20,7 +22,6 @@ from raoteh.sampler._graph_transform import (
         )
 
 from raoteh.sampler._mc import (
-        get_zero_step_posterior_distn,
         construct_node_to_restricted_pmap,
         )
 
@@ -235,16 +236,7 @@ def resample_restricted_states(T, node_to_allowed_states,
 
         # Define the posterior distribution over states at the node.
         if node == root:
-            if prior_root_distn is None:
-                dpost = get_normalized_dict_distn(pmap)
-            else:
-                if not set(prior_root_distn) & set(pmap):
-                    raise StructuralZeroProb('no root state is feasible '
-                            'because the subtree has zero probability '
-                            'for each root state with positive prior '
-                            'probability')
-                dpost = get_zero_step_posterior_distn(
-                        prior_root_distn, pmap)
+            prior_distn = prior_root_distn
         else:
 
             # Get the parent node and its state.
@@ -276,10 +268,10 @@ def resample_restricted_states(T, node_to_allowed_states,
                         'in its currently sampled state, to an allowed '
                         'state in the current node, lead to only subtrees '
                         'with likelihood zero')
-            dpost = get_zero_step_posterior_distn(prior_distn, pmap)
 
         # Sample the state from the posterior distribution.
-        node_to_sampled_state[node] = dict_random_choice(dpost)
+        dpost_unnormal = get_unnormalized_dict_distn(pmap, prior_distn)
+        node_to_sampled_state[node] = dict_random_choice(dpost_unnormal)
 
     # Return the map of sampled states.
     return node_to_sampled_state
