@@ -15,7 +15,6 @@ from numpy.testing import (run_module_suite, TestCase,
 from raoteh.sampler import _mc0
 
 from raoteh.sampler._mc import (
-        get_node_to_distn_naive,
         construct_node_to_restricted_pmap,
         )
 
@@ -173,8 +172,9 @@ class TestMarkovChain(TestCase):
                 ):
 
             # Get the node distributions naively.
-            node_to_distn_naive = get_node_to_distn_naive(
-                    T, node_to_allowed_states, root, root_distn, P)
+            node_to_set = node_to_allowed_states
+            node_to_distn_naive = _mc0.get_node_to_distn_naive(T, root,
+                    node_to_set, root_distn=root_distn, P_default=P)
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
@@ -206,8 +206,9 @@ class TestMarkovChain(TestCase):
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
 
             # Get the node distributions naively.
-            node_to_distn_naive = get_node_to_distn_naive(
-                    T, node_to_allowed_states, root, root_distn)
+            node_to_set = node_to_allowed_states
+            node_to_distn_naive = _mc0.get_node_to_distn_naive(T, root,
+                    node_to_set, root_distn=root_distn)
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
@@ -244,8 +245,9 @@ class TestMarkovChain(TestCase):
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
 
             # Get the node distributions naively.
-            node_to_distn_naive = get_node_to_distn_naive(
-                    T, node_to_allowed_states, root, root_distn)
+            node_to_set = node_to_allowed_states
+            node_to_distn_naive = _mc0.get_node_to_distn_naive(T, root,
+                    node_to_set, root_distn=root_distn)
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.

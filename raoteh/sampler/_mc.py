@@ -232,7 +232,8 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
     return get_normalized_dict_distn(d)
 
 
-def get_node_to_distn_naive(T, node_to_allowed_states,
+#TODO remove
+def xxx_get_node_to_distn_naive(T, node_to_allowed_states,
         root, prior_root_distn, P_default=None):
     """
     Get marginal state distributions at nodes in a tree.

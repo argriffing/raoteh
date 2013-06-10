@@ -391,3 +391,59 @@ def get_node_to_distn(T, root, node_to_pmap, root_distn=None, P_default=None):
     # Return the marginal state distributions at nodes.
     return node_to_distn
 
+
+def get_node_to_distn_naive(T, root, node_to_set,
+        root_distn=None, P_default=None):
+    """
+    Get marginal state distributions at nodes in a tree.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices P.
+    root : integer
+        Root node.
+    node_to_set : dict
+        Map from node to collection of allowed states.
+    root_distn : dict, optional
+        A finite distribution over root states.
+    P_default : weighted directed networkx graph, optional
+        A default universal probability transition matrix.
+
+    Returns
+    -------
+    node_to_distn : dict
+        Maps each node to a distribution over states.
+
+    """
+    nodes, allowed_states = zip(*node_to_set.items())
+    node_to_state_to_weight = dict((n, defaultdict(float)) for n in nodes)
+    for assignment in itertools.product(*allowed_states):
+
+        # Get the map corresponding to the assignment.
+        node_to_state = dict(zip(nodes, assignment))
+
+        # Compute the log likelihood for the assignment.
+        # If the log likelihood cannot be computed,
+        # then skip to the next state assignment.
+        try:
+            ll = get_history_log_likelihood(T, root, node_to_state,
+                    root_distn=root_distn, P_default=P_default)
+        except StructuralZeroProb as e:
+            continue
+
+        # Add the likelihood to weights of states assigned to nodes.
+        likelihood = np.exp(ll)
+        for node, state in zip(nodes, assignment):
+            d = node_to_state_to_weight[node]
+            d[state] += likelihood
+
+    # For each node, normalize the distribution over states.
+    node_to_distn = {}
+    for node in nodes:
+        d = node_to_state_to_weight[node]
+        node_to_distn[node] = get_normalized_dict_distn(d)
+
+    # Return the map from node to distribution.
+    return node_to_distn
+
