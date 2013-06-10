@@ -257,7 +257,14 @@ def add_trajectory_layer(T_base, root, T_current, T_traj):
         A new tree with more states.
 
     """
-    # Check that the input is correct.
+    # All nodes in the base tree must be in the non-base trees.
+    for T, name in ((T_current, 'current'), (T_traj, 'traj')):
+        bad = set(T_base) - set(T)
+        if bad:
+            raise ValueError('the %s tree is missing the nodes %s '
+                    'which are present in the base tree' % (name, sorted(bad)))
+
+    # All non-degree-2 nodes in the non-base trees must be in the base tree.
     for T, name in ((T_current, 'current'), (T_traj, 'traj')):
         degree = T.degree()
         bad = set(n for n in set(T) - set(T_base) if degree[n] != 2)

@@ -227,16 +227,59 @@ class TestAddTrajectoryLayer(TestCase):
         T_current.add_edge(10, 1)
         T_current.add_edge(0, 2)
         T_current.add_edge(0, 3)
-        T_traj = nx.Graph()
-        T_traj.add_edge(0, 4, state=0)
-        T_traj.add_edge(4, 20, state=0)
-        T_traj.add_edge(20, 2, state=0)
-        T_traj.add_edge(4, 3, state=0)
         root = 0
-        assert_raises(
-                ValueError,
-                add_trajectory_layer,
-                T_base, root, T_current, T_traj)
+
+        # Define a trajectory that is bad because it adds a high degree node.
+        traj = nx.Graph()
+        traj.add_edge(0, 4, state=0)
+        traj.add_edge(4, 20, state=0)
+        traj.add_edge(20, 2, state=0)
+        traj.add_edge(4, 3, state=0)
+        assert_raises(ValueError, add_trajectory_layer,
+                T_base, root, T_current, traj)
+
+        # Define a trajectory that is bad because it adds a leaf node.
+        traj = nx.Graph()
+        traj.add_edge(0, 1, state=0)
+        traj.add_edge(0, 20, state=0)
+        traj.add_edge(20, 2, state=0)
+        traj.add_edge(0, 3, state=0)
+        traj.add_edge(3, 4, state=0)
+        assert_raises(ValueError, add_trajectory_layer,
+                T_base, root, T_current, traj)
+
+        # Define a trajectory that is bad
+        # because it flips around the nodes in a way that is incompatible
+        # with the original tree topology.
+        traj = nx.Graph()
+        traj.add_edge(1, 0)
+        traj.add_edge(1, 2)
+        traj.add_edge(1, 3)
+        assert_raises(ValueError, add_trajectory_layer,
+                T_base, root, T_current, traj)
+
+    def test_complicated_incompatible_trees(self):
+        T_base = nx.Graph()
+        T_base.add_edge(0, 1)
+        T_base.add_edge(0, 2)
+        T_base.add_edge(0, 3)
+        T_base.add_edge(3, 4)
+        T_base.add_edge(3, 5)
+        T_current = T_base.copy()
+        root = 0
+
+        # Define a trajectory that is bad
+        # because the topology is different in a way that cannot be detected
+        # by checking the degrees of the nodes.
+        traj = nx.Graph()
+        traj.add_edge(3, 1)
+        traj.add_edge(3, 2)
+        traj.add_edge(3, 0)
+        traj.add_edge(0, 4)
+        traj.add_edge(0, 5)
+        assert_raises(ValueError, add_trajectory_layer,
+                T_base, root, T_current, traj)
+
 
 if __name__ == '__main__':
     run_module_suite()
