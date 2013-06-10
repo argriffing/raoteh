@@ -42,12 +42,6 @@ from raoteh.sampler._util import (
 
 __all__ = []
 
-# get_node_to_pmap
-# get_node_to_distn
-#
-# get_node_to_pset
-# get_node_to_set
-
 
 def get_node_to_pset(T, root, node_to_state=None, P_default=None):
     """
@@ -305,10 +299,6 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
     node_to_distn : dict
         Maps each node to a distribution over states.
 
-    See also
-    --------
-    get_node_to_distn
-
     """
     nodes, allowed_states = zip(*node_to_allowed_states.items())
     node_to_state_to_weight = dict((n, defaultdict(float)) for n in nodes)
@@ -350,9 +340,8 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
     return node_to_distn
 
 
-#TODO under construction
-#TODO this does not use node_to_allowed_states so it can be made generic
-def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
+#TODO under destruction
+def xxx_get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
         root, prior_root_distn=None, P_default=None):
     """
     Get marginal state distributions at nodes in a tree.

@@ -5,6 +5,7 @@ Generic functions relevant to algorithms involving Markov chains.
 from __future__ import division, print_function, absolute_import
 
 import itertools
+from collections import defaultdict
 
 import numpy as np
 import networkx as nx
@@ -307,4 +308,86 @@ def get_joint_endpoint_distn_naive(T, root, node_to_set,
     # Return the tree with the sparse joint distributions on edges.
     return T_aug
 
+
+def get_node_to_distn(T, root, node_to_pmap, root_distn=None, P_default=None):
+    """
+    Get marginal state distributions at nodes in a tree.
+
+    This function is similar to the Rao-Teh state sampling function,
+    except that instead of sampling a state at each node,
+    this function computes marginal distributions over states at each node.
+    Also, each edge of the input tree for this function has been
+    annotated with its own transition probability matrix,
+    whereas the Rao-Teh sampling function uses a single
+    uniformized transition probability matrix for all edges.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices P.
+    root : integer
+        Root node.
+    node_to_pmap : dict
+        Map from node to a map from a state to the subtree likelihood.
+        This map incorporates state restrictions.
+    root_distn : dict, optional
+        A finite distribution over root states.
+    P_default : weighted directed networkx graph, optional
+        Default transition matrix.
+
+    Returns
+    -------
+    node_to_distn : dict
+        Sparse map from node to sparse map from state to probability.
+
+    """
+    # Bookkeeping.
+    predecessors = nx.dfs_predecessors(T, root)
+
+    # Get the distributions.
+    node_to_distn = {}
+    for node in nx.dfs_preorder_nodes(T, root):
+
+        # Get the map from state to subtree likelihood.
+        pmap = node_to_pmap[node]
+
+        # Compute the prior distribution at the root separately.
+        # If the prior distribution is not provided,
+        # then treat it as uninformative.
+        if node == root:
+            distn = get_normalized_dict_distn(pmap, root_distn)
+        else:
+            parent_node = predecessors[node]
+            parent_distn = node_to_distn[parent_node]
+
+            # Get the transition matrix associated with this edge.
+            P = T[parent_node][node].get('P', P_default)
+            if P is None:
+                raise ValueError('no transition matrix is available')
+
+            # For each parent state,
+            # get the distribution over child states;
+            # this distribution will include both the P matrix
+            # and the pmap of the child node.
+            distn = defaultdict(float)
+            for sa, pa in parent_distn.items():
+
+                # Construct the conditional transition probabilities.
+                feasible_sb = set(P[sa]) & set(node_to_pmap[node])
+                sb_weights = {}
+                for sb in feasible_sb:
+                    a = P[sa][sb]['weight']
+                    b = node_to_pmap[node][sb]
+                    sb_weights[sb] = a*b
+                sb_distn = get_normalized_dict_distn(sb_weights)
+
+                # Add to the marginal distn.
+                for sb, pb in sb_distn.items():
+                    distn[sb] += pa * pb
+
+        # Set the node_to_distn.
+        node_to_distn[node] = distn
+
+    # Return the marginal state distributions at nodes.
+    return node_to_distn
 

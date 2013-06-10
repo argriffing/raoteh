@@ -20,7 +20,6 @@ from raoteh.sampler._util import (
 
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
-        get_node_to_distn,
         )
 
 from raoteh.sampler._sample_mc import(

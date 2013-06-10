@@ -16,7 +16,6 @@ from raoteh.sampler import _mc0
 
 from raoteh.sampler._mc import (
         get_node_to_distn_naive,
-        get_node_to_distn,
         construct_node_to_restricted_pmap,
         )
 
@@ -181,9 +180,8 @@ class TestMarkovChain(TestCase):
             # through the restricted pmap.
             node_to_pmap = construct_node_to_restricted_pmap(
                     T, root, node_to_allowed_states, P_default=P)
-            node_to_distn_fast = get_node_to_distn(
-                    T, node_to_allowed_states, node_to_pmap,
-                    root, prior_root_distn=root_distn, P_default=P)
+            node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
+                    root_distn=root_distn, P_default=P)
 
             # Convert distributions to ndarrays for approximate comparison.
             for node, distn in node_to_distn_naive.items():
@@ -215,9 +213,8 @@ class TestMarkovChain(TestCase):
             # through the restricted pmap.
             node_to_pmap = construct_node_to_restricted_pmap(
                     T, root, node_to_allowed_states)
-            node_to_distn_fast = get_node_to_distn(
-                    T, node_to_allowed_states, node_to_pmap,
-                    root, root_distn)
+            node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
+                    root_distn=root_distn)
 
             # Compare distributions at the root.
             root_distn_naive = node_to_distn_naive[root]
@@ -254,9 +251,8 @@ class TestMarkovChain(TestCase):
             # through the restricted pmap.
             node_to_pmap = construct_node_to_restricted_pmap(
                     T, root, node_to_allowed_states)
-            node_to_distn_fast = get_node_to_distn(
-                    T, node_to_allowed_states, node_to_pmap,
-                    root=root, prior_root_distn=root_distn)
+            node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
+                    root_distn=root_distn)
 
             # Convert distributions to ndarrays for approximate comparison.
             for node in T:
@@ -277,9 +273,8 @@ class TestMarkovChain(TestCase):
                     node_to_allowed_states, root_distn=root_distn)
             node_to_pmap = construct_node_to_restricted_pmap(
                     T, root, node_to_allowed_states)
-            node_to_distn = get_node_to_distn(
-                    T, node_to_allowed_states, node_to_pmap,
-                    root, root_distn)
+            node_to_distn = _mc0.get_node_to_distn(T, root, node_to_pmap,
+                    root_distn=root_distn)
             T_aug_fast = _mc0.get_joint_endpoint_distn(
                     T, root, node_to_pmap, node_to_distn)
             for na, nb in nx.bfs_edges(T, root):

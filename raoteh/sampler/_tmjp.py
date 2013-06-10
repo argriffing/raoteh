@@ -29,7 +29,6 @@ from raoteh.sampler._util import (
 
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
-        get_node_to_distn,
         )
 
 from raoteh.sampler._mjp import (
@@ -212,8 +211,8 @@ def get_absorption_integral(T, node_to_allowed_states,
 
     # Get the marginal state distribution for each node in the tree,
     # conditional on the known states.
-    node_to_distn = get_node_to_distn(
-            T_aug, node_to_allowed_states, node_to_pmap, root, root_distn)
+    node_to_distn = _mc0.get_node_to_distn(T_aug, root, node_to_pmap,
+            root_distn=root_distn)
 
     # For each edge in the tree, get the joint distribution
     # over the states at the endpoints of the edge.

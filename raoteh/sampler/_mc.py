@@ -197,6 +197,7 @@ def get_restricted_likelihood(T, root, node_to_allowed_states,
     return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
 
 
+#XXX this is kind of obsolete by the new get_normalized_dict_distn interface
 def get_zero_step_posterior_distn(prior_distn, pmap):
     """
     Do a kind of sparse dict-dict multiplication and normalize the result.
@@ -299,7 +300,8 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
     return node_to_distn
 
 
-def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
+#TODO under destruction
+def xxx_get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
         root, prior_root_distn=None, P_default=None):
     """
     Get marginal state distributions at nodes in a tree.
