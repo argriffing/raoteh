@@ -16,6 +16,56 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
+def get_node_to_set(T, root, node_to_pset, P_default=None):
+    """
+    For each node get the set of states that give positive likelihood.
+
+    Parameters
+    ----------
+    T : undirected unweighted acyclic networkx graph
+        A tree whose edges are optionally annotated
+        with edge-specific state transition probability matrix P.
+    root : integer
+        The root node.
+    node_to_pset : dict
+        A map from a node to the set of states with positive subtree likelihood.
+    P_default : networkx directed weighted graph, optional
+        Sparse transition matrix to be used for edges
+        which are not annotated with an edge-specific transition matrix.
+
+    Returns
+    -------
+    node_to_set : dict
+        Maps each node to a set of states that give positive likelihood.
+
+    Notes
+    -----
+    This function depends on the nature of the data observations
+    only through the node_to_pset map.
+    Another way of thinking about this function is that it gives
+    the set of states that have positive posterior probability.
+
+    """
+    # Define the set for the root node.
+    node_to_set = {root : node_to_pset[root]}
+
+    # Define the set for the child node of each edge.
+    for na, nb in nx.bfs_edges(T, root):
+
+        # Construct the set of child states reachable from the
+        # allowed parent states.
+        P = T[na][nb].get('P', P_default)
+        constraint_set = set()
+        for sa in node_to_set[na]:
+            constraint_set.update(P[sa])
+
+        # Define the set of allowed child states.
+        node_to_set[nb] = constraint_set & node_to_pset[nb]
+
+    # Return the map.
+    return node_to_set
+
+
 def get_likelihood(root_pmap, root_distn=None):
     """
     Compute a likelihood or raise an exception if the likelihood is zero.

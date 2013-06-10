@@ -31,6 +31,8 @@ import itertools
 import numpy as np
 import networkx as nx
 
+from raoteh.sampler import _mc0
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_arbitrary_tip,
@@ -47,7 +49,8 @@ __all__ = []
 # get_node_to_set
 
 
-def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
+#TODO under destruction
+def xxx_get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
     """
     Get a map from each node to a set of valid states.
 
@@ -118,7 +121,7 @@ def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
 
 
 #TODO under destruction, to be replaced by get_node_to_pset
-def get_node_to_smap(T, root, node_to_state=None, P_default=None):
+def xxx_get_node_to_smap(T, root, node_to_state=None, P_default=None):
     """
     Get a map from each non-root node to a map from parent state to a state set.
 
@@ -223,7 +226,7 @@ def get_node_to_pset(T, root, node_to_state=None, P_default=None):
 
     # Compute the map from node to set.
     node_to_pset = {}
-    for nb in nx.dfs_postorder(T, root):
+    for nb in nx.dfs_postorder_nodes(T, root):
 
         # If a parent node is available, get a set of states
         # involved in the transition matrix associated with the parent edge.
@@ -232,7 +235,7 @@ def get_node_to_pset(T, root, node_to_state=None, P_default=None):
         na_set = None
         if nb in predecessors:
             na = predecessors[nb]
-            P = T[na][nb].edge.get('P', P_default)
+            P = T[na][nb].get('P', P_default)
             na_set = set(P)
 
         # If the state of the current state is known,
@@ -248,14 +251,14 @@ def get_node_to_pset(T, root, node_to_state=None, P_default=None):
         if nb in successors:
             for nc in successors[nb]:
                 allowed_set = set()
-                P = T[nb][nc].edge.get('P', P_default)
+                P = T[nb][nc].get('P', P_default)
                 for sb, sc in P.edges():
                     if sc in node_to_pset[nc]:
                         allowed_set.add(sb)
                 if nc_set is None:
-                    sc_set = allowed_set
+                    nc_set = allowed_set
                 else:
-                    sc_set.intersection_update(allowed_set)
+                    nc_set.intersection_update(allowed_set)
 
         # Take the intersection of informative constraints due to
         # possible parent transitions,
@@ -313,10 +316,14 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
     # after accounting for the rooted tree shape
     # and the edge-specific transition matrix sparsity patterns
     # and the observed states.
-    node_to_smap = get_node_to_smap(T, root,
+    #node_to_smap = get_node_to_smap(T, root,
+            #node_to_state=node_to_state, P_default=P_default)
+    #node_to_state_set = get_node_to_state_set(T, root,
+            #node_to_smap, node_to_state=node_to_state)
+    node_to_pset = get_node_to_pset(T, root,
             node_to_state=node_to_state, P_default=P_default)
-    node_to_state_set = get_node_to_state_set(T, root,
-            node_to_smap, node_to_state=node_to_state)
+    node_to_state_set = _mc0.get_node_to_set(T, root,
+            node_to_pset, P_default=P_default)
 
     # Check the node to state set for consistency.
     # Either the likelihood is structurally positive
@@ -326,6 +333,9 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
     npos = sum(1 for k, v in node_to_state_set.items() if v)
     nneg = sum(1 for k, v in node_to_state_set.items() if not v)
     if npos and nneg:
+        print()
+        print(node_to_pset)
+        print(node_to_state_set)
         raise ValueError('internal error')
 
     # Bookkeeping.
@@ -346,6 +356,9 @@ def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
                 nprob = 0.0
                 allowed_states = set(P[node_state]) & set(node_to_pmap[n])
                 if not allowed_states:
+                    print()
+                    print(node_to_pset)
+                    print(node_to_state_set)
                     raise ValueError('internal error')
                 for s in allowed_states:
                     a = P[node_state][s]['weight']

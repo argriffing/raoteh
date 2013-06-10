@@ -13,7 +13,7 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises,
         decorators)
 
-from raoteh.sampler import _mcx
+from raoteh.sampler import _mc0, _mcx
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
@@ -56,15 +56,10 @@ class TestNodeStateSampler(TestCase):
         # the states at the two endpoints of the path.
         node_to_state = {0: 0, 2: 3}
         for root in T:
-            node_to_smap = _mcx.get_node_to_smap(T, root,
+            node_to_pset = _mcx.get_node_to_pset(T, root,
                     node_to_state=node_to_state, P_default=P)
-            node_to_state_set = _mcx.get_node_to_state_set(T, root,
-                    node_to_smap, node_to_state=node_to_state)
-            print()
-            print(root)
-            print(node_to_smap)
-            print(node_to_state_set)
-            assert_equal(node_to_state_set[root], set())
+            node_to_state_set = _mc0.get_node_to_set(T, root,
+                    node_to_pset, P_default=P)
             assert_raises(
                     StructuralZeroProb,
                     resample_states,
