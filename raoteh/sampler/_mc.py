@@ -196,38 +196,3 @@ def get_restricted_likelihood(T, root, node_to_allowed_states,
     # Return the likelihood.
     return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
 
-
-#XXX this is kind of obsolete by the new get_normalized_dict_distn interface
-def xxx_get_zero_step_posterior_distn(prior_distn, pmap):
-    """
-    Do a kind of sparse dict-dict multiplication and normalize the result.
-
-    Parameters
-    ----------
-    prior_distn : dict
-        A sparse map from a state to a prior probability.
-    pmap : dict
-        A sparse map from a state to an observation likelihood.
-        In the MJP application, this likelihood observation corresponds to 
-        a subtree likelihood.
-
-    Returns
-    -------
-    posterior_distn : dict
-        A sparse map from a state to a posterior probability.
-
-    """
-    if not prior_distn:
-        raise StructuralZeroProb(
-                'no state is feasible according to the prior')
-    if not pmap:
-        raise StructuralZeroProb(
-                'no state is feasible according to the observations')
-    feasible_states = set(prior_distn) & set(pmap)
-    if not feasible_states:
-        raise StructuralZeroProb(
-                'no state is in the intersection of prior feasible '
-                'and observation feasible states')
-    d = dict((s, prior_distn[s] * pmap[s]) for s in feasible_states)
-    return get_normalized_dict_distn(d)
-
