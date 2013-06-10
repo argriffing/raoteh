@@ -40,6 +40,12 @@ from raoteh.sampler._util import (
 
 __all__ = []
 
+# get_node_to_pmap
+# get_node_to_distn
+#
+# get_node_to_pset
+# get_node_to_set
+
 
 def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
     """
@@ -111,6 +117,7 @@ def get_node_to_state_set(T, root, node_to_smap, node_to_state=None):
     return node_to_state_set
 
 
+#TODO under destruction, to be replaced by get_node_to_pset
 def get_node_to_smap(T, root, node_to_state=None, P_default=None):
     """
     Get a map from each non-root node to a map from parent state to a state set.
@@ -173,6 +180,104 @@ def get_node_to_smap(T, root, node_to_state=None, P_default=None):
                 smap[sa] = posterior_sb_set
         node_to_smap[nb] = smap
     return node_to_smap
+
+
+def get_node_to_pset(T, root, node_to_state=None, P_default=None):
+    """
+    For each node, get the set of states that give positive subtree likelihood.
+
+    This function is analogous to get_node_to_pmap.
+
+    Parameters
+    ----------
+    T : undirected unweighted acyclic networkx graph
+        A tree whose edges are optionally annotated
+        with edge-specific state transition probability matrix P.
+    root : integer
+        The root node.
+    node_to_state : dict, optional
+        A sparse map from a node to its known state if any.
+        Nodes in this map are assumed to have completely known state.
+        Nodes not in this map are assumed to have completely missing state.
+        If this map is not provided,
+        all states information will be assumed to be completely missing.
+        Entries of this dict that correspond to nodes not in the tree
+        will be silently ignored.
+    P_default : networkx directed weighted graph, optional
+        Sparse transition matrix to be used for edges
+        which are not annotated with an edge-specific transition matrix.
+
+    Returns
+    -------
+    node_to_pset : dict
+        A map from a node to the set of states with positive subtree likelihood.
+
+    """
+    # Input validation.
+    if len(set(T)) < 2:
+        raise ValueError('expected at least two nodes in the tree')
+
+    # Bookkeeping.
+    successors = nx.dfs_successors(T, root)
+    predecessors = nx.dfs_predecessors(T, root)
+
+    # Compute the map from node to set.
+    node_to_pset = {}
+    for nb in nx.dfs_postorder(T, root):
+
+        # If a parent node is available, get a set of states
+        # involved in the transition matrix associated with the parent edge.
+        # A more complicated implementation would use only the sink
+        # states of that transition matrix.
+        na_set = None
+        if nb in predecessors:
+            na = predecessors[nb]
+            P = T[na][nb].edge.get('P', P_default)
+            na_set = set(P)
+
+        # If the state of the current state is known,
+        # define the set containing only that state.
+        nb_set = None
+        if nb in node_to_state:
+            nb_set = {node_to_state[nb]}
+
+        # If a child node is available, get the set of states
+        # that have transition to child states
+        # for which the child subtree likelihoods are positive.
+        nc_set = None
+        if nb in successors:
+            for nc in successors[nb]:
+                allowed_set = set()
+                P = T[nb][nc].edge.get('P', P_default)
+                for sb, sc in P.edges():
+                    if sc in node_to_pset[nc]:
+                        allowed_set.add(sb)
+                if nc_set is None:
+                    sc_set = allowed_set
+                else:
+                    sc_set.intersection_update(allowed_set)
+
+        # Take the intersection of informative constraints due to
+        # possible parent transitions,
+        # possible direct constraints on the node state,
+        # and possible child node state constraints.
+        pset = None
+        for constraint_set in (na_set, nb_set, nc_set):
+            if constraint_set is not None:
+                if pset is None:
+                    pset = constraint_set
+                else:
+                    pset.intersection_update(constraint_set)
+
+        # This value should not be None unless there has been some problem.
+        if pset is None:
+            raise ValueError('internal error')
+
+        # Define the pset for the node.
+        node_to_pset[nb] = pset
+
+    # Return the node_to_pset map.
+    return node_to_pset
 
 
 def get_node_to_pmap(T, root, node_to_state=None, P_default=None):
