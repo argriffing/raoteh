@@ -9,7 +9,13 @@ import networkx as nx
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises)
 
-from raoteh.sampler import _graph_transform
+from raoteh.sampler._graph_transform import (
+        get_edge_bisected_graph,
+        add_trajectory_layer,
+        remove_redundant_nodes,
+        get_redundant_degree_two_nodes,
+        get_chunk_tree,
+        )
 
 
 # This is an official itertools recipe.
@@ -33,7 +39,7 @@ class TestGraphTransform(TestCase):
             (3, 4, 0.375)])
 
         # Create a new graph by bisecting the edges of the old graph.
-        H = _graph_transform.get_edge_bisected_graph(G)
+        H = get_edge_bisected_graph(G)
 
         # The edge-bisected graph has twice as many edges.
         assert_equal(len(G.edges()) * 2, len(H.edges()))
@@ -83,7 +89,7 @@ class TestGraphTransform(TestCase):
         for root in potential_roots:
 
             # Construct the chunk tree and its associated node maps.
-            results = _graph_transform.get_chunk_tree(T, event_nodes)
+            results = get_chunk_tree(T, event_nodes)
             chunk_tree, non_event_map, event_map = results
             
             # The nodes pointed to by the non_event_map
@@ -112,7 +118,7 @@ class TestGraphTransform(TestCase):
 
         # Try removing a redundant node.
         redundant_nodes = {1}
-        T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
+        T_out = remove_redundant_nodes(T, redundant_nodes)
         assert_equal(set(T_out), set(T) - redundant_nodes)
         assert_equal(T_out[0][2]['weight'], 2)
 
@@ -120,7 +126,7 @@ class TestGraphTransform(TestCase):
         redundant_nodes = {2}
         assert_raises(
                 Exception,
-                _graph_transform.remove_redundant_nodes,
+                remove_redundant_nodes,
                 T, redundant_nodes)
 
     def test_remove_redundant_nodes_long_path(self):
@@ -141,13 +147,13 @@ class TestGraphTransform(TestCase):
 
         # Check the set of redundant nodes.
         all_redundant_nodes = {1, 3, 4, 5, 6}
-        obs_nodes = _graph_transform.get_redundant_degree_two_nodes(T)
+        obs_nodes = get_redundant_degree_two_nodes(T)
         assert_equal(all_redundant_nodes, obs_nodes)
 
         # Try removing all valid combinations of redundant nodes.
         for redundant_node_tuple in powerset(all_redundant_nodes):
             redundant_nodes = set(redundant_node_tuple)
-            T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
+            T_out = remove_redundant_nodes(T, redundant_nodes)
             assert_equal(set(T_out), set(T) - redundant_nodes)
             assert_allclose(T_out.size(weight='weight'), original_size)
 
@@ -165,7 +171,7 @@ class TestGraphTransform(TestCase):
         for redundant_nodes in ({0}, {1}, {2}, {3}):
             assert_raises(
                     Exception,
-                    _graph_transform.remove_redundant_nodes,
+                    remove_redundant_nodes,
                     T, redundant_nodes)
 
     def test_remove_redundant_nodes_medium_tree(self):
@@ -186,10 +192,51 @@ class TestGraphTransform(TestCase):
         # Try removing all valid combinations of redundant nodes.
         for redundant_node_tuple in powerset((20, 30, 31)):
             redundant_nodes = set(redundant_node_tuple)
-            T_out = _graph_transform.remove_redundant_nodes(T, redundant_nodes)
+            T_out = remove_redundant_nodes(T, redundant_nodes)
             assert_equal(set(T_out), set(T) - redundant_nodes)
             assert_allclose(T_out.size(weight='weight'), original_size)
 
+
+class TestAddTrajectoryLayer(TestCase):
+
+    def test_compatible_trees(self):
+        T_base = nx.Graph()
+        T_base.add_edge(0, 1)
+        T_base.add_edge(0, 2)
+        T_base.add_edge(0, 3)
+        T_current = nx.Graph()
+        T_current.add_edge(0, 10)
+        T_current.add_edge(10, 1)
+        T_current.add_edge(0, 2)
+        T_current.add_edge(0, 3)
+        T_traj = nx.Graph()
+        T_traj.add_edge(0, 1, state=0)
+        T_traj.add_edge(0, 20, state=0)
+        T_traj.add_edge(20, 2, state=0)
+        T_traj.add_edge(0, 3, state=0)
+        root = 0
+        T_merged = add_trajectory_layer(T_base, root, T_current, T_traj)
+
+    def test_incompatible_trees(self):
+        T_base = nx.Graph()
+        T_base.add_edge(0, 1)
+        T_base.add_edge(0, 2)
+        T_base.add_edge(0, 3)
+        T_current = nx.Graph()
+        T_current.add_edge(0, 10)
+        T_current.add_edge(10, 1)
+        T_current.add_edge(0, 2)
+        T_current.add_edge(0, 3)
+        T_traj = nx.Graph()
+        T_traj.add_edge(0, 4, state=0)
+        T_traj.add_edge(4, 20, state=0)
+        T_traj.add_edge(20, 2, state=0)
+        T_traj.add_edge(4, 3, state=0)
+        root = 0
+        assert_raises(
+                ValueError,
+                add_trajectory_layer,
+                T_base, root, T_current, T_traj)
 
 if __name__ == '__main__':
     run_module_suite()

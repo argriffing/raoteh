@@ -232,3 +232,45 @@ def get_chunk_tree(T, event_nodes, root=None):
     # Return the outputs.
     return chunk_tree, non_event_node_map, event_node_map
 
+
+def add_trajectory_layer(T_base, root, T_current, T_traj):
+    """
+    Merge a trajectory layer onto the base tree.
+
+    Parameters
+    ----------
+    T_base : undirected networkx graph
+        A base tree.
+    root : integer
+        Root node common to all trees.
+    T_current : undirected weighted networkx graph
+        A base tree with edge weights and specific optional edge annotation.
+        Edges of this tree may or may not be annotated with a 'states' list.
+        Any 'state' annotation of the edges will be ignored.
+    T_traj : undirected weighted networkx graph
+        A trajectory to be layered on top of the base tree.
+        The edges should be annotated with 'weight' and with 'state'.
+
+    Returns
+    -------
+    T_merged : undirected weighted networkx graph
+        A new tree with more states.
+
+    """
+    # Check that the input is correct.
+    for T, name in ((T_current, 'current'), (T_traj, 'traj')):
+        degree = T.degree()
+        bad = set(n for n in set(T) - set(T_base) if degree[n] != 2)
+        if bad:
+            raise ValueError('the %s tree has the nodes %s '
+                    'of degree other than two '
+                    'which are not in the base tree' % (name, sorted(bad)))
+
+    # Initialize the output graph.
+    T_merged = nx.Graph()
+
+    # Bookkeeping.
+    successors = nx.dfs_successors(T_base, root)
+
+    return T_merged
+    
