@@ -237,8 +237,6 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn):
     return T_aug
 
 
-#TODO under construction -- wait until get_history_log_likelihood
-#TODO has been moved into this generic markov chain module
 def get_joint_endpoint_distn_naive(T, root, node_to_set,
         root_distn=None, P_default=None):
     """
