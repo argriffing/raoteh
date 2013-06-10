@@ -116,3 +116,59 @@ def get_likelihood(root_pmap, root_distn=None):
     # Return the likelihood.
     return likelihood
 
+
+def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn):
+    """
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        Tree with edges annotated with sparse transition probability
+        matrices as directed weighted networkx graphs P.
+    root : integer
+        Root node.
+    node_to_pmap : dict
+        Map from node to a map from a state to the subtree likelihood.
+        This map incorporates state restrictions.
+    node_to_distn : dict
+        Conditional marginal state distribution at each node.
+
+    Returns
+    -------
+    T_aug : undirected networkx graph
+        A tree whose edges are annotated with sparse joint endpoint
+        state distributions as networkx digraphs.
+        These annotations use the attribute 'J' which
+        is supposed to mean 'joint' and which is written in
+        single letter caps reminiscent of matrix notation.
+
+    """
+    T_aug = nx.Graph()
+    for na, nb in nx.bfs_edges(T, root):
+        pmap = node_to_pmap[nb]
+        P = T[na][nb]['P']
+        weighted_edges = []
+        for sa, pa in node_to_distn[na].items():
+
+            # Construct the conditional transition probabilities.
+            feasible_sb = set(P[sa]) & set(pmap)
+            sb_weights = {}
+            for sb in feasible_sb:
+                a = P[sa][sb]['weight']
+                b = pmap[sb]
+                sb_weights[sb] = a*b
+            tot = sum(sb_weights.values())
+            sb_distn = dict((sb, w / tot) for sb, w in sb_weights.items())
+
+            # Add to the joint distn.
+            for sb, pb in sb_distn.items():
+                weighted_edges.append((sa, sb, pa * pb))
+
+        # Add the joint distribution.
+        J = nx.DiGraph()
+        J.add_weighted_edges_from(weighted_edges)
+        T_aug.add_edge(na, nb, J=J)
+
+    # Return the augmented tree.
+    return T_aug
+

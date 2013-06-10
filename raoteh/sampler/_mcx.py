@@ -525,10 +525,6 @@ def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
         is supposed to mean 'joint' and which is writeen in
         single letter caps reminiscent of matrix notation.
 
-    See also
-    --------
-    get_joint_endpoint_distn
-
     """
     T_aug = nx.Graph()
     for na, nb in nx.bfs_edges(T, root):
@@ -574,10 +570,7 @@ def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
     return T_aug
 
 
-#TODO under construction
-#TODO this uses generic observation type
-#TODO change arg order
-def get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
+def xxx_get_joint_endpoint_distn(T, node_to_pmap, node_to_distn, root):
     """
 
     Parameters

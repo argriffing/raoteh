@@ -15,7 +15,7 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _mc, _mjp
+from raoteh.sampler import _mc0, _mc, _mjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb,
@@ -30,7 +30,6 @@ from raoteh.sampler._util import (
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
         get_node_to_distn,
-        get_joint_endpoint_distn,
         )
 
 from raoteh.sampler._mjp import (
@@ -218,8 +217,8 @@ def get_absorption_integral(T, node_to_allowed_states,
 
     # For each edge in the tree, get the joint distribution
     # over the states at the endpoints of the edge.
-    T_joint = get_joint_endpoint_distn(
-            T_aug, node_to_pmap, node_to_distn, root)
+    T_joint = _mc0.get_joint_endpoint_distn(
+            T_aug, root, node_to_pmap, node_to_distn)
 
     # Compute the expectations of the dwell times and the transition counts
     # by iterating over all edges and using the edge-specific

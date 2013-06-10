@@ -12,13 +12,14 @@ import networkx as nx
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
+from raoteh.sampler import _mc0
+
 from raoteh.sampler._mc import (
         get_history_log_likelihood,
         get_node_to_distn_naive,
         get_node_to_distn,
         construct_node_to_restricted_pmap,
         get_joint_endpoint_distn_naive,
-        get_joint_endpoint_distn,
         )
 
 from raoteh.sampler._sample_tree import get_random_branching_tree
@@ -281,8 +282,8 @@ class TestMarkovChain(TestCase):
             node_to_distn = get_node_to_distn(
                     T, node_to_allowed_states, node_to_pmap,
                     root, root_distn)
-            T_aug_fast = get_joint_endpoint_distn(
-                    T, node_to_pmap, node_to_distn, root)
+            T_aug_fast = _mc0.get_joint_endpoint_distn(
+                    T, root, node_to_pmap, node_to_distn)
             for na, nb in nx.bfs_edges(T, root):
                 assert_(T_aug_naive.has_edge(na, nb))
                 assert_(T_aug_fast.has_edge(na, nb))

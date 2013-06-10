@@ -12,7 +12,7 @@ import scipy.linalg
 import scipy.stats
 from scipy import special
 
-from raoteh.sampler import _mc
+from raoteh.sampler import _mc0, _mc
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
@@ -23,7 +23,6 @@ from raoteh.sampler._util import (
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,
         get_node_to_distn,
-        get_joint_endpoint_distn,
         )
 
 
@@ -442,8 +441,8 @@ def get_expected_history_statistics(T, node_to_allowed_states,
 
     # For each edge in the tree, get the joint distribution
     # over the states at the endpoints of the edge.
-    T_joint = get_joint_endpoint_distn(
-            T_aug, node_to_pmap, node_to_distn, root)
+    T_joint = _mc0.get_joint_endpoint_distn(
+            T_aug, root, node_to_pmap, node_to_distn)
 
     # Compute the expectations of the dwell times and the transition counts
     # by iterating over all edges and using the edge-specific
