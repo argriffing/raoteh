@@ -11,10 +11,11 @@ from numpy.testing import (run_module_suite, TestCase,
 
 from raoteh.sampler._graph_transform import (
         get_edge_bisected_graph,
-        add_trajectory_layer,
+        get_node_to_state,
         remove_redundant_nodes,
         get_redundant_degree_two_nodes,
         get_chunk_tree,
+        add_trajectories,
         )
 
 
@@ -204,59 +205,49 @@ class TestAddTrajectoryLayer(TestCase):
         T_base.add_edge(0, 1)
         T_base.add_edge(0, 2)
         T_base.add_edge(0, 3)
-        T_current = nx.Graph()
-        T_current.add_edge(0, 10)
-        T_current.add_edge(10, 1)
-        T_current.add_edge(0, 2)
-        T_current.add_edge(0, 3)
         T_traj = nx.Graph()
-        T_traj.add_edge(0, 1, state=0)
-        T_traj.add_edge(0, 20, state=0)
-        T_traj.add_edge(20, 2, state=0)
-        T_traj.add_edge(0, 3, state=0)
+        T_traj.add_edge(0, 1, state=0, weight=0.1)
+        T_traj.add_edge(0, 20, state=0, weight=0.1)
+        T_traj.add_edge(20, 2, state=0, weight=0.1)
+        T_traj.add_edge(0, 3, state=0, weight=0.1)
         root = 0
-        T_merged = add_trajectory_layer(T_base, root, T_current, T_traj)
+        T_merged = add_trajectories(T_base, root, [T_traj])
 
     def test_incompatible_trees(self):
         T_base = nx.Graph()
         T_base.add_edge(0, 1)
         T_base.add_edge(0, 2)
         T_base.add_edge(0, 3)
-        T_current = nx.Graph()
-        T_current.add_edge(0, 10)
-        T_current.add_edge(10, 1)
-        T_current.add_edge(0, 2)
-        T_current.add_edge(0, 3)
         root = 0
 
         # Define a trajectory that is bad because it adds a high degree node.
         traj = nx.Graph()
-        traj.add_edge(0, 4, state=0)
-        traj.add_edge(4, 20, state=0)
-        traj.add_edge(20, 2, state=0)
-        traj.add_edge(4, 3, state=0)
-        assert_raises(ValueError, add_trajectory_layer,
-                T_base, root, T_current, traj)
+        traj.add_edge(0, 4, state=0, weight=0.1)
+        traj.add_edge(4, 20, state=0, weight=0.1)
+        traj.add_edge(20, 2, state=0, weight=0.1)
+        traj.add_edge(4, 3, state=0, weight=0.1)
+        assert_raises(ValueError, add_trajectories,
+                T_base, root, [traj])
 
         # Define a trajectory that is bad because it adds a leaf node.
         traj = nx.Graph()
-        traj.add_edge(0, 1, state=0)
-        traj.add_edge(0, 20, state=0)
-        traj.add_edge(20, 2, state=0)
-        traj.add_edge(0, 3, state=0)
-        traj.add_edge(3, 4, state=0)
-        assert_raises(ValueError, add_trajectory_layer,
-                T_base, root, T_current, traj)
+        traj.add_edge(0, 1, state=0, weight=0.1)
+        traj.add_edge(0, 20, state=0, weight=0.1)
+        traj.add_edge(20, 2, state=0, weight=0.1)
+        traj.add_edge(0, 3, state=0, weight=0.1)
+        traj.add_edge(3, 4, state=0, weight=0.1)
+        assert_raises(ValueError, add_trajectories,
+                T_base, root, [traj])
 
         # Define a trajectory that is bad
         # because it flips around the nodes in a way that is incompatible
         # with the original tree topology.
         traj = nx.Graph()
-        traj.add_edge(1, 0)
-        traj.add_edge(1, 2)
-        traj.add_edge(1, 3)
-        assert_raises(ValueError, add_trajectory_layer,
-                T_base, root, T_current, traj)
+        traj.add_edge(1, 0, state=0, weight=0.1)
+        traj.add_edge(1, 2, state=0, weight=0.1)
+        traj.add_edge(1, 3, state=0, weight=0.1)
+        assert_raises(ValueError, add_trajectories,
+                T_base, root, [traj])
 
     def test_complicated_incompatible_trees(self):
         T_base = nx.Graph()
@@ -272,13 +263,30 @@ class TestAddTrajectoryLayer(TestCase):
         # because the topology is different in a way that cannot be detected
         # by checking the degrees of the nodes.
         traj = nx.Graph()
-        traj.add_edge(3, 1)
-        traj.add_edge(3, 2)
-        traj.add_edge(3, 0)
-        traj.add_edge(0, 4)
-        traj.add_edge(0, 5)
-        assert_raises(ValueError, add_trajectory_layer,
-                T_base, root, T_current, traj)
+        traj.add_edge(3, 1, state=0, weight=0.1)
+        traj.add_edge(3, 2, state=0, weight=0.1)
+        traj.add_edge(3, 0, state=0, weight=0.1)
+        traj.add_edge(0, 4, state=0, weight=0.1)
+        traj.add_edge(0, 5, state=0, weight=0.1)
+        assert_raises(ValueError, add_trajectories,
+                T_base, root, [traj])
+
+
+class TestGetNodeToState(TestCase):
+
+    def test_get_node_to_state_success(self):
+        # These queries should succeed.
+
+        # Get all node states for a simple tree.
+        T = nx.Graph()
+        T.add_edge(0, 1, state=42)
+        T.add_edge(1, 2, state=42)
+        all_query_nodes = {0, 1, 2}
+        for query_nodes in powerset(all_query_nodes):
+            nnodes = len(query_nodes)
+            node_to_state = get_node_to_state(T, query_nodes)
+            assert_equal(set(node_to_state), set(query_nodes))
+            assert_equal(set(node_to_state.values()), set([42]*nnodes))
 
 
 if __name__ == '__main__':

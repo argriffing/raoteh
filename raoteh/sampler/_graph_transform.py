@@ -81,6 +81,66 @@ def get_redundant_degree_two_nodes(T):
     return redundant_nodes
 
 
+def remove_selected_degree_two_nodes(T, root, expendable_nodes):
+    """
+    Returns a tree with the specified nodes removed.
+
+    The removal disregards all edge attributes.
+
+    Parameters
+    ----------
+    T : networkx graph
+        tree
+    root : integer
+        Root node that is not expendable.
+    expendable_nodes : set of nodes
+        Nodes to be removed.
+
+    Returns
+    -------
+    T_out : networkx graph
+        tree with redundant nodes removed
+
+    """
+    # Initialize the output.
+    T_out = nx.Graph()
+
+    # Bookkeeping.
+    degrees = T.degree()
+
+    # Input validation.
+    if root in expendable_nodes:
+        raise ValueError('the root is not allowed to be removed')
+
+    # Check that the caller is not trying to remove nodes
+    # that have unweighted degree other than degree 2.
+    if any(degrees[n] != 2 for n in expendable_nodes):
+        raise ValueError('only degree 2 nodes may be considered expendable')
+
+    # Build the new tree, tracking the info and skipping the extra nodes.
+    rnode_to_ancestor = {}
+    for na, nb in nx.bfs_edges(T, root):
+
+        # Get the essential ancestor of the current node.
+        if na in expendable_nodes:
+            ancestor = rnode_to_ancestor[na]
+
+        # If nb is not expendable, then an edge will be added.
+        # If nb is expendable then expendable edge info will be
+        # initialized or extended.
+        if nb not in expendable_nodes:
+            if na in expendable_nodes:
+                T_out.add_edge(ancestor, nb)
+            else:
+                T_out.add_edge(na, nb)
+        else:
+            if na not in expendable_nodes:
+                rnode_to_ancestor[nb] = na
+
+    # Return the new tree as a networkx graph.
+    return T_out
+
+
 def remove_redundant_nodes(T, redundant_nodes):
     """
     Returns a tree with the specified redundant nodes removed.
@@ -95,7 +155,7 @@ def remove_redundant_nodes(T, redundant_nodes):
     ----------
     T : networkx graph
         tree
-    expendable_nodes : set of nodes
+    redundant_nodes : set of nodes
         candidates for removal
 
     Returns
@@ -114,7 +174,7 @@ def remove_redundant_nodes(T, redundant_nodes):
     # Check that the caller is not trying to remove nodes
     # that have unweighted degree other than degree 2.
     if any(degrees[n] != 2 for n in redundant_nodes):
-        raise Exception('only degree 2 nodes may be considered redundant')
+        raise ValueError('only degree 2 nodes may be considered redundant')
 
     # Set up some bookkeeping.
     successors = nx.dfs_successors(T, root)
@@ -132,7 +192,7 @@ def remove_redundant_nodes(T, redundant_nodes):
         if a in redundant_nodes:
             info = rnode_to_info[a]
             if info['state'] != state:
-                raise Exception('edge state mismatch')
+                raise ValueError('edge state mismatch')
             weight += info['weight']
 
         # If b is not redundant, then an edge will be added.
@@ -235,6 +295,40 @@ def get_chunk_tree(T, event_nodes, root=None):
     return chunk_tree, non_event_node_map, event_node_map
 
 
+def get_node_to_state(T, query_nodes):
+    """
+    Get the states of some nodes, by looking at states of adjacent edges.
+
+    Parameters
+    ----------
+    T : undirected networkx graph
+        A tree whose edges are annotated with states.
+    query_nodes : set
+        A set of nodes whose states are to be queried.
+
+    Returns
+    -------
+    node_to_state : dict
+        A map from query node to state.
+
+    """
+    # Input validation.
+    bad = set(query_nodes) - set(T)
+    if bad:
+        raise ValueError('some query nodes are missing '
+                'from the tree: ' + str(sorted(bad)))
+
+    # Get the map from nodes to states.
+    node_to_state = {}
+    for na in query_nodes:
+        adjacent_states = set(T[na][nb]['state'] for nb in T[na])
+        if len(adjacent_states) != 1:
+            raise ValueError('query node %s has inconsistent state '
+                    'as determined by its adjacent edges' % na)
+        node_to_state[na] = get_first_element(adjacent_states)
+    return node_to_state
+
+
 def add_trajectories(T, root, trajectories):
     """
     Construct a tree with merged trajectories.
@@ -258,24 +352,27 @@ def add_trajectories(T, root, trajectories):
 
     """
     # Bookkeeping.
-    predecessors = nx.get_predecessors(T, root)
+    predecessors = nx.dfs_predecessors(T, root)
+    T_bfs_edges = list(nx.bfs_edges(T, root))
+
+    # Input validation.
+    for traj in trajectories:
+        traj_specific_nodes = set(traj) - set(T)
+        traj_skeleton = remove_selected_degree_two_nodes(
+                traj, root, traj_specific_nodes)
+        if set(T_bfs_edges) != set(nx.bfs_edges(traj_skeleton, root)):
+            raise ValueError('expected the trajectory to follow '
+                    'the basic shape of the base tree')
 
     # For each trajectory get the map from base node to state.
     traj_base_node_to_state = []
     for traj in trajectories:
-        base_node_to_state = {}
-        for na in T:
-            traj_states = set(traj[na][nb]['state'] for nb in traj[na])
-            if len(traj_states) != 1:
-                raise Exception
-            traj_state = get_first_element(traj_states)
-            base_node_to_state[na] = traj_state
-        traj_base_node_to_state.append(base_node_to_state)
+        base_node_to_state = get_node_to_state(traj, set(T))
 
     # For each directed edge of the base tree,
     # maintain a priority queue of interleaved transitions along trajectories.
     base_edge_to_q = {}
-    for na, nb in nx.bfs_edge(T, root):
+    for na, nb in T_bfs_edges:
         base_edge = (na, nb)
         base_edge_to_q[base_edge] = []
 
@@ -316,7 +413,8 @@ def add_trajectories(T, root, trajectories):
             tm = base_edge_to_tm.get(base_edge, 0)
 
             # If traj_na is a transition event,
-            # then add it to the priority queue.
+            # then add its information to the priority queue
+            # associated with the appropriate edge of the base tree.
             if traj_na not in T:
                 traj_state = traj_edge_object['state']
                 q_item = (tm, traj_index, traj_state)
@@ -332,12 +430,12 @@ def add_trajectories(T, root, trajectories):
     # For each edge of the original graph,
     # add segments to the merged graph, such that no trajectory
     # transition occurs within any segment.
-    pass
 
 
     #TODO after this is junk
 
 
+    """
     # All nodes in the base tree must be in the non-base trees.
     for T, name in ((T_current, 'current'), (T_traj, 'traj')):
         bad = set(T_base) - set(T)
@@ -355,6 +453,7 @@ def add_trajectories(T, root, trajectories):
                     'which are not in the base tree' % (name, sorted(bad)))
 
     successors = nx.dfs_successors(T_base, root)
+    """
 
 
     return T_merged
