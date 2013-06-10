@@ -25,19 +25,9 @@ will be silently ignored.
 """
 from __future__ import division, print_function, absolute_import
 
-from collections import defaultdict
-import itertools
-
-import numpy as np
 import networkx as nx
 
 from raoteh.sampler import _mc0
-
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_first_element, get_arbitrary_tip,
-        get_normalized_dict_distn,
-        )
 
 
 __all__ = []
