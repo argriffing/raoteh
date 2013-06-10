@@ -58,7 +58,8 @@ def get_node_to_pset(T, root,
     """
     # Input validation.
     if len(set(T)) < 2:
-        raise ValueError('expected at least two nodes in the tree')
+        raise ValueError('expected at least two nodes in the tree '
+                'but found only the following nodes: ' + str(sorted(T)))
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
@@ -78,8 +79,8 @@ def get_node_to_pset(T, root,
             P = T[na][nb].get('P', P_default)
             na_set = set(P)
 
-        # If the state of the current state is known,
-        # define the set containing only that state.
+        # Use the set of allowed states for the current node,
+        # if it is known.
         nb_set = None
         if nb in node_to_allowed_states:
             nb_set = set(node_to_allowed_states[nb])
@@ -111,6 +112,13 @@ def get_node_to_pset(T, root,
                     pset = constraint_set
                 else:
                     pset.intersection_update(constraint_set)
+
+        # If the pset is still None,
+        # then as a last attempt to get a node set,
+        # try using the states in P_default if it is available.
+        if pset is None:
+            if P_default is not None:
+                pset = set(P_default)
 
         # This value should not be None unless there has been some problem.
         if pset is None:

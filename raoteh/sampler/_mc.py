@@ -22,13 +22,24 @@ from raoteh.sampler._util import (
         get_first_element, get_arbitrary_tip,
         get_normalized_dict_distn)
 
-from raoteh.sampler import _mc0, _mcx
+from raoteh.sampler import _mc0, _mcx, _mcy
 
 
 __all__ = []
 
 
+#XXX under destruction
 def construct_node_to_restricted_pmap(
+        T, root, node_to_allowed_states=None,
+        P_default=None, states_default=None):
+    if states_default is not None:
+        raise NotImplementedError
+    return _mcy.get_node_to_pmap(T, root,
+            node_to_allowed_states=node_to_allowed_states,
+            P_default=P_default)
+
+#XXX under destruction
+def xxx_construct_node_to_restricted_pmap(
         T, root, node_to_allowed_states=None,
         P_default=None, states_default=None):
     """
