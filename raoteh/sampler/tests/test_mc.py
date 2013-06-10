@@ -15,11 +15,9 @@ from numpy.testing import (run_module_suite, TestCase,
 from raoteh.sampler import _mc0
 
 from raoteh.sampler._mc import (
-        get_history_log_likelihood,
         get_node_to_distn_naive,
         get_node_to_distn,
         construct_node_to_restricted_pmap,
-        get_joint_endpoint_distn_naive,
         )
 
 from raoteh.sampler._sample_tree import get_random_branching_tree
@@ -146,8 +144,8 @@ class TestMarkovChain(TestCase):
             (2, 2, 0.5),
             (2, 0, 0.25),
             (2, 1, 0.25)])
-        actual = get_history_log_likelihood(
-                T, node_to_state, root, root_distn, P_default=P)
+        actual = _mc0.get_history_log_likelihood(T, root, node_to_state,
+                root_distn=root_distn, P_default=P)
         desired = 4 * np.log(0.5)
         assert_equal(actual, desired)
 
@@ -275,8 +273,8 @@ class TestMarkovChain(TestCase):
             T, root, root_distn, node_to_allowed_states = info
             assert_equal(len(T), len(node_to_allowed_states))
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
-            T_aug_naive = get_joint_endpoint_distn_naive(
-                    T, node_to_allowed_states, root, root_distn)
+            T_aug_naive = _mc0.get_joint_endpoint_distn_naive(T, root,
+                    node_to_allowed_states, root_distn=root_distn)
             node_to_pmap = construct_node_to_restricted_pmap(
                     T, root, node_to_allowed_states)
             node_to_distn = get_node_to_distn(

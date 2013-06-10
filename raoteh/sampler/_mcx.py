@@ -281,67 +281,6 @@ def get_likelihood(T, root,
     return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
 
 
-def get_history_log_likelihood(T, root, node_to_state,
-        root_distn=None, P_default=None):
-    return _mc0.get_history_log_likelihood(T, root, node_to_state,
-            root_distn=root_distn, P_default=P_default)
-
-
-#TODO redirect this to mc0 and eventually delete
-#TODO because it does not depend on the observation details
-def xxx_get_history_log_likelihood(T, root, node_to_state,
-        root_distn=None, P_default=None):
-    """
-    Compute the log likelihood for a fully augmented history.
-
-    Parameters
-    ----------
-    T : undirected acyclic networkx graph
-        Tree optionally annotated with transition matrices.
-    root : integer
-        Root node.
-    node_to_state : dict
-        Each node in the tree is mapped to an integer state.
-    root_distn : dict, optional
-        Sparse prior distribution over states at the root.
-    P_default : weighted directed networkx graph, optional
-        A default universal probability transition matrix.
-
-    Returns
-    -------
-    log_likelihood : float
-        The log likelihood of the fully augmented history.
-
-    """
-    # Initialize the log likelihood.
-    log_likelihood = 0
-
-    # Add the log likelihood contribution from the root.
-    root_state = node_to_state[root]
-    if root_distn is not None:
-        if root_state not in root_distn:
-            raise StructuralZeroProb('zero prior for the root')
-        log_likelihood += np.log(root_distn[root_state])
-
-    # Add the log likelihood contribution from state transitions.
-    for na, nb in nx.bfs_edges(T, root):
-        edge = T[na][nb]
-        P = edge.get('P', P_default)
-        if P is None:
-            raise ValueError('undefined transition matrix on this edge')
-        sa = node_to_state[na]
-        sb = node_to_state[nb]
-        if not P.has_edge(sa, sb):
-            raise StructuralZeroProb(
-                    'the states of the endpoints of an edge '
-                    'are incompatible with the transition matrix on the edge')
-        p = P[sa][sb]['weight']
-        log_likelihood += np.log(p)
-
-    # Return the log likelihood.
-    return log_likelihood
-
-
 #TODO under construction
 def get_node_to_distn_naive(T, node_to_allowed_states,
         root, prior_root_distn, P_default=None):
@@ -382,8 +321,8 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
         # If the log likelihood cannot be computed,
         # then skip to the next state assignment.
         try:
-            ll = get_history_log_likelihood(
-                    T, node_to_state, root, prior_root_distn, P_default)
+            ll = _mc0.get_history_log_likelihood(T, root, node_to_state,
+                    root_distn=prior_root_distn, P_default=P_default)
         except StructuralZeroProb as e:
             continue
 
@@ -507,7 +446,7 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
 
 
 #TODO under construction
-def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
+def xxx_get_joint_endpoint_distn_naive(T, node_to_allowed_states,
         root, prior_root_distn, P_default=None):
     """
 
@@ -547,8 +486,8 @@ def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
         # If the log likelihood cannot be computed,
         # then skip to the next state assignment.
         try:
-            ll = get_history_log_likelihood(
-                    T, node_to_state, root, prior_root_distn, P_default)
+            ll = _mc0.get_history_log_likelihood(T, root, node_to_state,
+                    root_distn=prior_root_distn, P_default=P_default)
         except StructuralZeroProb as e:
             continue
 

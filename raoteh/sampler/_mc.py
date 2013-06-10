@@ -231,13 +231,6 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
     return get_normalized_dict_distn(d)
 
 
-#TODO eventually remove this
-def get_history_log_likelihood(T, node_to_state, root, root_distn,
-        P_default=None):
-        return _mcx.get_history_log_likelihood(T, root, node_to_state,
-                root_distn=root_distn, P_default=P_default)
-
-
 def get_node_to_distn_naive(T, node_to_allowed_states,
         root, prior_root_distn, P_default=None):
     """
@@ -277,8 +270,8 @@ def get_node_to_distn_naive(T, node_to_allowed_states,
         # If the log likelihood cannot be computed,
         # then skip to the next state assignment.
         try:
-            ll = get_history_log_likelihood(
-                    T, node_to_state, root, prior_root_distn, P_default)
+            ll = _mc0.get_history_log_likelihood(T, root, node_to_state,
+                    root_distn=prior_root_distn, P_default=P_default)
         except StructuralZeroProb as e:
             continue
 
@@ -399,7 +392,8 @@ def get_node_to_distn(T, node_to_allowed_states, node_to_pmap,
     return node_to_distn
 
 
-def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
+#TODO under destruction
+def xxx_get_joint_endpoint_distn_naive(T, node_to_allowed_states,
         root, prior_root_distn, P_default=None):
     """
 
@@ -439,8 +433,8 @@ def get_joint_endpoint_distn_naive(T, node_to_allowed_states,
         # If the log likelihood cannot be computed,
         # then skip to the next state assignment.
         try:
-            ll = get_history_log_likelihood(
-                    T, node_to_state, root, prior_root_distn, P_default)
+            ll = _mc0.get_history_log_likelihood(T, root, node_to_state,
+                    root_distn=prior_root_distn, P_default=P_default)
         except StructuralZeroProb as e:
             continue
 

@@ -4,6 +4,8 @@ Generic functions relevant to algorithms involving Markov chains.
 """
 from __future__ import division, print_function, absolute_import
 
+import itertools
+
 import numpy as np
 import networkx as nx
 
@@ -237,7 +239,7 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn):
 
 #TODO under construction -- wait until get_history_log_likelihood
 #TODO has been moved into this generic markov chain module
-def yyy_get_joint_endpoint_distn_naive(T, root, node_to_set,
+def get_joint_endpoint_distn_naive(T, root, node_to_set,
         root_distn=None, P_default=None):
     """
 
@@ -267,7 +269,7 @@ def yyy_get_joint_endpoint_distn_naive(T, root, node_to_set,
     T_aug = nx.Graph()
     for na, nb in nx.bfs_edges(T, root):
         T_aug.add_edge(na, nb, J=nx.DiGraph())
-    nodes, allowed_states = zip(*node_to_allowed_states.items())
+    nodes, allowed_states = zip(*node_to_set.items())
     for assignment in itertools.product(*allowed_states):
 
         # Get the map corresponding to the assignment.
@@ -277,8 +279,8 @@ def yyy_get_joint_endpoint_distn_naive(T, root, node_to_set,
         # If the log likelihood cannot be computed,
         # then skip to the next state assignment.
         try:
-            ll = get_history_log_likelihood(
-                    T, node_to_state, root, prior_root_distn, P_default)
+            ll = get_history_log_likelihood(T, root, node_to_state,
+                    root_distn=root_distn, P_default=P_default)
         except StructuralZeroProb as e:
             continue
 
