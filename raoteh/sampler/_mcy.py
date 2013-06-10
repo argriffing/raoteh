@@ -56,11 +56,6 @@ def get_node_to_pset(T, root,
         A map from a node to the set of states with positive subtree likelihood.
 
     """
-    # Input validation.
-    if len(set(T)) < 2:
-        raise ValueError('expected at least two nodes in the tree '
-                'but found only the following nodes: ' + str(sorted(T)))
-
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
     predecessors = nx.dfs_predecessors(T, root)
