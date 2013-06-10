@@ -283,6 +283,14 @@ def get_likelihood(T, root,
 
 def get_history_log_likelihood(T, root, node_to_state,
         root_distn=None, P_default=None):
+    return _mc0.get_history_log_likelihood(T, root, node_to_state,
+            root_distn=root_distn, P_default=P_default)
+
+
+#TODO redirect this to mc0 and eventually delete
+#TODO because it does not depend on the observation details
+def xxx_get_history_log_likelihood(T, root, node_to_state,
+        root_distn=None, P_default=None):
     """
     Compute the log likelihood for a fully augmented history.
 

@@ -231,6 +231,7 @@ def get_zero_step_posterior_distn(prior_distn, pmap):
     return get_normalized_dict_distn(d)
 
 
+#TODO eventually remove this
 def get_history_log_likelihood(T, node_to_state, root, root_distn,
         P_default=None):
         return _mcx.get_history_log_likelihood(T, root, node_to_state,

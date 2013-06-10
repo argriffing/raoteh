@@ -4,6 +4,7 @@ Generic functions relevant to algorithms involving Markov chains.
 """
 from __future__ import division, print_function, absolute_import
 
+import numpy as np
 import networkx as nx
 
 from raoteh.sampler._util import (
@@ -64,6 +65,67 @@ def get_node_to_set(T, root, node_to_pset, P_default=None):
 
     # Return the map.
     return node_to_set
+
+
+def get_history_log_likelihood(T, root, node_to_state,
+        root_distn=None, P_default=None):
+    """
+    Compute the log likelihood for a fully augmented history.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        Tree optionally annotated with transition matrices.
+    root : integer
+        Root node.
+    node_to_state : dict
+        Each node in the tree is mapped to an integer state.
+    root_distn : dict, optional
+        Sparse prior distribution over states at the root.
+    P_default : weighted directed networkx graph, optional
+        A default universal probability transition matrix.
+
+    Returns
+    -------
+    log_likelihood : float
+        The log likelihood of the fully augmented history.
+
+    """
+    # Input validation.
+    bad = set(T) - set(node_to_state)
+    if bad:
+        raise ValueError(
+                'to compute the history log likelihood all nodes in the tree '
+                'must have a known state, but this state has not been '
+                'provided for the following nodes: ' + str(sorted(bad)))
+
+    # Initialize the log likelihood.
+    log_likelihood = 0
+
+    # Add the log likelihood contribution from the root.
+    root_state = node_to_state[root]
+    if root_distn is not None:
+        if root_state not in root_distn:
+            raise StructuralZeroProb('zero prior for the root')
+        log_likelihood += np.log(root_distn[root_state])
+
+    # Add the log likelihood contribution from state transitions.
+    for na, nb in nx.bfs_edges(T, root):
+        edge = T[na][nb]
+        P = edge.get('P', P_default)
+        if P is None:
+            raise ValueError('undefined transition matrix on this edge')
+        sa = node_to_state[na]
+        sb = node_to_state[nb]
+        if not P.has_edge(sa, sb):
+            raise StructuralZeroProb(
+                    'the states of the endpoints of an edge '
+                    'are incompatible with the transition matrix on the edge')
+        p = P[sa][sb]['weight']
+        log_likelihood += np.log(p)
+
+    # Return the log likelihood.
+    return log_likelihood
 
 
 def get_likelihood(root_pmap, root_distn=None):
@@ -171,4 +233,78 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn):
 
     # Return the augmented tree.
     return T_aug
+
+
+#TODO under construction -- wait until get_history_log_likelihood
+#TODO has been moved into this generic markov chain module
+def yyy_get_joint_endpoint_distn_naive(T, root, node_to_set,
+        root_distn=None, P_default=None):
+    """
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        A tree whose edges are annotated with transition matrices P.
+    root : integer
+        Root node.
+    node_to_set : dict
+        Map from node to collection of allowed states.
+    root_distn : dict, optional
+        A finite distribution over root states.
+    P_default : weighted directed networkx graph, optional
+        A default universal probability transition matrix.
+
+    Returns
+    -------
+    T_aug : undirected networkx graph
+        A tree whose edges are annotated with sparse joint endpoint
+        state distributions as networkx digraphs.
+        These annotations use the attribute 'J' which
+        is supposed to mean 'joint' and which is writeen in
+        single letter caps reminiscent of matrix notation.
+
+    """
+    T_aug = nx.Graph()
+    for na, nb in nx.bfs_edges(T, root):
+        T_aug.add_edge(na, nb, J=nx.DiGraph())
+    nodes, allowed_states = zip(*node_to_allowed_states.items())
+    for assignment in itertools.product(*allowed_states):
+
+        # Get the map corresponding to the assignment.
+        node_to_state = dict(zip(nodes, assignment))
+
+        # Compute the log likelihood for the assignment.
+        # If the log likelihood cannot be computed,
+        # then skip to the next state assignment.
+        try:
+            ll = get_history_log_likelihood(
+                    T, node_to_state, root, prior_root_distn, P_default)
+        except StructuralZeroProb as e:
+            continue
+
+        # Add the likelihood to weights of ordered node pairs on edges.
+        likelihood = np.exp(ll)
+        for na, nb in nx.bfs_edges(T, root):
+            J = T_aug[na][nb]['J']
+            sa = node_to_state[na]
+            sb = node_to_state[nb]
+            if not J.has_edge(sa, sb):
+                J.add_edge(sa, sb, weight=0.0)
+            J[sa][sb]['weight'] += likelihood
+
+    # For each edge, normalize the distribution over ordered state pairs.
+    for na, nb in nx.bfs_edges(T, root):
+        J = T_aug[na][nb]['J']
+        weights = []
+        for sa, sb in J.edges():
+            weights.append(J[sa][sb]['weight'])
+        if not weights:
+            raise Exception('internal error')
+        total_weight = np.sum(weights)
+        for sa, sb in J.edges():
+            J[sa][sb]['weight'] /= total_weight
+    
+    # Return the tree with the sparse joint distributions on edges.
+    return T_aug
+
 
