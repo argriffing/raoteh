@@ -45,6 +45,7 @@ from raoteh.sampler._tmjp import (
         get_tolerance_process_log_likelihood,
         get_absorption_integral,
         get_tolerance_expectations,
+        get_primary_proposal_rate_matrix,
         )
 
 from raoteh.sampler._sampler import (
@@ -832,7 +833,7 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
     #TODO split this function into multiple parts
-    @decorators.skipif(True)
+    #@decorators.skipif(True)
     def test_tmjp_monte_carlo_rao_teh_differential_entropy(self):
         # In this test, we look at conditional expected log likelihoods.
         # These are computed in two ways.
@@ -1043,20 +1044,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             pm_neg_ll_contribs_dwell.append(-dwell_tol_ll)
 
         # Define a rate matrix for a primary process proposal distribution.
-        # This is intended to define a Markov jump process for primary states
-        # which approximates the non-Markov jump process for primary states
-        # defined by the marginal primary component of the compound process.
-        # This biased proposal primary process can be used for either
-        # importance sampling or for a Metropolis-Hastings step
-        # within the Rao-Teh sampling.
-        Q_proposal = nx.DiGraph()
-        for sa, sb in Q_primary.edges():
-            primary_rate = Q_primary[sa][sb]['weight']
-            if primary_to_part[sa] == primary_to_part[sb]:
-                proposal_rate = primary_rate
-            else:
-                proposal_rate = primary_rate * tolerance_distn[1]
-            Q_proposal.add_edge(sa, sb, weight=proposal_rate)
+        Q_proposal = get_primary_proposal_rate_matrix(
+                Q_primary, primary_to_part, tolerance_distn)
 
         # Summarize the primary proposal rates.
         proposal_total_rates = get_total_rates(Q_proposal)

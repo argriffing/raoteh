@@ -37,6 +37,7 @@ from raoteh.sampler._sampler import (
 __all__ = []
 
 
+
 # TODO under construction, modified from _sampler.gen_restricted_histories
 def gen_histories(T, root, Q_primary, primary_to_part,
         node_to_primary_state, rate_on, rate_off,
@@ -213,23 +214,22 @@ def get_feasible_history(
     """
     # First call a _tmjp function to get a primary process
     # proposal rate matrix that approximates its marginal process.
+    # this function is _tmjp.get_primary_proposal_rate_matrix().
 
     # Next sample the primary process trajectory using this proposal,
     # using _sampler.get_restricted_feasible_history().
 
+    # Next use _graph_transform.get_event_map() to get the
+    # times of the primary trajectory events along edges of the base tree.
+
     # Next, for each tolerance process,
     # build a merged tree with len(states)==1 corresponding to the
-    # primary trajectory, and with a single event node at a random
-    # time on each primary trajectory branch.
-
-    #TODO add a function to construct a primary process
-    # proposal distribution that is the infinite-rate limit
-    # of the marginal primary process in the compound tolerance process.
-    # This should go into the _tmjp module.
-
-    #TODO add a function to extract the event node branches and times
-    # from a trajectory given the base tree nodes.
-    # This will go into the _mjp module because it involves times and states.
+    # primary trajectory, and use the primary process event map
+    # to add event nodes at times that interleave the primary process
+    # event times -- in other words, there will be a uniformized
+    # tolerance process event node at a random time
+    # on each primary process trajectory segment,
+    # for every tolerance class.
 
     # Check for state restrictions of nodes that are not even in the tree.
     bad = set(node_to_allowed_states) - set(T)

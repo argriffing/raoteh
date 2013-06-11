@@ -464,3 +464,54 @@ def get_inhomogeneous_mjp(
     # Return the info.
     return T_tol, node_to_allowed_tolerances
 
+
+def get_primary_proposal_rate_matrix(
+        Q_primary, primary_to_part, tolerance_distn):
+    """
+    Get the rate matrix that approximates the primary process.
+
+    The primary process is not a Markov process because it is
+    dependent on the simultaneously evolving tolerance processes.
+    But it can be approximated by a Markov process.
+    The approximation becomes exact in the limit as the
+    tolerance process rates go to infinity.
+
+    Parameters
+    ----------
+    Q_primary : directed weighted networkx graph
+        A sparse transition rate matrix.
+        The diagonal entries are assumed to be missing.
+    primary_to_part : dict
+        Maps the primary state to its tolerance class.
+    tolerance_distn : dict
+        The sparse distribution over tolerance states 0 and 1.
+
+    Returns
+    -------
+    Q_primary_proposal : directed weighted networkx graph
+        A sparse transition rate matrix.
+        The diagonal entries are assumed to be missing.
+        It is related to the primary process transition rate matrix,
+        but the between-tolerance-class rates may be reduced.
+
+    Notes
+    -----
+    Define a rate matrix for a primary process proposal distribution.
+    This is intended to define a Markov jump process for primary states
+    which approximates the non-Markov jump process for primary states
+    defined by the marginal primary component of the compound process.
+    This biased proposal primary process can be used for either
+    importance sampling or for a Metropolis-Hastings step
+    within the Rao-Teh sampling.
+    It is also used to help construct an initial feasible trajectory.
+
+    """
+    Q_proposal = nx.DiGraph()
+    for sa, sb in Q_primary.edges():
+        primary_rate = Q_primary[sa][sb]['weight']
+        if primary_to_part[sa] == primary_to_part[sb]:
+            Q_proposal.add_edge(sa, sb, weight=primary_rate)
+        elif 1 in tolerance_distn:
+            proposal_rate = primary_rate * tolerance_distn[1]
+            Q_proposal.add_edge(sa, sb, weight=proposal_rate)
+    return Q_proposal
