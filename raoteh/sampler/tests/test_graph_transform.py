@@ -290,8 +290,8 @@ class TestGetNodeToState(TestCase):
 
     def test_get_node_to_state_simple_tree_identical_states(self):
         T = nx.Graph()
-        T.add_edge(0, 1, weight=0.1, state=42)
-        T.add_edge(1, 2, weight=0.1, state=42)
+        T.add_edge(0, 1, state=42)
+        T.add_edge(1, 2, state=42)
         all_query_nodes = {0, 1, 2}
         for query_nodes in powerset(all_query_nodes):
             nnodes = len(query_nodes)
@@ -301,9 +301,9 @@ class TestGetNodeToState(TestCase):
 
     def test_get_node_to_state_simple_tree_different_states(self):
         T = nx.Graph()
-        T.add_edge(0, 1, weight=0.1, state=42)
-        T.add_edge(1, 2, weight=0.1, state=42)
-        T.add_edge(2, 3, weight=0.1, state=99)
+        T.add_edge(0, 1, state=42)
+        T.add_edge(1, 2, state=42)
+        T.add_edge(2, 3, state=99)
 
         # Some of the nodes have defined states.
         query_nodes = {0, 1, 3}
@@ -315,6 +315,24 @@ class TestGetNodeToState(TestCase):
         query_nodes = {0, 1, 2, 3}
         assert_raises(ValueError, get_node_to_state, T, query_nodes)
 
+    def test_complicated_tree(self):
+        T = nx.Graph()
+        T.add_edge(0, 1, state=2)
+        T.add_edge(0, 2, state=2)
+        T.add_edge(0, 3, state=2)
+        T.add_edge(3, 4, state=10)
+        T.add_edge(4, 5, state=10)
+        T.add_edge(4, 6, state=10)
+
+        # Most of the nodes have defined states.
+        query_nodes = {0, 1, 2, 4, 5, 6}
+        expected_node_to_state = {0:2, 1:2, 2:2, 4:10, 5:10, 6:10}
+        node_to_state = get_node_to_state(T, query_nodes)
+        assert_equal(node_to_state, expected_node_to_state)
+
+        # One of the nodes is a transition without a defined state.
+        query_nodes = {0, 1, 2, 3, 4, 5, 6}
+        assert_raises(ValueError, get_node_to_state, T, query_nodes)
 
 
 if __name__ == '__main__':
