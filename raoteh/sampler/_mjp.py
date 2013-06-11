@@ -550,3 +550,31 @@ def get_expected_history_statistics_for_log_likelihood():
 
     """
     pass
+
+
+def extract_event_map(T_base, root, T_augmented, event_nodes):
+    """
+
+    Parameters
+    ----------
+    T_base : undirected weighted networkx graph
+        The base tree.
+    root : integer
+        The root node.
+    T_augmented : undirected weighted networkx graph
+        Like the base tree, but with some extra degree-2 nodes.
+    event_nodes : collection of integers
+        Nodes corresponding to events for which the times are to be extracted.
+        The times of the events are with respect to the corresponding
+        edge of the base tree.
+
+    Returns
+    -------
+    event_map : dict
+        Map from an edge of the base tree to a
+        (time, augmented tree edge object) pair.
+        The edge of the base tree is represented by an ordered pair,
+        with the ordering being in the direction away from the root.
+
+    """
+    pass

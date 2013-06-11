@@ -76,22 +76,6 @@ def gen_histories(T, root, Q_primary, primary_to_part,
         If None, then sample an unlimited number of histories.
 
     """
-    # Check for state restrictions of nodes that are not even in the tree.
-    bad = set(node_to_allowed_states) - set(T)
-    if bad:
-        raise ValueError('some of the nodes which have been annotated '
-                'with state restrictions '
-                'are not even in the tree: ' + str(sorted(bad)))
-
-    # Validate some more input.
-    if uniformization_factor <= 1:
-        raise ValueError('the uniformization factor must be greater than 1')
-    if not Q:
-        raise ValueError('the rate matrix is empty')
-    for a, b in Q.edges():
-        if a == b:
-            raise ValueError('the rate matrix should have no loops')
-    
     # Get the total rate away from each state.
     total_rates = get_total_rates(Q)
 
@@ -192,7 +176,7 @@ def resample_poisson(T, state_to_rate, root=None):
     return T_out
 
 
-#TODO unmodified from _sampler.get_restricted_feasible_history
+#TODO under construction; modified from _sampler.get_restricted_feasible_history
 def get_feasible_history(
         T, P, node_to_allowed_states, root, root_distn=None):
     """
@@ -215,15 +199,10 @@ def get_feasible_history(
 
     Returns
     -------
-    feasible_history : weighted undirected networkx graph
-        A feasible history as a networkx graph.
-        The format is similar to that of the input tree,
-        except for a couple of differences.
-        Additional degree-two vertices have been added at the points
-        at which the state has changed along a branch.
-        Each edge is annotated not only by the 'weight'
-        that defines its length, but also by the 'state'
-        which is constant along each edge.
+    primary_trajectory : weighted undirected acyclic networkx graphs
+        Primary process trajectory.
+    tolerance_trajectories : seq of weighted undirected acyclic networkx graphs
+        Sequence of tolerance trajectories.
 
     Notes
     -----
@@ -232,6 +211,26 @@ def get_feasible_history(
     It is up to the caller to remove redundant self-transitions.
 
     """
+    # First call a _tmjp function to get a primary process
+    # proposal rate matrix that approximates its marginal process.
+
+    # Next sample the primary process trajectory using this proposal,
+    # using _sampler.get_restricted_feasible_history().
+
+    # Next, for each tolerance process,
+    # build a merged tree with len(states)==1 corresponding to the
+    # primary trajectory, and with a single event node at a random
+    # time on each primary trajectory branch.
+
+    #TODO add a function to construct a primary process
+    # proposal distribution that is the infinite-rate limit
+    # of the marginal primary process in the compound tolerance process.
+    # This should go into the _tmjp module.
+
+    #TODO add a function to extract the event node branches and times
+    # from a trajectory given the base tree nodes.
+    # This will go into the _mjp module because it involves times and states.
+
     # Check for state restrictions of nodes that are not even in the tree.
     bad = set(node_to_allowed_states) - set(T)
     if bad:
