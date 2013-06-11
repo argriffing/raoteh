@@ -497,7 +497,7 @@ def add_trajectories(T, root, trajectories):
 
         # Add the final segment.
         T_merged.add_edge(
-                prev_node, next_new_node,
+                prev_node, base_nb,
                 weight=base_edge_weight-tm,
                 states=list(current_states))
 

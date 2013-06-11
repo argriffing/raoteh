@@ -212,6 +212,21 @@ class TestAddTrajectories(TestCase):
         T_traj.add_edge(0, 3, state=0, weight=0.1)
         root = 0
         T_merged = add_trajectories(T_base, root, [T_traj])
+        #for na, nb in T_merged.edges():
+            #edge = T_merged[na][nb]
+            #print()
+            #print(na, nb, edge['weight'], edge['states'])
+
+        # The merged tree should have four edges.
+        assert_equal(T_base.size(), 3)
+        assert_equal(T_merged.size(), 4)
+
+        # The total weight of the merged tree
+        # should be the same as the total weight of the base tree.
+        assert_allclose(
+                T_merged.size(weight='weight'),
+                T_base.size(weight='weight'))
+
 
     def test_incompatible_trees(self):
         T_base = nx.Graph()
