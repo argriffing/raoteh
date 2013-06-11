@@ -5,6 +5,7 @@ Graph transformations related to the Rao-Teh sampler.
 from __future__ import division, print_function, absolute_import
 
 import heapq
+from collections import defaultdict
 
 import numpy as np
 import networkx as nx
@@ -330,6 +331,101 @@ def get_node_to_state(T, query_nodes):
     return node_to_state
 
 
+def get_event_map(T, root, traj, predecessors=None):
+    """
+
+    Parameters
+    ----------
+    T : undirected weighted networkx graph
+        The base tree.
+    root : integer
+        The root node.
+        This is used as the root for both the base tree
+        and for the trajectory tree.
+    traj : undirected weighted networkx graph
+        Like the base tree, but with some extra degree-2 nodes.
+        The naming of this argument is inspired by the term trajectory,
+        although it is not required to be a trajectory in any technical sense.
+    predecessors : dict, optional
+        Map from a node in the base tree T to its predecessor in the base tree.
+        The directionality of the predecessor vs. successor
+        is determined by the root.
+
+    Returns
+    -------
+    event_map : dict
+        Map from an edge of the base tree to a
+        (time, augmented tree edge object) pair.
+        The edge of the base tree is represented by an ordered pair,
+        with the ordering being in the direction away from the root.
+        The edge object of the augmented tree
+        corresponds to the edge following the transition event.
+
+    """
+    # Initialize the event map.
+    event_map = defaultdict(list)
+
+    # Bookkeeping.
+    if predecessors is not None:
+        predecessors = nx.dfs_predecessors(T, root)
+    traj_successors = nx.dfs_successors(traj, root)
+
+    # Associate each trajectory edge to a base tree edge.
+    traj_edge_to_base_edge = {}
+    traj_preorder_edges = list(tuple(x) for x in nx.bfs_edges(traj, root))
+    for traj_edge in reversed(traj_preorder_edges):
+        traj_na, traj_nb = traj_edge
+        if traj_nb in T:
+            base_nb = traj_nb
+            base_na = predecessors[base_nb]
+            base_edge = (base_na, base_nb)
+        else:
+            traj_nb_successors = traj_successors[traj_nb]
+            if len(traj_nb_successors) != 1:
+                raise Exception('internal error')
+            traj_nb_successor = traj_nb_successors[0]
+            traj_child_edge = (traj_nb, traj_nb_successor)
+            base_edge = traj_edge_to_base_edge[traj_child_edge]
+        traj_edge_to_base_edge[traj_edge] = base_edge
+    
+    # Each traj node that is not in T is a traj transition event.
+    # Put each transition event into the priority queue
+    # of the corresponding edge of the base tree.
+    base_edge_to_tm = {}
+    for traj_edge in traj_preorder_edges:
+
+        # Unpack the endpoints of the trajectory edge.
+        traj_na, traj_nb = traj_edge
+
+        # If there is no event on this edge then continue.
+        if (traj_na in T) and (traj_nb in T):
+            continue
+
+        # Map the trajectory event back to an edge of the base tree.
+        base_edge = traj_edge_to_base_edge[traj_edge]
+
+        # Get the timing of the current event along the edge.
+        tm = base_edge_to_tm.get(base_edge, 0)
+
+        # Define the networkx edge
+        # corresponding to the segment of the trajectory.
+        traj_edge_object = traj[traj_na][traj_nb]
+
+        # If traj_na is a transition event,
+        # then add its information to the event map.
+        if traj_na not in T:
+            event_info = (tm, traj_edge_object)
+            event_map[base_edge].append(event_info)
+
+        # Update the timing along the edge.
+        traj_weight = traj_edge_object['weight']
+        base_edge_to_tm[base_edge] = tm + traj_weight
+
+    # Return the event map.
+    return event_map
+
+
+
 def add_trajectories(T, root, trajectories, edge_to_event_times=None):
     """
     Construct a tree with merged trajectories.
@@ -416,61 +512,17 @@ def add_trajectories(T, root, trajectories, edge_to_event_times=None):
     # For each trajectory, put events in the priority queue of each edge.
     for traj_index, traj in enumerate(trajectories):
 
-        # Bookkeeping.
-        traj_successors = nx.dfs_successors(traj, root)
+        # Get the timing and nature of events along the edges.
+        event_map = get_event_map(T, root, traj, predecessors=predecessors)
 
-        # Associate each trajectory edge to a base tree edge.
-        traj_edge_to_base_edge = {}
-        traj_preorder_edges = list(tuple(x) for x in nx.bfs_edges(traj, root))
-        for traj_edge in reversed(traj_preorder_edges):
-            traj_na, traj_nb = traj_edge
-            if traj_nb in T:
-                base_nb = traj_nb
-                base_na = predecessors[base_nb]
-                base_edge = (base_na, base_nb)
-            else:
-                traj_nb_successors = traj_successors[traj_nb]
-                if len(traj_nb_successors) != 1:
-                    raise Exception('internal error')
-                traj_nb_successor = traj_nb_successors[0]
-                traj_child_edge = (traj_nb, traj_nb_successor)
-                base_edge = traj_edge_to_base_edge[traj_child_edge]
-            traj_edge_to_base_edge[traj_edge] = base_edge
-        
-        # Each traj node that is not in T is a traj transition event.
-        # Put each transition event into the priority queue
-        # of the corresponding edge of the base tree.
-        base_edge_to_tm = {}
-        for traj_edge in traj_preorder_edges:
-
-            # Unpack the endpoints of the trajectory edge.
-            traj_na, traj_nb = traj_edge
-
-            # If there is no event on this edge then continue.
-            if (traj_na in T) and (traj_nb in T):
-                continue
-
-            # Map the trajectory event back to an edge of the base tree.
-            base_edge = traj_edge_to_base_edge[traj_edge]
-
-            # Get the timing of the current event along the edge.
-            tm = base_edge_to_tm.get(base_edge, 0)
-
-            # Define the networkx edge
-            # corresponding to the segment of the trajectory.
-            traj_edge_object = traj[traj_na][traj_nb]
-
-            # If traj_na is a transition event,
-            # then add its information to the priority queue
-            # associated with the appropriate edge of the base tree.
-            if traj_na not in T:
+        # Add the event information to the priority queue
+        # of the appropriate edge.
+        for base_edge, events in event_map.items():
+            base_na, base_nb = base_edge
+            for tm, traj_edge_object in events:
                 traj_state = traj_edge_object['state']
                 q_item = (tm, traj_index, traj_state)
                 heapq.heappush(base_edge_to_q[base_edge], q_item)
-
-            # Update the timing along the edge.
-            traj_weight = traj_edge_object['weight']
-            base_edge_to_tm[base_edge] = tm + traj_weight
 
     # Initialize the return values.
     T_merged = nx.Graph()
