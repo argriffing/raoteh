@@ -833,7 +833,7 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
     #TODO split this function into multiple parts
-    #@decorators.skipif(True)
+    @decorators.skipif(True)
     def test_tmjp_monte_carlo_rao_teh_differential_entropy(self):
         # In this test, we look at conditional expected log likelihoods.
         # These are computed in two ways.

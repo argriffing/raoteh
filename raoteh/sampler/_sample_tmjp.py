@@ -212,7 +212,9 @@ def get_feasible_history(
     It is up to the caller to remove redundant self-transitions.
 
     """
-    # First call a _tmjp function to get a primary process
+    # First summarize the compound tolerance process given the args.
+
+    # Next call a _tmjp function to get a primary process
     # proposal rate matrix that approximates its marginal process.
     # this function is _tmjp.get_primary_proposal_rate_matrix().
 
