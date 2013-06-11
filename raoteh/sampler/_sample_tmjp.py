@@ -37,9 +37,10 @@ from raoteh.sampler._sampler import (
 __all__ = []
 
 
-# TODO unmodified from _sampler.gen_restricted_histories
-def gen_histories(T, Q, node_to_allowed_states,
-        root, root_distn=None, uniformization_factor=2, nhistories=None):
+# TODO under construction, modified from _sampler.gen_restricted_histories
+def gen_histories(T, root, Q_primary, primary_to_part,
+        node_to_primary_state, rate_on, rate_off,
+        primary_distn, uniformization_factor=2, nhistories=None):
     """
     Use the Rao-Teh method to sample histories on trees.
 
@@ -52,14 +53,22 @@ def gen_histories(T, Q, node_to_allowed_states,
     ----------
     T : weighted undirected acyclic networkx graph
         Weighted tree.
-    Q : directed weighted networkx graph
-        A sparse rate matrix.
-    node_to_allowed_states : dict
-        A map from each node to a set of allowed states.
     root : integer
         Root of the tree.
-    root_distn : dict, optional
-        Map from root state to probability.
+    Q_primary : directed weighted networkx graph
+        A matrix of transition rates among states in the primary process.
+    primary_to_part : dict
+        A map from a primary state to its tolerance class.
+    node_to_primary_state : dict
+        A map from a node to a primary process state observation.
+        If a node is missing from this map,
+        then the observation is treated as missing.
+    rate_on : float
+        Transition rate from tolerance state off to tolerance_state on.
+    rate_off : float
+        Transition rate from tolerance state on to tolerance_state off.
+    primary_distn : dict
+        Map from root state to prior probability.
     uniformization_factor : float, optional
         A value greater than 1.
     nhistories : integer, optional
