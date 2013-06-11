@@ -6,6 +6,7 @@ from __future__ import division, print_function, absolute_import
 
 import heapq
 
+import numpy as np
 import networkx as nx
 
 from raoteh.sampler._util import (
@@ -335,8 +336,8 @@ def add_trajectories(T, root, trajectories):
 
     Parameters
     ----------
-    T_base : undirected networkx graph
-        A base tree.
+    T_base : undirected weighted networkx graph
+        A weighted base tree.
     root : integer
         Root node common to all trajectories.
     trajectories : sequence of undirected weighted networkx graphs
@@ -356,7 +357,7 @@ def add_trajectories(T, root, trajectories):
     successors = nx.dfs_successors(T, root)
     T_bfs_edges = list(tuple(x) for x in nx.bfs_edges(T, root))
 
-    # Input validation.
+    # Check that the trajectories have correct right shape.
     for traj in trajectories:
         traj_specific_nodes = set(traj) - set(T)
         traj_skeleton = remove_selected_degree_two_nodes(
@@ -365,10 +366,20 @@ def add_trajectories(T, root, trajectories):
             raise ValueError('expected the trajectory to follow '
                     'the basic shape of the base tree')
 
-    # For each trajectory get the map from base node to state.
-    traj_base_node_to_state = []
+    # Check that the trajectories have the correct total edge weight.
+    total_base_edge_weight = T.size(weight='weight')
     for traj in trajectories:
-        base_node_to_state = get_node_to_state(traj, set(T))
+        traj_weight = traj.size(weight='weight')
+        if not np.allclose(traj_weight, total_base_edge_weight):
+            raise ValueError('each trajectory should have '
+                    'the same total weight as the base tree')
+
+    # For each trajectory get the map from base node to state.
+    traj_node_to_state = []
+    for traj in trajectories:
+        query_nodes = set(T)
+        node_to_state = get_node_to_state(traj, query_nodes)
+        traj_node_to_state.append(node_to_state)
 
     # For each directed edge of the base tree,
     # maintain a priority queue of interleaved transitions along trajectories.
@@ -418,7 +429,6 @@ def add_trajectories(T, root, trajectories):
             base_edge = traj_edge_to_base_edge[traj_edge]
 
             # Get the timing of the current event along the edge.
-            print(traj_edge_to_base_edge)
             tm = base_edge_to_tm.get(base_edge, 0)
 
             # Define the networkx edge
@@ -437,37 +447,56 @@ def add_trajectories(T, root, trajectories):
             traj_weight = traj_edge_object['weight']
             base_edge_to_tm[base_edge] = tm + traj_weight
 
-    # Initialize the merged graph.
+    # Initialize the merged tree.
     T_merged = nx.Graph()
 
-    # For each edge of the original graph,
-    # add segments to the merged graph, such that no trajectory
+    # For each edge of the original tree,
+    # add segments to the merged tree, such that no trajectory
     # transition occurs within any segment.
+    # Annotate every segment with the state of every trajectory.
+    next_new_node = max(T) + 1
+    for base_edge in T_bfs_edges:
 
+        # Unpack the edge endpoints.
+        base_na, base_nb = base_edge
 
-    #TODO after this is junk
+        # Get the edge weight from the base tree.
+        base_edge_weight = T[base_na][base_nb]['weight']
 
+        # Initialize the most recent segment node.
+        prev_node = base_na
 
-    """
-    # All nodes in the base tree must be in the non-base trees.
-    for T, name in ((T_current, 'current'), (T_traj, 'traj')):
-        bad = set(T_base) - set(T)
-        if bad:
-            raise ValueError('the %s tree is missing the nodes %s '
-                    'which are present in the base tree' % (name, sorted(bad)))
+        # Define the trajectory states at the beginning of the edge.
+        current_states = []
+        for node_to_state in traj_node_to_state:
+            current_state.append(node_to_state[base_na])
 
-    # All non-degree-2 nodes in the non-base trees must be in the base tree.
-    for T, name in ((T_current, 'current'), (T_traj, 'traj')):
-        degree = T.degree()
-        bad = set(n for n in set(T) - set(T_base) if degree[n] != 2)
-        if bad:
-            raise ValueError('the %s tree has the nodes %s '
-                    'of degree other than two '
-                    'which are not in the base tree' % (name, sorted(bad)))
+        # Iterate through the priority queue, adding an edge
+        # when a transition is encountered on any trajectory.
+        q = base_edge_to_q[base_edge]
+        tm = 0
+        while q:
+            tm_event, traj_index, traj_state = heapq.heappop(q)
+            T_merged.add_edge(
+                    prev_node, next_new_node,
+                    weight=tm_event-tm,
+                    states=list(current_states))
+            current_states[traj_index] = traj_state
+            prev_node = next_new_node
+            next_new_node += 1
+            tm = tm_event
 
-    successors = nx.dfs_successors(T_base, root)
-    """
+        # Check that we have reached the states
+        # that we had expected to reach.
+        for traj_index, node_to_state in enumerate(traj_node_to_state):
+            if node_to_state[base_nb] != current_states[traj_index]:
+                raise Exception('internal error')
 
+        # Add the final segment.
+        T_merged.add_edge(
+                prev_node, next_new_node,
+                weight=base_edge_weight-tm,
+                states=list(current_states))
 
+    # Return the merged tree
     return T_merged
-    
