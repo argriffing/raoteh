@@ -357,7 +357,7 @@ def add_trajectories(T, root, trajectories):
     successors = nx.dfs_successors(T, root)
     T_bfs_edges = list(tuple(x) for x in nx.bfs_edges(T, root))
 
-    # Check that the trajectories have correct right shape.
+    # Check that the trajectories have correct shape.
     for traj in trajectories:
         traj_specific_nodes = set(traj) - set(T)
         traj_skeleton = remove_selected_degree_two_nodes(
@@ -372,7 +372,10 @@ def add_trajectories(T, root, trajectories):
         traj_weight = traj.size(weight='weight')
         if not np.allclose(traj_weight, total_base_edge_weight):
             raise ValueError('each trajectory should have '
-                    'the same total weight as the base tree')
+                    'the same total weight as the base tree\n'
+                    'base tree weight: %s\n'
+                    'traj tree weight: %s' % (
+                        total_base_edge_weight, traj_weight))
 
     # For each trajectory get the map from base node to state.
     traj_node_to_state = []
@@ -469,7 +472,7 @@ def add_trajectories(T, root, trajectories):
         # Define the trajectory states at the beginning of the edge.
         current_states = []
         for node_to_state in traj_node_to_state:
-            current_state.append(node_to_state[base_na])
+            current_states.append(node_to_state[base_na])
 
         # Iterate through the priority queue, adding an edge
         # when a transition is encountered on any trajectory.
