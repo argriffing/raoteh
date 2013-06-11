@@ -211,11 +211,10 @@ class TestAddTrajectories(TestCase):
         T_traj.add_edge(20, 2, state=0, weight=0.05)
         T_traj.add_edge(0, 3, state=0, weight=0.1)
         root = 0
-        T_merged = add_trajectories(T_base, root, [T_traj])
-        #for na, nb in T_merged.edges():
-            #edge = T_merged[na][nb]
-            #print()
-            #print(na, nb, edge['weight'], edge['states'])
+        T_merged, dummy_nodes = add_trajectories(T_base, root, [T_traj])
+
+        # There should not be any dummy nodes.
+        assert_equal(dummy_nodes, set())
 
         # The merged tree should have four edges.
         assert_equal(T_base.size(), 3)

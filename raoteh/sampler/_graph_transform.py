@@ -330,7 +330,7 @@ def get_node_to_state(T, query_nodes):
     return node_to_state
 
 
-def add_trajectories(T, root, trajectories):
+def add_trajectories(T, root, trajectories, edge_to_event_times=None):
     """
     Construct a tree with merged trajectories.
 
@@ -343,6 +343,16 @@ def add_trajectories(T, root, trajectories):
     trajectories : sequence of undirected weighted networkx graphs
         Edges should be annotated with 'weight' and with 'state'.
         The state should change only at nodes of degree two.
+    edge_to_event_times : dict, optional
+        If available, this provides a map from an edge of T
+        to a collection of times.
+        The format of each edge key is as an ordered pair of nodes of T,
+        in bfs order radiating from the root.
+        The times are with respect to the node that is closer to the root.
+        The purpose of this arg is to optionally break the
+        trajectory history into pieces for resampling the trajectory
+        of a variable that depends on the trajectories of the variables
+        provided to this function.
 
     Returns
     -------
@@ -350,6 +360,10 @@ def add_trajectories(T, root, trajectories):
         A new tree with more nodes.
         Edges are annotated with 'states' which gives a state
         for each trajectory.
+    dummy_nodes : set of integers
+        A set of dummy nodes added to the tree.
+        These correspond to edge_to_event_times provided as input
+        to this function.
 
     """
     # Bookkeeping.
@@ -390,6 +404,14 @@ def add_trajectories(T, root, trajectories):
     for na, nb in T_bfs_edges:
         base_edge = (na, nb)
         base_edge_to_q[base_edge] = []
+
+    # Put dummy events into the edge-specific priority queues.
+    if edge_to_event_times is not None:
+        for edge, times in edge_to_event_times.items():
+            q = base_edge_to_q[edge]
+            for tm in times:
+                q_item = (tm, None, None)
+                heapq.heappush(q, q_item)
 
     # For each trajectory, put events in the priority queue of each edge.
     for traj_index, traj in enumerate(trajectories):
@@ -450,8 +472,9 @@ def add_trajectories(T, root, trajectories):
             traj_weight = traj_edge_object['weight']
             base_edge_to_tm[base_edge] = tm + traj_weight
 
-    # Initialize the merged tree.
+    # Initialize the return values.
     T_merged = nx.Graph()
+    dummy_nodes = set()
 
     # For each edge of the original tree,
     # add segments to the merged tree, such that no trajectory
@@ -484,7 +507,16 @@ def add_trajectories(T, root, trajectories):
                     prev_node, next_new_node,
                     weight=tm_event-tm,
                     states=list(current_states))
-            current_states[traj_index] = traj_state
+
+            # If the traj_index is None then it means that
+            # the event is a dummy event.
+            # Dummy events do not change the state.
+            if traj_index is None:
+                dummy_nodes.add(next_new_node)
+            else:
+                current_states[traj_index] = traj_state
+
+            # Update for the next iteration.
             prev_node = next_new_node
             next_new_node += 1
             tm = tm_event
@@ -501,5 +533,5 @@ def add_trajectories(T, root, trajectories):
                 weight=base_edge_weight-tm,
                 states=list(current_states))
 
-    # Return the merged tree
-    return T_merged
+    # Return the merged tree and the set of dummy nodes.
+    return T_merged, dummy_nodes
