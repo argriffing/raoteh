@@ -288,10 +288,7 @@ class TestAddTrajectories(TestCase):
 
 class TestGetNodeToState(TestCase):
 
-    def test_get_node_to_state_success(self):
-        # These queries should succeed.
-
-        # Get all node states for a simple tree.
+    def test_get_node_to_state_simple_tree_identical_states(self):
         T = nx.Graph()
         T.add_edge(0, 1, weight=0.1, state=42)
         T.add_edge(1, 2, weight=0.1, state=42)
@@ -301,6 +298,23 @@ class TestGetNodeToState(TestCase):
             node_to_state = get_node_to_state(T, query_nodes)
             assert_equal(set(node_to_state), set(query_nodes))
             assert_equal(set(node_to_state.values()), set([42]*nnodes))
+
+    def test_get_node_to_state_simple_tree_different_states(self):
+        T = nx.Graph()
+        T.add_edge(0, 1, weight=0.1, state=42)
+        T.add_edge(1, 2, weight=0.1, state=42)
+        T.add_edge(2, 3, weight=0.1, state=99)
+
+        # Some of the nodes have defined states.
+        query_nodes = {0, 1, 3}
+        node_to_state = get_node_to_state(T, query_nodes)
+        assert_equal(node_to_state, {0:42, 1:42, 3:99})
+
+        # But node 2 does not have a defined state
+        # because it represents a state transition.
+        query_nodes = {0, 1, 2, 3}
+        assert_raises(ValueError, get_node_to_state, T, query_nodes)
+
 
 
 if __name__ == '__main__':
