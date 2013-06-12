@@ -14,7 +14,7 @@ import random
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform, _mjp
+from raoteh.sampler import _graph_transform, _mjp, _tmjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
@@ -179,24 +179,36 @@ def resample_poisson(T, state_to_rate, root=None):
 
 #TODO under construction; modified from _sampler.get_restricted_feasible_history
 def get_feasible_history(
-        T, P, node_to_allowed_states, root, root_distn=None):
+        T, root,
+        Q_primary, primary_distn,
+        primary_to_part, rate_on, rate_off,
+        node_to_primary_state):
     """
     Find an arbitrary feasible history.
+
+    The first group of args defines the underlying rooted phylogenetic tree.
+    The second group relates purely to the primary process.
+    The third group relates to the rest of the compound tolerance process.
+    The final group consists of observation data.
 
     Parameters
     ----------
     T : weighted undirected acyclic networkx graph
         This is the original tree.
-    P : weighted directed networkx graph
-        A sparse transition matrix assumed to be identical for all edges.
-        The weights are transition probabilities.
-    node_to_allowed_states : dict
-        A map from nodes to states.
-        Nodes with unknown states do not correspond to keys in this map.
     root : integer, optional
         Root of the tree.
-    root_distn : dict, optional
-        Map from root state to probability.
+    Q_primary : weighted directed networkx graph
+        Primary process rate matrix.
+    primary_distn : dict
+        Primary process state distribution.
+    primary_to_part : dict
+        Map from primary state to tolerance class.
+    node_to_primary_state : dict
+        A sparse map from a node to a known primary state.
+    rate_on : float
+        Transition rate from tolerance off -> on.
+    rate_off : float
+        Transition rate from tolerance on -> off.
 
     Returns
     -------
@@ -210,9 +222,23 @@ def get_feasible_history(
     The returned history is not sampled according to any particularly
     meaningful distribution.
     It is up to the caller to remove redundant self-transitions.
+    The primary process is assumed to be time-reversible.
 
     """
-    # First summarize the compound tolerance process given the args.
+    # Get the number of tolerance classes.
+    nparts = len(set(primary_to_part.values()))
+
+    # Get the tolerance state distribution.
+    if (rate_on < 0) or (rate_off < 0):
+        raise ValueError('rates must be non-negative')
+    total_tolerance_rate = rate_on + rate_off
+    if total_tolerance_rate <= 0:
+        raise ValueError('the total tolerance rate must be positive')
+    tolerance_distn = {}
+    if rate_off:
+        tolerance_distn[0] = rate_off / total_tolerance_rate
+    if rate_on:
+        tolerance_distn[1] = rate_on / total_tolerance_rate
 
     # Next call a _tmjp function to get a primary process
     # proposal rate matrix that approximates its marginal process.
@@ -232,13 +258,6 @@ def get_feasible_history(
     # tolerance process event node at a random time
     # on each primary process trajectory segment,
     # for every tolerance class.
-
-    # Check for state restrictions of nodes that are not even in the tree.
-    bad = set(node_to_allowed_states) - set(T)
-    if bad:
-        raise ValueError('some of the nodes which have been annotated '
-                'with state restrictions '
-                'are not even in the tree: ' + str(sorted(bad)))
 
     # Bookkeeping.
     non_event_nodes = set(T)

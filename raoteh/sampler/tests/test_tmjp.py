@@ -46,6 +46,7 @@ from raoteh.sampler._tmjp import (
         get_absorption_integral,
         get_tolerance_expectations,
         get_primary_proposal_rate_matrix,
+        get_example_tolerance_process_info,
         )
 
 from raoteh.sampler._sampler import (
@@ -60,7 +61,8 @@ from raoteh.sampler._sample_tree import (
         )
 
 
-def _get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
+#TODO under destruction having been moved...
+def xxx_get_tolerance_process_info(tolerance_rate_on, tolerance_rate_off):
     """
 
     Returns
@@ -229,9 +231,10 @@ class TestMonteCarloLikelihoodRatio(TestCase):
 
         # Define some other properties of the process,
         # in a way that is not object-oriented.
+        info = get_example_tolerance_process_info(rate_on, rate_off)
         (primary_distn, Q_primary, primary_to_part,
                 compound_to_primary, compound_to_tolerances, compound_distn,
-                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+                Q_compound) = info
 
         # Summarize properties of the process.
         nprimary = len(primary_distn)
@@ -322,9 +325,10 @@ class TestMonteCarloLikelihoodRatio(TestCase):
 
         # Define some other properties of the process,
         # in a way that is not object-oriented.
+        info = get_example_tolerance_process_info(rate_on, rate_off)
         (primary_distn, Q_primary, primary_to_part,
                 compound_to_primary, compound_to_tolerances, compound_distn,
-                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+                Q_compound) = info
 
         # Summarize properties of the process.
         nprimary = len(primary_distn)
@@ -474,9 +478,10 @@ def _neg_log_likelihood_for_minimization(
     rate_on, rate_off = np.exp(X)
 
     # Get the compound rate matrix and stationary distribution.
+    info = get_example_tolerance_process_info(rate_on, rate_off)
     (primary_distn, Q, primary_to_part,
             compound_to_primary, compound_to_tolerances, compound_distn,
-            Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+            Q_compound) = info
 
     # Return the negative log likelihood for minimization.
     log_likelihood = 0.0
@@ -507,9 +512,10 @@ class TestExpectationMaximization(TestCase):
 
         # Define some other properties of the process,
         # in a way that is not object-oriented.
+        info = get_example_tolerance_process_info(rate_on, rate_off)
         (primary_distn, Q, primary_to_part,
                 compound_to_primary, compound_to_tolerances, compound_distn,
-                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+                Q_compound) = info
 
         # Summarize properties of the process.
         ncompound = len(compound_to_primary)
@@ -610,9 +616,10 @@ class TestFullyAugmentedLikelihood(TestCase):
 
         # Define some other properties of the process,
         # in a way that is not object-oriented.
+        info = get_example_tolerance_process_info(rate_on, rate_off)
         (primary_distn, Q, primary_to_part,
                 compound_to_primary, compound_to_tolerances, compound_distn,
-                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+                Q_compound) = info
 
         # Summarize the other properties.
         nprimary = len(primary_distn)
@@ -773,9 +780,10 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
 
         # Define some other properties of the process,
         # in a way that is not object-oriented.
+        info = get_example_tolerance_process_info(rate_on, rate_off)
         (primary_distn, Q, primary_to_part,
                 compound_to_primary, compound_to_tolerances, compound_distn,
-                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+                Q_compound) = info
 
         # Summarize properties of the process.
         nprimary = len(primary_distn)
@@ -846,9 +854,10 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
         # Define some other properties of the process,
         # in a way that is not object-oriented.
+        info = get_example_tolerance_process_info(rate_on, rate_off)
         (primary_distn, Q_primary, primary_to_part,
                 compound_to_primary, compound_to_tolerances, compound_distn,
-                Q_compound) = _get_tolerance_process_info(rate_on, rate_off)
+                Q_compound) = info
 
         # Summarize properties of the process.
         nprimary = len(primary_distn)
