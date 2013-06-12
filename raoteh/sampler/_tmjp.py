@@ -202,7 +202,7 @@ def get_absorption_integral(T, node_to_allowed_states,
 
     Returns
     -------
-    x : x
+    absorption_expectation : float
         expectation
 
     """
@@ -305,15 +305,15 @@ def get_tolerance_expectations(
     ----------
     primary_to_part : x
         x
-    T_primary : x
-        x
-    Q_primary : x
-        x
-    root : x
-        x
     rate_on : x
         x
     rate_off : x
+        x
+    Q_primary : x
+        x
+    T_primary : x
+        x
+    root : x
         x
 
     Returns
@@ -415,7 +415,24 @@ def get_inhomogeneous_mjp(
         primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
         tolerance_class):
     """
-    Get a restricted inhomogeneous Markov jump process.
+    Get a restricted piecewise homogeneous Markov jump process.
+
+    Parameters
+    ----------
+    primary_to_part : dict
+        Map from primary state to tolerance class.
+    rate_on : float
+        Transition rate from tolerance state off to on.
+    rate_off : float
+        Transition rate from tolerance state on to off.
+    Q_primary : directed weighted networkx graph
+        Primary process rate matrix.
+    T_primary : weighted undirected networkx graph
+        Primary process trajectory.
+    root : integer
+        Root node
+    tolerance_class : integer
+        The tolerance class under consideration.
 
     Returns
     -------

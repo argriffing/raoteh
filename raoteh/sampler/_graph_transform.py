@@ -425,7 +425,6 @@ def get_event_map(T, root, traj, predecessors=None):
     return event_map
 
 
-
 def add_trajectories(T, root, trajectories, edge_to_event_times=None):
     """
     Construct a tree with merged trajectories.

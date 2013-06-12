@@ -245,16 +245,98 @@ def get_feasible_history(
             T, P_proposal, node_to_primary_state,
             root=root, root_distn=primary_distn)
 
-    # Next use _graph_transform.get_event_map() to get the
-    # times of the primary trajectory events along edges of the base tree.
+    # Get the times of the primary trajectory events
+    # along edges of the base tree.
+    primary_event_map = _graph_transform.get_event_map(
+            T, root, primary_trajectory, predecessors=None)
 
-    # Next, for each tolerance process,
-    # build a merged tree with len(states)==1 corresponding to the
-    # primary trajectory, and use the primary process event map
-    # to add event nodes at times that interleave the primary process
-    # event times -- in other words, there will be a uniformized
-    # tolerance process event node at a random time
-    # on each primary process trajectory segment,
-    # for every tolerance class.
+    # Initialize the list of tolerance process trajectories.
+    tolerance_trajectories = []
+    for tolerance_class in range(nparts):
+
+        # Define tolerance process uniformization event times,
+        # so that an assignment of tolerance states will be possible.
+        # This can be accomplished by putting a tolerance process
+        # uniformization event at a random time on each
+        # primary trajectory segment.
+        edge_to_event_times = {}
+        for base_edge, events in primary_event_map.items():
+
+            # Unpack the base edge nodes, ordered away from the root.
+            base_na, base_nb = base_edge
+
+            # Initialize the set of tolerance event times.
+            tolerance_event_times = set()
+
+            # Add a tolerance process event
+            # before the first primary process transition.
+            dead_time = T[base_na][base_nb]['weight']
+            if events:
+                dead_time = min(tm for tm, obj in events)
+            tolerance_event_times.add(random.random() * dead_time)
+
+            # Add a tolerance process event
+            # into every segment that follows a primary process transition.
+            for tm, primary_edge_object in events:
+                edge_length = primary_edge_object['weight']
+                tolerance_event_times.add(tm + random.random() * edge_length)
+
+            # Define the set of tolerance process event times for this edge.
+            edge_to_event_times[base_edge] = tolerance_event_times
+
+        # Build a merged tree corresponding to the primary trajectory,
+        # and use the primary process event map to add event nodes
+        # at times that interleave the primary process event times.
+        T_merged, event_nodes = _graph_transform.add_trajectories(T, root,
+                [primary_trajectory],
+                edge_to_event_times=edge_to_event_times)
+
+        # Construct the 'chunk tree' whose edges
+        # are in correspondence with the tolerance event nodes.
+        info = _graph_transform.get_chunk_tree(T_merged, event_nodes, root)
+        chunk_tree, non_event_node_map, event_node_map = info
+
+        # Next, determine the emission likelihood for each chunk tree node
+        # for each possible tolerance state.
+        # For general continuous-time Bayesian networks
+        # this would depend on all transition types and all dwell times
+        # in each state within the primary subtree defined by the chunk node,
+        # but because the tolerance process is less general,
+        # the emission likelihood is less complicated.
+        #
+        # If the tolerance state is on,
+        # then the primary process state in the subtree
+        # corresponding to the chunk node does not matter
+        # for our purposes.
+        #
+        # When the tolerance state is off,
+        # then we may want the likelihood to be zero.
+        # This would be the case if the tolerance class
+        # of the primary process is the same as the current
+        # tolerance class,
+        # anywhere in the subtree corresponding to the chunk node.
+        # If this is nowhere the case, then the emission likelihood
+        # is taken to be 1.
+        chunk_node_to_state_to_likelihood = {}
+        for chunk_node in chunk_tree:
+            chunk_node_to_state_to_likelihood[chunk_node] = {0:1, 1:1}
+        for node, chunk_node in non_event_node_map.items():
+            state_to_likelihood = chunk_node_to_state_to_likelihood[chunk_node]
+            for neighbor in T_merged[node]:
+                primary_state = T_merged[node][neighbor]['states'][0]
+                if primary_to_part[primary_state] == tolerance_class:
+                    if 0 in state_to_likelihood:
+                        del state_to_likelihood[0]
+
+        # Use mcz-type conditional sampling to
+        # sample tolerance states at each node of the chunk tree.
+
+        # Map the sampled chunk node tolerance states back onto
+        # the base tree to give the sampled tolerance process trajectory.
+
+        # Add the tolerance trajectory to the list.
+        tolerance_trajectories.append(tolerance_trajectory)
+
+    # Return the feasible trajectories.
     return primary_trajectory, tolerance_trajectories
 
