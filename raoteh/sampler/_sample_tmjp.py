@@ -14,7 +14,7 @@ import random
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform, _mjp, _tmjp
+from raoteh.sampler import _graph_transform, _sampler, _mjp, _tmjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
@@ -231,12 +231,19 @@ def get_feasible_history(
     # Get the tolerance state distribution.
     tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
 
-    # Next call a _tmjp function to get a primary process
-    # proposal rate matrix that approximates its marginal process.
-    # this function is _tmjp.get_primary_proposal_rate_matrix().
+    # Get a primary process proposal rate matrix
+    # that approximates the primary component of the compound process.
+    Q_proposal = _tmjp.get_primary_proposal_rate_matrix(
+            Q_primary, primary_to_part, tolerance_distn)
 
-    # Next sample the primary process trajectory using this proposal,
-    # using _sampler.get_restricted_feasible_history().
+    # Get the uniformized transition probability matrix
+    # corresponding to the primary proposal transition rate matrix.
+    P_proposal = _sampler.get_uniformized_transition_matrix(Q_proposal)
+
+    # Sample the primary process trajectory using this proposal.
+    primary_trajectory = _sampler.get_feasible_history(
+            T, P_proposal, node_to_primary_state,
+            root=root, root_distn=primary_distn)
 
     # Next use _graph_transform.get_event_map() to get the
     # times of the primary trajectory events along edges of the base tree.
@@ -249,39 +256,5 @@ def get_feasible_history(
     # tolerance process event node at a random time
     # on each primary process trajectory segment,
     # for every tolerance class.
-
-    # Bookkeeping.
-    non_event_nodes = set(T)
-
-    # Repeatedly split edges until no structural error is raised.
-    events_per_edge = 0
-    k = None
-    while True:
-
-        # If the number of events per edge is already as large
-        # as the number of states, then no feasible solution exists.
-        # For this conclusion to be valid,
-        # self-transitions (as in uniformization) must be allowed,
-        # otherwise strange things can happen because of periodicity.
-        if events_per_edge > len(P):
-            raise Exception('failed to find a feasible history')
-
-        # Increment some stuff and bisect edges if appropriate.
-        if k is None:
-            k = 0
-        else:
-            T = _graph_transform.get_edge_bisected_graph(T)
-            events_per_edge += 2**k
-            k += 1
-
-        # Get the event nodes.
-        event_nodes = set(T) - non_event_nodes
-
-        # Try to sample edge states.
-        try:
-            return resample_restricted_edge_states(
-                    T, P, node_to_allowed_states, event_nodes,
-                    root=root, prior_root_distn=root_distn)
-        except StructuralZeroProb as e:
-            pass
+    return primary_trajectory, tolerance_trajectories
 
