@@ -126,18 +126,16 @@ def remove_selected_degree_two_nodes(T, root, expendable_nodes):
         # Get the essential ancestor of the current node.
         if na in expendable_nodes:
             ancestor = rnode_to_ancestor[na]
+        else:
+            ancestor = na
 
         # If nb is not expendable, then an edge will be added.
         # If nb is expendable then expendable edge info will be
         # initialized or extended.
         if nb not in expendable_nodes:
-            if na in expendable_nodes:
-                T_out.add_edge(ancestor, nb)
-            else:
-                T_out.add_edge(na, nb)
+            T_out.add_edge(ancestor, nb)
         else:
-            if na not in expendable_nodes:
-                rnode_to_ancestor[nb] = na
+            rnode_to_ancestor[nb] = ancestor
 
     # Return the new tree as a networkx graph.
     return T_out
@@ -446,7 +444,7 @@ def get_event_map(T, root, traj, predecessors=None):
     event_map = defaultdict(list)
 
     # Bookkeeping.
-    if predecessors is not None:
+    if predecessors is None:
         predecessors = nx.dfs_predecessors(T, root)
     traj_successors = nx.dfs_successors(traj, root)
 

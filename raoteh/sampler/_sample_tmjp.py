@@ -10,6 +10,7 @@ from __future__ import division, print_function, absolute_import
 
 import itertools
 import random
+from collections import defaultdict
 
 import numpy as np
 import networkx as nx
@@ -312,8 +313,8 @@ def get_feasible_history(
         # Get the map from each chunk node to the set of
         # tolerance classes of primary states that fall within
         # the trajectory subtree represented by that chunk node.
-        chunk_node_to_tol_set = defaultdict(set())
-        for merged_edge in nx.bfs_edge(T_merged, root):
+        chunk_node_to_tol_set = defaultdict(set)
+        for merged_edge in nx.bfs_edges(T_merged, root):
 
             # Unpack the merged edge and get the chunk node that it maps to.
             na, nb = merged_edge
@@ -323,13 +324,14 @@ def get_feasible_history(
             # on the merged edge, and add its tolerance class to
             # the set of tolerance classes associated with the chunk node.
             primary_state = T_merged[na][nb]['states'][0]
-            chunk_node_to_tol_set.add(primary_to_part[primary_state])
+            primary_tol_class = primary_to_part[primary_state]
+            chunk_node_to_tol_set[chunk_node].add(primary_tol_class)
 
         # The 'absorption' represents missed opportunities for the primary
         # trajectory to have transitioned to primary states
         # of the tolerance class of interest.
         chunk_node_to_absorption = defaultdict(float)
-        for merged_edge in nx.bfs_edge(T_merged, root):
+        for merged_edge in nx.bfs_edges(T_merged, root):
 
             # Unpack the merged edge and get the chunk node that it maps to.
             na, nb = merged_edge
@@ -367,7 +369,7 @@ def get_feasible_history(
             else:
                 if chunk_node in chunk_node_to_absorption:
                     absorption = chunk_node_to_absorption[chunk_node]
-                    state_to_likelihood = {0:1, 1:np.exp(-absorption))
+                    state_to_likelihood = {0:1, 1:np.exp(-absorption)}
                 else:
                     state_to_likelihood = {0:1, 1:1}
             chunk_node_to_state_to_likelihood = state_to_likelihood

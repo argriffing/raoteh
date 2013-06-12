@@ -2,26 +2,19 @@
 Sample Markov chain trajectories on trees.
 
 This module uses a particularly simple observation type.
+This is a thin wrapper that uses _mcx to get the node_to_pmap from
+the observation or constraint data and uses _sample_mc0 to sample
+the joint states using the node_to_pmap.
 
 """
 from __future__ import division, print_function, absolute_import
 
-import numpy as np
-import networkx as nx
-
-from raoteh.sampler import _mc0, _mcx
-
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_unnormalized_dict_distn,
-        dict_random_choice,
-        )
+from raoteh.sampler import _mcx, _sample_mc0
 
 
 __all__ = []
 
 
-# TODO most of this depends only on the node_to_pmap
 def resample_states(T, root,
         node_to_state=None, root_distn=None, P_default=None):
     """
@@ -62,47 +55,7 @@ def resample_states(T, root,
     # from each feasible state to the subtree likelihood.
     node_to_pmap = _mcx.get_node_to_pmap(T, root,
             node_to_state=node_to_state, P_default=P_default)
-    root_pmap = node_to_pmap[root]
 
-    # Try to compute the likelihood.
-    # This will raise an informative exception if no path is possible.
-    # If the likelihood is numerically zero then raise a different exception.
-    likelihood = _mc0.get_likelihood(root_pmap, root_distn=root_distn)
-    if likelihood <= 0:
-        raise NumericalZeroProb('numerically intractably '
-                'small likelihood: ' + str(likelihood))
-
-    # Bookkeeping structure related to tree traversal.
-    predecessors = nx.dfs_predecessors(T, root)
-
-    # Sample the node states, beginning at the root.
-    node_to_sampled_state = {}
-    for node in nx.dfs_preorder_nodes(T, root):
-
-        # Get the precomputed pmap associated with the node.
-        # This is a sparse map from state to subtree likelihood.
-        pmap = node_to_pmap[node]
-
-        # Define a prior distribution.
-        if node == root:
-            prior = root_distn
-        else:
-
-            # Get the parent node and its state.
-            parent_node = predecessors[node]
-            parent_state = node_to_sampled_state[parent_node]
-
-            # Get the transition probability matrix.
-            P = T[parent_node][node].get('P', P_default)
-
-            # Get the distribution of a non-root node.
-            sinks = set(P[parent_state]) & set(pmap)
-            prior = dict((s, P[parent_state][s]['weight']) for s in sinks)
-
-        # Sample the state from the posterior distribution.
-        dpost = get_unnormalized_dict_distn(pmap, prior)
-        node_to_sampled_state[node] = dict_random_choice(dpost)
-
-    # Return the map of sampled states.
-    return node_to_sampled_state
-
+    # Use the generic sampler.
+    return _sample_mc0.resample_states(T, root, node_to_pmap,
+            root_distn=root_distn, P_default=P_default)
