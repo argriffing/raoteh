@@ -10,6 +10,7 @@ from __future__ import division, print_function, absolute_import
 
 import itertools
 import random
+import math
 from collections import defaultdict
 
 import numpy as np
@@ -182,7 +183,120 @@ def resample_poisson(T, state_to_rate, root=None):
     return T_out
 
 
-#TODO under construction; modified from _sampler.get_restricted_feasible_history
+def resample_tolerance_states(
+        T, root,
+        primary_to_part,
+        Q_primary, absorption_rate_map, P_tolerance, tolerance_distn,
+        primary_trajectory, edge_to_event_times, tolerance_class):
+    """
+
+    Parameters
+    ----------
+
+    Returns
+    -------
+
+    """
+    # Build a merged tree corresponding to the primary trajectory,
+    # and use the primary process event map to add event nodes
+    # at times that interleave the primary process event times.
+    T_merged, event_nodes = _graph_transform.add_trajectories(T, root,
+            [primary_trajectory],
+            edge_to_event_times=edge_to_event_times)
+
+    # Construct the 'chunk tree' whose edges
+    # are in correspondence with the tolerance event nodes.
+    info = _graph_transform.get_chunk_tree_type_b(
+            T_merged, root, event_nodes)
+    chunk_tree, edge_to_chunk_node, event_node_to_chunk_edge = info
+
+    # Get the map from each chunk node to the set of
+    # tolerance classes of primary states that fall within
+    # the trajectory subtree represented by that chunk node.
+    chunk_node_to_tol_set = defaultdict(set)
+    for merged_edge in nx.bfs_edges(T_merged, root):
+
+        # Unpack the merged edge and get the chunk node that it maps to.
+        na, nb = merged_edge
+        chunk_node = edge_to_chunk_node[merged_edge]
+
+        # Get the tolerance class of the primary state of the trajectory
+        # on the merged edge, and add its tolerance class to
+        # the set of tolerance classes associated with the chunk node.
+        primary_state = T_merged[na][nb]['states'][0]
+        primary_tol_class = primary_to_part[primary_state]
+        chunk_node_to_tol_set[chunk_node].add(primary_tol_class)
+
+    # The 'absorption' represents missed opportunities for the primary
+    # trajectory to have transitioned to primary states
+    # of the tolerance class of interest.
+    chunk_node_to_absorption = defaultdict(float)
+    for merged_edge in nx.bfs_edges(T_merged, root):
+
+        # Unpack the merged edge and get the chunk node that it maps to.
+        na, nb = merged_edge
+        chunk_node = edge_to_chunk_node[merged_edge]
+        
+        # Get the tolerance class of the primary state of the trajectory
+        # on the merged edge, and add its 'absorption'
+        # to the cumulative absorption associated with the chunk node.
+        primary_state = T_merged[na][nb]['states'][0]
+        tol_to_absorption = absorption_rate_map[primary_state]
+        if tolerance_class in tol_to_absorption:
+            absorption_contrib = tol_to_absorption[tolerance_class]
+            chunk_node_to_absorption[chunk_node] += absorption_contrib
+
+    # For each chunk node, construct a map from tolerance state
+    # to an emission likelihood.
+    # This construction uses the set of tolerance classes
+    # represented within each chunk node,
+    # and it also uses the 'absorption' of each chunk node
+    # with respect to the current tolerance class.
+    # If the current tolerance class is represented in a given
+    # chunk node, then the tolerance state 0 is penalized
+    # by assigning a likelihood of zero.
+    # Otherwise if the current tolerance class is not represented
+    # in the given chunk node, then the tolerance state 1 is penalized
+    # according to the missed opportunities of the primary process
+    # to have transitioned to a primary state of the given tolerance class;
+    # this multiplicative likelihood penalty is
+    # the exponential of the negative of the chunk node 'absorption'
+    # with respect to the current tolerance class.
+    chunk_node_to_state_to_likelihood = {}
+    for chunk_node in chunk_tree:
+        if tolerance_class in chunk_node_to_tol_set:
+            state_to_likelihood = {1:1}
+        else:
+            if chunk_node in chunk_node_to_absorption:
+                absorption = chunk_node_to_absorption[chunk_node]
+                state_to_likelihood = {0:1, 1:math.exp(-absorption)}
+            else:
+                state_to_likelihood = {0:1, 1:1}
+        chunk_node_to_state_to_likelihood[chunk_node] = state_to_likelihood
+
+    # Use mcz-type conditional sampling to
+    # sample tolerance states at each node of the chunk tree.
+    chunk_node_to_tolerance_state = _sample_mcz.resample_states(
+            chunk_tree, root,
+            node_to_state_to_likelihood=chunk_node_to_state_to_likelihood,
+            root_distn=tolerance_distn, P_default=P_tolerance)
+
+    # Map the sampled chunk node tolerance states back onto
+    # the base tree to give the sampled tolerance process trajectory.
+    tolerance_traj = nx.Graph()
+    for merged_edge in nx.bfs_edges(T_merged, root):
+        merged_na, merged_nb = merged_edge
+        weight = T_merged[merged_na][merged_nb]['weight']
+        chunk_node = edge_to_chunk_node[merged_edge]
+        tolerance_state = chunk_node_to_tolerance_state[chunk_node]
+        tolerance_traj.add_edge(
+                merged_na, merged_nb,
+                weight=weight, state=tolerance_state)
+
+    # Return the resampled tolerance trajectory.
+    return tolerance_traj
+
+
 def get_feasible_history(
         T, root,
         Q_primary, primary_distn,
@@ -310,101 +424,13 @@ def get_feasible_history(
             # Define the set of tolerance process event times for this edge.
             edge_to_event_times[base_edge] = tolerance_event_times
 
-        # Build a merged tree corresponding to the primary trajectory,
-        # and use the primary process event map to add event nodes
-        # at times that interleave the primary process event times.
-        T_merged, event_nodes = _graph_transform.add_trajectories(T, root,
-                [primary_trajectory],
-                edge_to_event_times=edge_to_event_times)
-
-        # Construct the 'chunk tree' whose edges
-        # are in correspondence with the tolerance event nodes.
-        info = _graph_transform.get_chunk_tree_type_b(
-                T_merged, root, event_nodes)
-        chunk_tree, edge_to_chunk_node, event_node_to_chunk_edge = info
-
-        # Get the map from each chunk node to the set of
-        # tolerance classes of primary states that fall within
-        # the trajectory subtree represented by that chunk node.
-        chunk_node_to_tol_set = defaultdict(set)
-        for merged_edge in nx.bfs_edges(T_merged, root):
-
-            # Unpack the merged edge and get the chunk node that it maps to.
-            na, nb = merged_edge
-            chunk_node = edge_to_chunk_node[merged_edge]
-
-            # Get the tolerance class of the primary state of the trajectory
-            # on the merged edge, and add its tolerance class to
-            # the set of tolerance classes associated with the chunk node.
-            primary_state = T_merged[na][nb]['states'][0]
-            primary_tol_class = primary_to_part[primary_state]
-            chunk_node_to_tol_set[chunk_node].add(primary_tol_class)
-
-        # The 'absorption' represents missed opportunities for the primary
-        # trajectory to have transitioned to primary states
-        # of the tolerance class of interest.
-        chunk_node_to_absorption = defaultdict(float)
-        for merged_edge in nx.bfs_edges(T_merged, root):
-
-            # Unpack the merged edge and get the chunk node that it maps to.
-            na, nb = merged_edge
-            chunk_node = edge_to_chunk_node[merged_edge]
-            
-            # Get the tolerance class of the primary state of the trajectory
-            # on the merged edge, and add its 'absorption'
-            # to the cumulative absorption associated with the chunk node.
-            primary_state = T_merged[na][nb]['states'][0]
-            tol_to_absorption = absorption_rate_map[primary_state]
-            if tolerance_class in tol_to_absorption:
-                absorption_contrib = tol_to_absorption[tolerance_class]
-                chunk_node_to_absorption[chunk_node] += absorption_contrib
-
-        # For each chunk node, construct a map from tolerance state
-        # to an emission likelihood.
-        # This construction uses the set of tolerance classes
-        # represented within each chunk node,
-        # and it also uses the 'absorption' of each chunk node
-        # with respect to the current tolerance class.
-        # If the current tolerance class is represented in a given
-        # chunk node, then the tolerance state 0 is penalized
-        # by assigning a likelihood of zero.
-        # Otherwise if the current tolerance class is not represented
-        # in the given chunk node, then the tolerance state 1 is penalized
-        # according to the missed opportunities of the primary process
-        # to have transitioned to a primary state of the given tolerance class;
-        # this multiplicative likelihood penalty is
-        # the exponential of the negative of the chunk node 'absorption'
-        # with respect to the current tolerance class.
-        chunk_node_to_state_to_likelihood = {}
-        for chunk_node in chunk_tree:
-            if tolerance_class in chunk_node_to_tol_set:
-                state_to_likelihood = {1:1}
-            else:
-                if chunk_node in chunk_node_to_absorption:
-                    absorption = chunk_node_to_absorption[chunk_node]
-                    state_to_likelihood = {0:1, 1:np.exp(-absorption)}
-                else:
-                    state_to_likelihood = {0:1, 1:1}
-            chunk_node_to_state_to_likelihood[chunk_node] = state_to_likelihood
-
-        # Use mcz-type conditional sampling to
-        # sample tolerance states at each node of the chunk tree.
-        chunk_node_to_tolerance_state = _sample_mcz.resample_states(
-                chunk_tree, root,
-                node_to_state_to_likelihood=chunk_node_to_state_to_likelihood,
-                root_distn=tolerance_distn, P_default=P_tolerance)
-
-        # Map the sampled chunk node tolerance states back onto
-        # the base tree to give the sampled tolerance process trajectory.
-        tolerance_traj = nx.Graph()
-        for merged_edge in nx.bfs_edges(T_merged, root):
-            merged_na, merged_nb = merged_edge
-            weight = T_merged[merged_na][merged_nb]['weight']
-            chunk_node = edge_to_chunk_node[merged_edge]
-            tolerance_state = chunk_node_to_tolerance_state[chunk_node]
-            tolerance_traj.add_edge(
-                    merged_na, merged_nb,
-                    weight=weight, state=tolerance_state)
+        # Sample the rest of the tolerance trajectory
+        # by sampling the tolerance states given the uniformized timings.
+        tolerance_traj = resample_tolerance_states(
+                T, root,
+                primary_to_part,
+                Q_primary, absorption_rate_map, P_tolerance, tolerance_distn,
+                primary_trajectory, edge_to_event_times, tolerance_class)
 
         # Add the tolerance trajectory to the list.
         tolerance_trajectories.append(tolerance_traj)
