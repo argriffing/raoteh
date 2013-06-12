@@ -44,6 +44,36 @@ from raoteh.sampler._mjp import (
 __all__ = []
 
 
+def get_tolerance_distn(rate_off, rate_on):
+    """
+
+    Parameters
+    ----------
+    rate_off : float
+        Rate of tolerance transition from on to off.
+    rate_on : float
+        Rate of tolerance transition from off to on.
+
+    Returns
+    -------
+    tolerance_distn : dict
+        Sparse distribution over the tolerance states 0 and 1.
+        Tolerance state 0 is off, and tolerance state 1 is on.
+
+    """
+    if (rate_off < 0) or (rate_on < 0):
+        raise ValueError('rates must be non-negative')
+    total_tolerance_rate = rate_off + rate_on
+    if total_tolerance_rate <= 0:
+        raise ValueError('the total tolerance rate must be positive')
+    tolerance_distn = {}
+    if rate_off:
+        tolerance_distn[0] = rate_off / total_tolerance_rate
+    if rate_on:
+        tolerance_distn[1] = rate_on / total_tolerance_rate
+    return tolerance_distn
+
+
 def get_tolerance_process_log_likelihood(
         Q_primary, primary_to_part, T_primary,
         rate_off, rate_on, primary_root_distn, root):
@@ -92,16 +122,7 @@ def get_tolerance_process_log_likelihood(
         raise ValueError('the specified root is not a node in the tree')
 
     # Define the distribution over tolerance states.
-    tolerance_distn = {}
-    total_rate = rate_off + rate_on
-    if (rate_off < 0) or (rate_off < 0) or (total_rate <= 0):
-        raise ValueError(
-                'the tolerance rate_on and rate_off must both be nonzero '
-                'and at least one of them must be positive')
-    if rate_off:
-        tolerance_distn[0] = rate_off / total_rate
-    if rate_on:
-        tolerance_distn[1] = rate_on / total_rate
+    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
     # Get the root state and the transitions of the primary process.
     info = get_history_root_state_and_transitions(T_primary, root=root)
@@ -321,10 +342,7 @@ def get_tolerance_expectations(
     # Summarize the tolerance process.
     total_weight = T_primary.size(weight='weight')
     nparts = len(set(primary_to_part.values()))
-    total_tolerance_rate = rate_on + rate_off
-    tolerance_distn = {
-            0 : rate_off / total_tolerance_rate,
-            1 : rate_on / total_tolerance_rate}
+    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
     # Compute conditional expectations of statistics
     # of the tolerance process.
@@ -581,10 +599,7 @@ def get_example_tolerance_process_info(
     Q.add_weighted_edges_from(primary_transition_rates)
 
     # Define some tolerance process stuff.
-    total_tolerance_rate = tolerance_rate_on + tolerance_rate_off
-    tolerance_distn = {
-            0 : tolerance_rate_off / total_tolerance_rate,
-            1 : tolerance_rate_on / total_tolerance_rate}
+    tolerance_distn = get_tolerance_distn(tolerance_rate_off, tolerance_rate_on)
 
     # Define a couple of tolerance classes.
     nparts = 3

@@ -229,16 +229,7 @@ def get_feasible_history(
     nparts = len(set(primary_to_part.values()))
 
     # Get the tolerance state distribution.
-    if (rate_on < 0) or (rate_off < 0):
-        raise ValueError('rates must be non-negative')
-    total_tolerance_rate = rate_on + rate_off
-    if total_tolerance_rate <= 0:
-        raise ValueError('the total tolerance rate must be positive')
-    tolerance_distn = {}
-    if rate_off:
-        tolerance_distn[0] = rate_off / total_tolerance_rate
-    if rate_on:
-        tolerance_distn[1] = rate_on / total_tolerance_rate
+    tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
 
     # Next call a _tmjp function to get a primary process
     # proposal rate matrix that approximates its marginal process.

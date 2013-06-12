@@ -47,6 +47,7 @@ from raoteh.sampler._tmjp import (
         get_tolerance_expectations,
         get_primary_proposal_rate_matrix,
         get_example_tolerance_process_info,
+        get_tolerance_distn,
         )
 
 from raoteh.sampler._sampler import (
@@ -81,10 +82,7 @@ class TestMonteCarloLikelihoodRatio(TestCase):
         # Summarize properties of the process.
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
-        total_tolerance_rate = rate_on + rate_off
-        tolerance_distn = {
-                0 : rate_off / total_tolerance_rate,
-                1 : rate_on / total_tolerance_rate}
+        tolerance_distn = get_tolerance_distn(rate_off, rate_on)
         ordered_primary_states = sorted(primary_distn)
         ordered_compound_states = sorted(compound_distn)
 
@@ -175,10 +173,7 @@ class TestMonteCarloLikelihoodRatio(TestCase):
         # Summarize properties of the process.
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
-        total_tolerance_rate = rate_on + rate_off
-        tolerance_distn = {
-                0 : rate_off / total_tolerance_rate,
-                1 : rate_on / total_tolerance_rate}
+        tolerance_distn = get_tolerance_distn(rate_off, rate_on)
         all_primary_states = set(primary_distn)
         all_compound_states = set(compound_distn)
 
@@ -363,10 +358,7 @@ class TestExpectationMaximization(TestCase):
         ncompound = len(compound_to_primary)
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
-        total_tolerance_rate = rate_on + rate_off
-        tolerance_distn = {
-                0 : rate_off / total_tolerance_rate,
-                1 : rate_on / total_tolerance_rate}
+        tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
         # Sample a non-tiny random tree without branch lengths.
         T = get_random_agglom_tree(maxnodes=20)
@@ -467,9 +459,7 @@ class TestFullyAugmentedLikelihood(TestCase):
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
         total_tolerance_rate = rate_on + rate_off
-        tolerance_distn = {
-                0 : rate_off / total_tolerance_rate,
-                1 : rate_on / total_tolerance_rate}
+        tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
         # Define a tree with edge weights.
         T = nx.Graph()
@@ -630,10 +620,7 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
         # Summarize properties of the process.
         nprimary = len(primary_distn)
         nparts = len(set(primary_to_part.values()))
-        total_tolerance_rate = rate_on + rate_off
-        tolerance_distn = {
-                0 : rate_off / total_tolerance_rate,
-                1 : rate_on / total_tolerance_rate}
+        tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
         # Sample a non-tiny random tree without branch lengths.
         T = get_random_agglom_tree(maxnodes=20)
@@ -706,6 +693,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         nparts = len(set(primary_to_part.values()))
         compound_total_rates = get_total_rates(Q_compound)
         primary_total_rates = get_total_rates(Q_primary)
+        tolerance_distn = get_tolerance_distn(rate_off, rate_on)
         total_tolerance_rate = rate_on + rate_off
         tolerance_distn = {
                 0 : rate_off / total_tolerance_rate,
