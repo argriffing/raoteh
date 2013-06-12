@@ -29,7 +29,7 @@ from raoteh.sampler._sample_mc import (
         resample_restricted_edge_states,
         )
 
-from raoteh.sampler._sampler import (
+from raoteh.sampler._sample_mjp import (
         get_uniformized_transition_matrix,
         )
 
