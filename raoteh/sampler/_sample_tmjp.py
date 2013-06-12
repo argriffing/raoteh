@@ -15,7 +15,11 @@ from collections import defaultdict
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform, _sampler, _mjp, _tmjp
+from raoteh.sampler import (
+        _graph_transform,
+        _mjp, _tmjp,
+        _sampler, _sample_mcz,
+        )
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
@@ -232,6 +236,15 @@ def get_feasible_history(
     # Get the tolerance state distribution.
     tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
 
+    # Get the tolerance transition rate matrix
+    # and the uniformized tolerance transition probability matrix.
+    Q_tolerance = nx.DiGraph()
+    if rate_on:
+        Q_tolerance.add_edge(0, 1, weight=rate_on)
+    if rate_off:
+        Q_tolerance.add_edge(1, 0, weight=rate_off)
+    P_tolerance = get_uniformized_transition_matrix(Q_tolerance)
+
     # Get a primary process proposal rate matrix
     # that approximates the primary component of the compound process.
     Q_proposal = _tmjp.get_primary_proposal_rate_matrix(
@@ -239,7 +252,7 @@ def get_feasible_history(
 
     # Get the uniformized transition probability matrix
     # corresponding to the primary proposal transition rate matrix.
-    P_proposal = _sampler.get_uniformized_transition_matrix(Q_proposal)
+    P_proposal = get_uniformized_transition_matrix(Q_proposal)
 
     # Sample the primary process trajectory using this proposal.
     primary_trajectory = _sampler.get_feasible_history(
@@ -372,16 +385,29 @@ def get_feasible_history(
                     state_to_likelihood = {0:1, 1:np.exp(-absorption)}
                 else:
                     state_to_likelihood = {0:1, 1:1}
-            chunk_node_to_state_to_likelihood = state_to_likelihood
+            chunk_node_to_state_to_likelihood[chunk_node] = state_to_likelihood
 
         # Use mcz-type conditional sampling to
         # sample tolerance states at each node of the chunk tree.
+        chunk_node_to_tolerance_state = _sample_mcz.resample_states(
+                chunk_tree, root,
+                node_to_state_to_likelihood=chunk_node_to_state_to_likelihood,
+                root_distn=tolerance_distn, P_default=P_tolerance)
 
         # Map the sampled chunk node tolerance states back onto
         # the base tree to give the sampled tolerance process trajectory.
+        tolerance_traj = nx.Graph()
+        for merged_edge in nx.bfs_edges(T_merged, root):
+            merged_na, merged_nb = merged_edge
+            weight = T_merged[merged_na][merged_nb]['weight']
+            chunk_node = edge_to_chunk_node[merged_edge]
+            tolerance_state = chunk_node_to_tolerance_state[chunk_node]
+            tolerance_traj.add_edge(
+                    merged_na, merged_nb,
+                    weight=weight, state=tolerance_state)
 
         # Add the tolerance trajectory to the list.
-        tolerance_trajectories.append(tolerance_trajectory)
+        tolerance_trajectories.append(tolerance_traj)
 
     # Return the feasible trajectories.
     return primary_trajectory, tolerance_trajectories
