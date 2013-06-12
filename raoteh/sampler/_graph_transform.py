@@ -297,6 +297,86 @@ def get_chunk_tree(T, event_nodes, root=None):
     return chunk_tree, non_event_node_map, event_node_map
 
 
+def get_chunk_tree_type_b(T, root, event_nodes):
+    """
+    Construct a certain kind of dual graph.
+
+    This version of the function returns a map
+    from directed edges to their chunk node,
+    where the direction of the directed edges is taken to be
+    the direction away from the root.
+    Every edge of the original tree T is mapped to a chunk node.
+    Event nodes are mapped to directed edges in the chunk tree.
+
+    Parameters
+    ----------
+    T : undirected acyclic networkx graph
+        Input tree graph with integer nodes.
+    root : integer, optional
+        Tree root.
+    event_nodes : set of integers
+        This subset of nodes in the input graph
+        will have bijective correspondence to edges in the chunk tree.
+
+    Returns
+    -------
+    chunk_tree : undirected unweighted acyclic networkx graph
+        A kind of dual tree with new nodes and edges.
+    edge_to_chunk_node : dict
+        A map from each directed edge (an ordered pair of nodes)
+        in the original tree to a node in the chunk tree.
+    event_node_to_chunk_edge : dict
+        A map from each event node in the original tree
+        to a directed edge (an ordered pair of nodes)
+        in the chunk tree.
+
+    """
+    # Partition the input nodes into event and non-event nodes.
+    non_event_nodes = set(T) - set(event_nodes)
+
+    # Check the root.
+    if root in event_nodes:
+        raise Exception('the root cannot be an event node')
+    if root not in non_event_nodes:
+        raise Exception('the root must be a non-event node')
+
+    # Initialize the outputs.
+    chunk_tree = nx.Graph()
+    edge_to_chunk_node = {}
+    event_node_to_chunk_edge = {}
+
+    # Initialize variables related to the root of the tree.
+    chunk_tree.add_node(root)
+    node_to_subsequent_chunk_node = {root : root}
+    next_chunk_node = root + 1
+
+    # Populate the outputs, traversing edges in preorder from the root.
+    for original_edge in nx.bfs_edges(T, root):
+
+        # Unpack the nodes of the original directed edge.
+        na, nb = original_edge
+
+        # Get the subsequent chunk node associated with the parent node.
+        chunk_node = node_to_subsequent_chunk_node[na]
+
+        # Add the edge to the map.
+        edge_to_chunk_node[original_edge] = chunk_node
+
+        # If the child node is an event node,
+        # then begin a new chunk node.
+        if nb in event_nodes:
+            node_to_subsequent_chunk_node[nb] = next_chunk_node
+            chunk_edge = (chunk_node, next_chunk_node)
+            chunk_tree.add_edge(*chunk_edge)
+            event_node_to_chunk_edge[nb] = chunk_edge
+            next_chunk_node += 1
+        else:
+            node_to_subsequent_chunk_node[nb] = chunk_node
+
+    # Return the outputs.
+    return chunk_tree, edge_to_chunk_node, event_node_to_chunk_edge
+
+
 def get_node_to_state(T, query_nodes):
     """
     Get the states of some nodes, by looking at states of adjacent edges.

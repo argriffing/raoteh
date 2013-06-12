@@ -250,6 +250,18 @@ def get_feasible_history(
     primary_event_map = _graph_transform.get_event_map(
             T, root, primary_trajectory, predecessors=None)
 
+    # For each primary process state and each tolerance class,
+    # compute the sum of rates from the primary state
+    # into primary states of that tolerance class.
+    absorption_rate_map = {}
+    for prim_sa, tol_prim_sa in primary_to_part.items():
+        absorption_rates = defaultdict(float)
+        for prim_sb in Q_primary[prim_sa]:
+            tol_prim_sb = primary_to_part[prim_sb]
+            rate = Q_primary[prim_sa][prim_sb]['weight']
+            absorption_rates[tol_prim_sb] += rate
+        absorption_rate_map[prim_sa] = dict(absorption_rates)
+
     # Initialize the list of tolerance process trajectories.
     tolerance_trajectories = []
     for tolerance_class in range(nparts):
@@ -293,40 +305,72 @@ def get_feasible_history(
 
         # Construct the 'chunk tree' whose edges
         # are in correspondence with the tolerance event nodes.
-        info = _graph_transform.get_chunk_tree(T_merged, event_nodes, root)
-        chunk_tree, non_event_node_map, event_node_map = info
+        info = _graph_transform.get_chunk_tree_type_b(
+                T_merged, root, event_nodes)
+        chunk_tree, edge_to_chunk_node, event_node_to_chunk_edge = info
 
-        # Next, determine the emission likelihood for each chunk tree node
-        # for each possible tolerance state.
-        # For general continuous-time Bayesian networks
-        # this would depend on all transition types and all dwell times
-        # in each state within the primary subtree defined by the chunk node,
-        # but because the tolerance process is less general,
-        # the emission likelihood is less complicated.
-        #
-        # If the tolerance state is on,
-        # then the primary process state in the subtree
-        # corresponding to the chunk node does not matter
-        # for our purposes.
-        #
-        # When the tolerance state is off,
-        # then we may want the likelihood to be zero.
-        # This would be the case if the tolerance class
-        # of the primary process is the same as the current
-        # tolerance class,
-        # anywhere in the subtree corresponding to the chunk node.
-        # If this is nowhere the case, then the emission likelihood
-        # is taken to be 1.
+        # Get the map from each chunk node to the set of
+        # tolerance classes of primary states that fall within
+        # the trajectory subtree represented by that chunk node.
+        chunk_node_to_tol_set = defaultdict(set())
+        for merged_edge in nx.bfs_edge(T_merged, root):
+
+            # Unpack the merged edge and get the chunk node that it maps to.
+            na, nb = merged_edge
+            chunk_node = edge_to_chunk_node[merged_edge]
+
+            # Get the tolerance class of the primary state of the trajectory
+            # on the merged edge, and add its tolerance class to
+            # the set of tolerance classes associated with the chunk node.
+            primary_state = T_merged[na][nb]['states'][0]
+            chunk_node_to_tol_set.add(primary_to_part[primary_state])
+
+        # The 'absorption' represents missed opportunities for the primary
+        # trajectory to have transitioned to primary states
+        # of the tolerance class of interest.
+        chunk_node_to_absorption = defaultdict(float)
+        for merged_edge in nx.bfs_edge(T_merged, root):
+
+            # Unpack the merged edge and get the chunk node that it maps to.
+            na, nb = merged_edge
+            chunk_node = edge_to_chunk_node[merged_edge]
+            
+            # Get the tolerance class of the primary state of the trajectory
+            # on the merged edge, and add its 'absorption'
+            # to the cumulative absorption associated with the chunk node.
+            primary_state = T_merged[na][nb]['states'][0]
+            tol_to_absorption = absorption_rate_map[primary_state]
+            if tolerance_class in tol_to_absorption:
+                absorption_contrib = tol_to_absorption[tolerance_class]
+                chunk_node_to_absorption[chunk_node] += absorption_contrib
+
+        # For each chunk node, construct a map from tolerance state
+        # to an emission likelihood.
+        # This construction uses the set of tolerance classes
+        # represented within each chunk node,
+        # and it also uses the 'absorption' of each chunk node
+        # with respect to the current tolerance class.
+        # If the current tolerance class is represented in a given
+        # chunk node, then the tolerance state 0 is penalized
+        # by assigning a likelihood of zero.
+        # Otherwise if the current tolerance class is not represented
+        # in the given chunk node, then the tolerance state 1 is penalized
+        # according to the missed opportunities of the primary process
+        # to have transitioned to a primary state of the given tolerance class;
+        # this multiplicative likelihood penalty is
+        # the exponential of the negative of the chunk node 'absorption'
+        # with respect to the current tolerance class.
         chunk_node_to_state_to_likelihood = {}
         for chunk_node in chunk_tree:
-            chunk_node_to_state_to_likelihood[chunk_node] = {0:1, 1:1}
-        for node, chunk_node in non_event_node_map.items():
-            state_to_likelihood = chunk_node_to_state_to_likelihood[chunk_node]
-            for neighbor in T_merged[node]:
-                primary_state = T_merged[node][neighbor]['states'][0]
-                if primary_to_part[primary_state] == tolerance_class:
-                    if 0 in state_to_likelihood:
-                        del state_to_likelihood[0]
+            if tolerance_class in chunk_node_to_tol_set:
+                state_to_likelihood = {1:1}
+            else:
+                if chunk_node in chunk_node_to_absorption:
+                    absorption = chunk_node_to_absorption[chunk_node]
+                    state_to_likelihood = {0:1, 1:np.exp(-absorption))
+                else:
+                    state_to_likelihood = {0:1, 1:1}
+            chunk_node_to_state_to_likelihood = state_to_likelihood
 
         # Use mcz-type conditional sampling to
         # sample tolerance states at each node of the chunk tree.
