@@ -32,6 +32,7 @@ from raoteh.sampler._sample_mc import (
 
 from raoteh.sampler._sample_mjp import (
         get_uniformized_transition_matrix,
+        resample_poisson,
         )
 
 
@@ -546,58 +547,6 @@ def gen_mh_histories(T, Q, node_to_allowed_states,
         T = resample_restricted_edge_states(
                 T, P, node_to_allowed_states, event_nodes,
                 root=root, prior_root_distn=root_distn)
-
-
-def resample_poisson(T, state_to_rate, root=None):
-    """
-
-    Parameters
-    ----------
-    T : weighted undirected acyclic networkx graph
-        Weighted tree whose edges are annotated with states.
-    state_to_rate : dict
-        Map the state to the expected number of poisson events
-        per edge weight.
-    root : integer, optional
-        Root of the tree.
-
-    Returns
-    -------
-    T_out : weighted undirected acyclic networkx graph
-        Weighted tree without state annotation.
-
-    """
-
-    # If no root was specified then pick one arbitrarily.
-    if root is None:
-        root = get_first_element(T)
-
-    # Define the next node.
-    next_node = max(T) + 1
-
-    # Build the list of weighted edges.
-    weighted_edges = []
-    for a, b in nx.bfs_edges(T, root):
-        weight = T[a][b]['weight']
-        state = T[a][b]['state']
-        rate = state_to_rate[state]
-        prev_node = a
-        total_dwell = 0.0
-        while True:
-            dwell = np.random.exponential(scale = 1/rate)
-            if total_dwell + dwell > weight:
-                break
-            total_dwell += dwell
-            mid_node = next_node
-            next_node += 1
-            weighted_edges.append((prev_node, mid_node, dwell))
-            prev_node = mid_node
-        weighted_edges.append((prev_node, b, weight - total_dwell))
-
-    # Return the resampled tree with poisson events on the edges.
-    T_out = nx.Graph()
-    T_out.add_weighted_edges_from(weighted_edges)
-    return T_out
 
 
 def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):

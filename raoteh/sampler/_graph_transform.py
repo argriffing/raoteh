@@ -424,6 +424,8 @@ def get_event_map(T, root, traj, predecessors=None):
         Like the base tree, but with some extra degree-2 nodes.
         The naming of this argument is inspired by the term trajectory,
         although it is not required to be a trajectory in any technical sense.
+        In particular its edges do not need to be annotated with states.
+        On the other hand its edges need to be annotated with weights.
     predecessors : dict, optional
         Map from a node in the base tree T to its predecessor in the base tree.
         The directionality of the predecessor vs. successor
@@ -432,8 +434,8 @@ def get_event_map(T, root, traj, predecessors=None):
     Returns
     -------
     event_map : dict
-        Map from an edge of the base tree to a
-        (time, augmented tree edge object) pair.
+        Map from an edge of the base tree to a list of
+        (time, augmented tree edge object) pairs.
         The edge of the base tree is represented by an ordered pair,
         with the ordering being in the direction away from the root.
         The edge object of the augmented tree
