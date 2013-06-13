@@ -45,7 +45,7 @@ __all__ = []
 
 
 # TODO under construction, modified from _sampler.gen_restricted_histories
-def gen_histories(T, root, Q_primary, primary_to_part,
+def xxx_gen_histories(T, root, Q_primary, primary_to_part,
         node_to_primary_state, rate_on, rate_off,
         primary_distn, uniformization_factor=2, nhistories=None):
     """
@@ -131,7 +131,7 @@ def gen_histories(T, root, Q_primary, primary_to_part,
 
 
 #TODO unmodified from _sampler.resample_poisson
-def resample_poisson(T, state_to_rate, root=None):
+def xxx_resample_poisson(T, state_to_rate, root=None):
     """
 
     Parameters
@@ -183,6 +183,108 @@ def resample_poisson(T, state_to_rate, root=None):
     return T_out
 
 
+def gen_histories(T, root, Q_primary, primary_to_part,
+        node_to_primary_state, rate_on, rate_off,
+        primary_distn, uniformization_factor=2, nhistories=None):
+    """
+    Use the Rao-Teh method to sample histories on trees.
+
+    Edges of the yielded trees will be augmented
+    with weights and states.
+    The weighted size of each yielded tree should be the same
+    as the weighted size of the input tree.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Weighted tree.
+    root : integer
+        Root of the tree.
+    Q_primary : directed weighted networkx graph
+        A matrix of transition rates among states in the primary process.
+    primary_to_part : dict
+        A map from a primary state to its tolerance class.
+    node_to_primary_state : dict
+        A map from a node to a primary process state observation.
+        If a node is missing from this map,
+        then the observation is treated as missing.
+    rate_on : float
+        Transition rate from tolerance state off to tolerance_state on.
+    rate_off : float
+        Transition rate from tolerance state on to tolerance_state off.
+    primary_distn : dict
+        Map from root state to prior probability.
+    uniformization_factor : float, optional
+        A value greater than 1.
+    nhistories : integer, optional
+        Sample this many histories.
+        If None, then sample an unlimited number of histories.
+
+    """
+    # Get initial jointly feasible trajectories
+    # for the components of the compound process.
+    primary_traj, tolerance_trajectories = get_feasible_history(
+            T, root,
+            Q_primary, primary_distn,
+            primary_to_part, rate_on, rate_off,
+            node_to_primary_state)
+
+    # Define the initial set of nodes.
+    initial_nodes = set(T)
+
+
+    # TODO unmodified dead code after here
+
+    # Get the total rate away from each state.
+    total_rates = get_total_rates(Q)
+
+    # Initialize omega as the uniformization rate.
+    omega = uniformization_factor * max(total_rates.values())
+
+    # Get the uniformized transition matrix.
+    P = get_uniformized_transition_matrix(Q, uniformization_factor)
+
+    # Define the uniformized poisson rates for Rao-Teh resampling.
+    poisson_rates = dict((a, omega - q) for a, q in total_rates.items())
+
+    # Define the initial set of nodes.
+    initial_nodes = set(T)
+
+    # Construct an initial feasible history,
+    # possibly with redundant event nodes.
+    T = get_restricted_feasible_history(T, P, node_to_allowed_states,
+            root=root, root_distn=root_distn)
+
+    # Generate histories using Rao-Teh sampling.
+    for i in itertools.count():
+
+        # Identify and remove the non-original redundant nodes.
+        all_rnodes = _graph_transform.get_redundant_degree_two_nodes(T)
+        expendable_rnodes = all_rnodes - initial_nodes
+        T = _graph_transform.remove_redundant_nodes(T, expendable_rnodes)
+
+        # Yield the sampled history on the tree.
+        yield T
+
+        # If we have sampled enough histories, then return.
+        if nhistories is not None:
+            nsampled = i + 1
+            if nsampled >= nhistories:
+                return
+
+        # Resample poisson events.
+        T = resample_poisson(T, poisson_rates)
+
+        # Resample edge states.
+        event_nodes = set(T) - initial_nodes
+        T = resample_restricted_edge_states(
+                T, P, node_to_allowed_states, event_nodes,
+                root=root, prior_root_distn=root_distn)
+
+
+#TODO this function is wrong,
+#TODO because the poisson samples for uniformization
+#TODO depend on the rate out of the current state.
 def sample_edge_to_event_times(T, root, event_rate):
     """
 
@@ -218,7 +320,7 @@ def sample_edge_to_event_times(T, root, event_rate):
 def resample_primary_states(
         T, root,
         primary_to_part,
-        Q_primary, primary_distn, absorption_rate_map,
+        P_primary, primary_distn, absorption_rate_map,
         tolerance_trajectories, edge_to_time_events):
     """
 
@@ -239,13 +341,6 @@ def resample_primary_states(
     """
     # Precompute the set of all tolerance classes.
     tolerance_classes = set(primary_to_part.values())
-
-    # TODO maybe do not need this
-    # Precompute a map from tolerance class to a set of primary classes.
-    tolerance_to_primaries = dict(
-            (tol, defaultdict(set)) for tol in tolerance_classes)
-    for primary_state, tolerance_class in primary_to_part.items():
-        tolerance_to_primaries[tolerance_class].add(primary_state)
 
     # Build a merged tree corresponding to the tolerance trajectories,
     # with event nodes corresponding to uniformization times
@@ -319,18 +414,39 @@ def resample_primary_states(
     # that it the region has low "absorption" with respect to that state.
     # A low absorption means that the sum of rates from the primary state
     # to other primary states that are tolerated in the region is low.
-    #TODO under construction
     chunk_node_to_state_to_likelihood = {}
     for chunk_node in chunk_tree:
-        if tolerance_class in chunk_node_to_tol_set:
-            state_to_likelihood = {1:1}
-        else:
-            if chunk_node in chunk_node_to_absorption:
-                absorption = chunk_node_to_absorption[chunk_node]
-                state_to_likelihood = {0:1, 1:math.exp(-absorption)}
-            else:
-                state_to_likelihood = {0:1, 1:1}
+        prim_to_absorption = chunk_node_to_prim_to_absorption[chunk_node]
+        state_to_likelihood = {}
+        for prim in set(primary_distn):
+            if primary_to_part[prim] in chunk_node_to_tol_set:
+                if absorption in prim_to_absorption:
+                    state_to_likelihood[prim] = math.exp(-absorption)
+                else:
+                    state_to_likelihood[prim] = 1
         chunk_node_to_state_to_likelihood[chunk_node] = state_to_likelihood
+
+    # Use mcz-type conditional sampling to
+    # sample primary states at each node of the chunk tree.
+    chunk_node_to_sampled_state = _sample_mcz.resample_states(
+            chunk_tree, root,
+            node_to_state_to_likelihood=chunk_node_to_state_to_likelihood,
+            root_distn=primary_distn, P_default=P_primary)
+
+    # Map the sampled chunk node primary states back onto
+    # the base tree to give the sampled primary process trajectory.
+    sampled_traj = nx.Graph()
+    for merged_edge in nx.bfs_edges(T_merged, root):
+        merged_na, merged_nb = merged_edge
+        weight = T_merged[merged_na][merged_nb]['weight']
+        chunk_node = edge_to_chunk_node[merged_edge]
+        sampled_state = chunk_node_to_sampled_state[chunk_node]
+        sampled_traj.add_edge(
+                merged_na, merged_nb,
+                weight=weight, state=sampled_state)
+
+    # Return the resampled primary trajectory.
+    return sampled_traj
 
 
 def resample_tolerance_states(

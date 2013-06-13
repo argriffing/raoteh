@@ -15,7 +15,8 @@ __all__ = []
 #TODO move stuff from _sampler.py into this module
 
 
-def get_uniformized_transition_matrix(Q, uniformization_factor=2):
+def get_uniformized_transition_matrix(Q,
+        uniformization_factor=None, omega=None):
     """
 
     Parameters
@@ -24,6 +25,8 @@ def get_uniformized_transition_matrix(Q, uniformization_factor=2):
         Rate matrix.
     uniformization_factor : float, optional
         A value greater than 1.
+    omega : float, optional
+        The uniformization rate.
 
     Returns
     -------
@@ -31,12 +34,19 @@ def get_uniformized_transition_matrix(Q, uniformization_factor=2):
         Transition probability matrix.
 
     """
-    
-    # Get the total rate away from each state.
+
+    if (uniformization_factor is not None) and (omega is not None):
+        raise ValueError('the uniformization factor and omega '
+                'should not both be provided')
+
+    # Compute the total rates.
     total_rates = get_total_rates(Q)
 
-    # Initialize omega as the uniformization rate.
-    omega = uniformization_factor * max(total_rates.values())
+    # Compute omega if necessary.
+    if omega is None:
+        if uniformization_factor is None:
+            uniformization_factor = 2
+        omega = uniformization_factor * max(total_rates.values())
 
     # Construct a uniformized transition matrix from the rate matrix
     # and the uniformization rate.
