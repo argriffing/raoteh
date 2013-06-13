@@ -347,12 +347,15 @@ def resample_primary_states_v1(
     chunk_node_to_allowed_states = {}
     for chunk_node in chunk_tree:
 
+        # Get the set of forbidden tolerance classes for this chunk node.
+        forbidden_tols = chunk_node_to_forbidden_tols[chunk_node]
+
         # Initialize the set of allowed states to
         # the set of all primary states not forbidden
         # by the tolerance class trajectory within the chunk node.
         allowed_states = set()
         for prim in set(primary_distn):
-            if primary_to_part[prim] not in chunk_node_to_forbidden_tols:
+            if primary_to_part[prim] not in forbidden_tols:
                 allowed_states.add(prim)
 
         # Further restrict the set of allowed state according to
@@ -363,6 +366,36 @@ def resample_primary_states_v1(
 
         # If no state is allowed then this is a problem.
         if not allowed_states:
+            print()
+            print('error report...')
+            print('T:')
+            for na, nb in nx.bfs_edges(T, root):
+                print(na, nb, T[na][nb]['weight'])
+            print('root:', root)
+            for i, t_traj in enumerate(tolerance_trajectories):
+                print('tolerance trajectory', i, ':')
+                for na, nb in nx.bfs_edges(t_traj, root):
+                    weight = t_traj[na][nb]['weight']
+                    state = t_traj[na][nb]['state']
+                    print(na, nb, weight, state)
+            print('merged tree:')
+            for na, nb in nx.bfs_edges(T_merged, root):
+                weight = T_merged[na][nb]['weight']
+                states = T_merged[na][nb]['states']
+                print(na, nb, weight, states)
+            print('node to primary state:')
+            for node, primary_state in node_to_primary_state.items():
+                print(node, primary_state)
+            print('chunk tree:')
+            for na, nb in nx.bfs_edges(chunk_tree, root):
+                print(na, nb)
+            print('edge to chunk node:')
+            for edge, cnode in sorted(edge_to_chunk_node.items()):
+                na, nb = edge
+                print(na, nb, cnode)
+            print('chunk node to forbidden tolerance classes:')
+            for cnode, forbidden_tols in chunk_node_to_forbidden_tols.items():
+                print(cnode, forbidden_tols)
             raise Exception('internal error: '
                     'for this chunk node no primary state is allowed')
 

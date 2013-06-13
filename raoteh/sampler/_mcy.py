@@ -126,7 +126,8 @@ def get_node_to_pset(T, root,
     return node_to_pset
 
 
-def get_node_to_pmap(T, root, node_to_allowed_states=None, P_default=None):
+def get_node_to_pmap(T, root,
+        node_to_allowed_states=None, P_default=None, node_to_set=None):
     """
     For each node, construct the map from state to subtree likelihood.
 
@@ -148,6 +149,8 @@ def get_node_to_pmap(T, root, node_to_allowed_states=None, P_default=None):
     P_default : networkx directed weighted graph, optional
         Sparse transition matrix to be used for edges
         which are not annotated with an edge-specific transition matrix.
+    node_to_set : dict, optional
+        Maps nodes to possible states.
 
     Returns
     -------
@@ -159,21 +162,12 @@ def get_node_to_pmap(T, root, node_to_allowed_states=None, P_default=None):
     # after accounting for the rooted tree shape
     # and the edge-specific transition matrix sparsity patterns
     # and the observed states.
-    node_to_pset = get_node_to_pset(T, root,
-            node_to_allowed_states=node_to_allowed_states,
-            P_default=P_default)
-    node_to_state_set = _mc0.get_node_to_set(T, root,
-            node_to_pset, P_default=P_default)
-
-    # Check the node to state set for consistency.
-    # Either the likelihood is structurally positive
-    # in which case all nodes should have possible states,
-    # or likelihood is structurally zero
-    # in which case all nodes should have no possible states.
-    npos = sum(1 for k, v in node_to_state_set.items() if v)
-    nneg = sum(1 for k, v in node_to_state_set.items() if not v)
-    if npos and nneg:
-        raise ValueError('internal error')
+    if node_to_set is None:
+        node_to_pset = get_node_to_pset(T, root,
+                node_to_allowed_states=node_to_allowed_states,
+                P_default=P_default)
+        node_to_set = _mc0.get_node_to_set(T, root,
+                node_to_pset, P_default=P_default)
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
@@ -184,7 +178,7 @@ def get_node_to_pmap(T, root, node_to_allowed_states=None, P_default=None):
 
         # Build the pmap.
         pmap = {}
-        for node_state in node_to_state_set[node]:
+        for node_state in node_to_set[node]:
 
             # Add the subtree likelihood to the node state pmap.
             cprob = 1.0

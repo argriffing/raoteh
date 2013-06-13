@@ -9,7 +9,7 @@ the joint states using the node_to_pmap.
 """
 from __future__ import division, print_function, absolute_import
 
-from raoteh.sampler import _mcy, _sample_mc0
+from raoteh.sampler import _mc0, _mcy, _sample_mc0
 
 
 __all__ = []
@@ -50,11 +50,28 @@ def resample_states(T, root,
         then the state will have been sampled.
 
     """
+    # Get the possible states for each node,
+    # after accounting for the rooted tree shape
+    # and the edge-specific transition matrix sparsity patterns
+    # and the observed states.
+    node_to_pset = _mcy.get_node_to_pset(T, root,
+            node_to_allowed_states=node_to_allowed_states,
+            P_default=P_default)
+    node_to_set = _mc0.get_node_to_set(T, root,
+            node_to_pset, P_default=P_default)
+
+    # Check that the root node_to_set is not empty.
+    if not node_to_set[root]:
+        print()
+        print(node_to_pset)
+        print(node_to_set)
+        raise Exception('internal error')
+
     # Get the map from each node to a sparse map
     # from each feasible state to the subtree likelihood.
     node_to_pmap = _mcy.get_node_to_pmap(T, root,
             node_to_allowed_states=node_to_allowed_states,
-            P_default=P_default)
+            P_default=P_default, node_to_set=node_to_set)
 
     # Use the generic sampler.
     return _sample_mc0.resample_states(T, root, node_to_pmap,
