@@ -19,7 +19,7 @@ import networkx as nx
 from raoteh.sampler import (
         _graph_transform,
         _mjp, _tmjp,
-        _sampler, _sample_mcy, _sample_mcz,
+        _sampler, _sample_mcy, _sample_mcz, _sample_mjp,
         )
 
 from raoteh.sampler._util import (
@@ -37,7 +37,6 @@ from raoteh.sampler._sample_mc import (
 
 from raoteh.sampler._sample_mjp import (
         get_uniformized_transition_matrix,
-        resample_poisson,
         )
 
 
@@ -63,92 +62,6 @@ def get_absorption_rate_map(Q_primary, primary_to_part):
             absorption_rates[tol_prim_sb] += rate
         absorption_rate_map[prim_sa] = dict(absorption_rates)
     return absorption_rate_map
-
-
-# TODO under construction, modified from _sampler.gen_restricted_histories
-def xxx_gen_histories(T, root, Q_primary, primary_to_part,
-        node_to_primary_state, rate_on, rate_off,
-        primary_distn, uniformization_factor=2, nhistories=None):
-    """
-    Use the Rao-Teh method to sample histories on trees.
-
-    Edges of the yielded trees will be augmented
-    with weights and states.
-    The weighted size of each yielded tree should be the same
-    as the weighted size of the input tree.
-
-    Parameters
-    ----------
-    T : weighted undirected acyclic networkx graph
-        Weighted tree.
-    root : integer
-        Root of the tree.
-    Q_primary : directed weighted networkx graph
-        A matrix of transition rates among states in the primary process.
-    primary_to_part : dict
-        A map from a primary state to its tolerance class.
-    node_to_primary_state : dict
-        A map from a node to a primary process state observation.
-        If a node is missing from this map,
-        then the observation is treated as missing.
-    rate_on : float
-        Transition rate from tolerance state off to tolerance_state on.
-    rate_off : float
-        Transition rate from tolerance state on to tolerance_state off.
-    primary_distn : dict
-        Map from root state to prior probability.
-    uniformization_factor : float, optional
-        A value greater than 1.
-    nhistories : integer, optional
-        Sample this many histories.
-        If None, then sample an unlimited number of histories.
-
-    """
-    # Get the total rate away from each state.
-    total_rates = get_total_rates(Q)
-
-    # Initialize omega as the uniformization rate.
-    omega = uniformization_factor * max(total_rates.values())
-
-    # Get the uniformized transition matrix.
-    P = get_uniformized_transition_matrix(Q, uniformization_factor)
-
-    # Define the uniformized poisson rates for Rao-Teh resampling.
-    poisson_rates = dict((a, omega - q) for a, q in total_rates.items())
-
-    # Define the initial set of nodes.
-    initial_nodes = set(T)
-
-    # Construct an initial feasible history,
-    # possibly with redundant event nodes.
-    T = get_restricted_feasible_history(T, P, node_to_allowed_states,
-            root=root, root_distn=root_distn)
-
-    # Generate histories using Rao-Teh sampling.
-    for i in itertools.count():
-
-        # Identify and remove the non-original redundant nodes.
-        all_rnodes = _graph_transform.get_redundant_degree_two_nodes(T)
-        expendable_rnodes = all_rnodes - initial_nodes
-        T = _graph_transform.remove_redundant_nodes(T, expendable_rnodes)
-
-        # Yield the sampled history on the tree.
-        yield T
-
-        # If we have sampled enough histories, then return.
-        if nhistories is not None:
-            nsampled = i + 1
-            if nsampled >= nhistories:
-                return
-
-        # Resample poisson events.
-        T = resample_poisson(T, poisson_rates)
-
-        # Resample edge states.
-        event_nodes = set(T) - initial_nodes
-        T = resample_restricted_edge_states(
-                T, P, node_to_allowed_states, event_nodes,
-                root=root, prior_root_distn=root_distn)
 
 
 def gen_histories_v1(T, root, Q_primary, primary_to_part,
@@ -191,7 +104,7 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
     """
     # Get initial jointly feasible trajectories
     # for the components of the compound process.
-    primary_traj, tolerance_trajectories = get_feasible_history(
+    primary_trajectory, tolerance_trajectories = get_feasible_history(
             T, root,
             Q_primary, primary_distn,
             primary_to_part, rate_on, rate_off,
@@ -209,11 +122,7 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
     # Summarize the compound process.
     nparts = len(set(primary_to_part.values()))
     tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
-    Q_tolerance = nx.DiGraph()
-    if rate_on:
-        Q_tolerance.add_edge(0, 1, weight=rate_on)
-    if rate_off:
-        Q_tolerance.add_edge(1, 0, weight=rate_off)
+    Q_tolerance = _tmjp.get_tolerance_rate_matrix(rate_off, rate_on)
 
     # Summarize the tolerance process in ways that are useful for Rao-Teh.
     tolerance_total_rates = get_total_rates(Q_tolerance)
@@ -260,6 +169,7 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
                 T, root,
                 primary_to_part,
                 P_primary, primary_distn,
+                node_to_primary_state,
                 tolerance_trajectories, edge_to_event_times)
 
         # Remove redundant nodes in the primary process trajectory
@@ -272,6 +182,7 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
                 primary_trajectory, expendable_rnodes)
 
         # Resample tolerance process trajectories.
+        new_tolerance_trajectories = []
         for tol, tol_traj in enumerate(tolerance_trajectories):
 
             # Resample poisson events on the tolerance trajectory,
@@ -290,6 +201,13 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
                     primary_to_part,
                     P_tolerance, tolerance_distn,
                     primary_trajectory, edge_to_event_times, tol)
+
+            # Add the tolerance trajectory.
+            new_tolerance_trajectories.append(traj)
+
+        # Update the list of tolerance trajectories.
+        # Note that these have redundant nodes which should be removed.
+        tolerance_trajectories = new_tolerance_trajectories
 
 
 #TODO this function is wrong,
@@ -331,6 +249,7 @@ def resample_primary_states_v1(
         T, root,
         primary_to_part,
         P_primary, primary_distn,
+        node_to_primary_state,
         tolerance_trajectories, edge_to_event_times):
     """
     Resample primary states.
@@ -389,16 +308,65 @@ def resample_primary_states_v1(
             if not tolerance_state:
                 chunk_node_to_forbidden_tols[chunk_node].add(tol)
 
+    # Check that no chunk node forbids all tolerance classes.
+    for chunk_node, forbidden_tols in chunk_node_to_forbidden_tols.items():
+        bad_tols = set(forbidden_tols) - set(tolerance_classes)
+        if bad_tols:
+            raise Exception('internal error: '
+                    'for this chunk node, '
+                    'the set of forbidden tolerance classes contains some '
+                    'unrecognized entries: ' + str(sorted(bad_tols)))
+        if set(forbidden_tols) == set(tolerance_classes):
+            raise Exception('internal error: '
+                    'for this chunk node, all tolerance classes are forbidden')
+
+    # The chunk node may be constrained by primary state data.
+    chunk_node_to_obs_state = {}
+    for merged_edge in nx.bfs_edges(T_merged, root):
+
+        # Unpack the merged edge and get the chunk node that it maps to.
+        na, nb = merged_edge
+        chunk_node = edge_to_chunk_node[merged_edge]
+
+        # If a state has been observed for the given edge node,
+        # then set the observation of the chunk node.
+        for n in (na, nb):
+            if n in node_to_primary_state:
+                obs_state = node_to_primary_state[n]
+                if chunk_node in chunk_node_to_obs_state:
+                    if chunk_node_to_obs_state[chunk_node] != obs_state:
+                        raise Exception('internal error: '
+                                'multiple conflicting observations '
+                                'within the same chunk node')
+                chunk_node_to_obs_state[chunk_node] = obs_state
+
     # For each chunk node, construct the set of allowed tolerance states.
     # This is the set of primary states that do not belong
     # to any of the tolerance classes that are forbidden somewhere in the
     # region of the tree corresponding to the chunk node.
     chunk_node_to_allowed_states = {}
     for chunk_node in chunk_tree:
+
+        # Initialize the set of allowed states to
+        # the set of all primary states not forbidden
+        # by the tolerance class trajectory within the chunk node.
         allowed_states = set()
         for prim in set(primary_distn):
             if primary_to_part[prim] not in chunk_node_to_forbidden_tols:
                 allowed_states.add(prim)
+
+        # Further restrict the set of allowed state according to
+        # observations at points within the chunk node.
+        if chunk_node in chunk_node_to_obs_state:
+            obs_state = chunk_node_to_obs_state[chunk_node]
+            allowed_states.intersection_update({obs_state})
+
+        # If no state is allowed then this is a problem.
+        if not allowed_states:
+            raise Exception('internal error: '
+                    'for this chunk node no primary state is allowed')
+
+        # Store the set of allowed states for this chunk node.
         chunk_node_to_allowed_states[chunk_node] = allowed_states
 
     # Use mcy-type conditional sampling to
@@ -571,16 +539,10 @@ def get_feasible_history(
     # Get the number of tolerance classes.
     nparts = len(set(primary_to_part.values()))
 
-    # Get the tolerance state distribution.
+    # Get the tolerance state distribution, rate matrix,
+    # and uniformized tolerance transition probability matrix.
     tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
-
-    # Get the tolerance transition rate matrix
-    # and the uniformized tolerance transition probability matrix.
-    Q_tolerance = nx.DiGraph()
-    if rate_on:
-        Q_tolerance.add_edge(0, 1, weight=rate_on)
-    if rate_off:
-        Q_tolerance.add_edge(1, 0, weight=rate_off)
+    Q_tolerance = _tmjp.get_tolerance_rate_matrix(rate_off, rate_on)
     P_tolerance = get_uniformized_transition_matrix(Q_tolerance)
 
     # Get a primary process proposal rate matrix
@@ -634,7 +596,7 @@ def get_feasible_history(
             dead_time = T[base_na][base_nb]['weight']
             if events:
                 dead_time = min(tm for tm, obj in events)
-            tolerance_event_times.add(random.uniform(0, dead_time)
+            tolerance_event_times.add(random.uniform(0, dead_time))
 
             # Add a tolerance process event
             # into every segment that follows a primary process transition.

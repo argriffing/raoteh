@@ -44,6 +44,30 @@ from raoteh.sampler._mjp import (
 __all__ = []
 
 
+def get_tolerance_rate_matrix(rate_off, rate_on):
+    """
+
+    Parameters
+    ----------
+    rate_off : float
+        Rate of tolerance transition from on to off.
+    rate_on : float
+        Rate of tolerance transition from off to on.
+
+    Returns
+    -------
+    Q_tolerance : directed weighted networkx graph
+        Tolerance state transition rate matrix.
+
+    """
+    Q_tolerance = nx.DiGraph()
+    if rate_on:
+        Q_tolerance.add_edge(0, 1, weight=rate_on)
+    if rate_off:
+        Q_tolerance.add_edge(1, 0, weight=rate_off)
+    return Q_tolerance
+
+
 def get_tolerance_distn(rate_off, rate_on):
     """
 

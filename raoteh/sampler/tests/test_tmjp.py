@@ -20,7 +20,7 @@ from numpy.testing import (
         assert_equal, assert_allclose, assert_, assert_raises, decorators,
         )
 
-from raoteh.sampler import _mc, _mjp
+from raoteh.sampler import _mc, _mjp, _sample_tmjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
@@ -667,6 +667,7 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
                 rate_off, rate_on, primary_distn, root)
 
 
+
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
     #TODO split this function into multiple parts
@@ -694,10 +695,6 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         compound_total_rates = get_total_rates(Q_compound)
         primary_total_rates = get_total_rates(Q_primary)
         tolerance_distn = get_tolerance_distn(rate_off, rate_on)
-        total_tolerance_rate = rate_on + rate_off
-        tolerance_distn = {
-                0 : rate_off / total_tolerance_rate,
-                1 : rate_on / total_tolerance_rate}
 
         # Sample a non-tiny random tree without branch lengths.
         T = get_random_agglom_tree(maxnodes=5)
@@ -1128,4 +1125,244 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
             proposal_marginal_likelihood))
         print()
         raise Exception('print tmjp entropy stuff')
+
+
+    def test_sample_tmjp_v1(self):
+        # Compare summaries of samples from the product space
+        # of the compound process to summaries of samples that uses
+        # gibbs sampling enabled by conditional independence
+        # of some components of the compound process.
+
+        # Define the tolerance process rates.
+        rate_on = 0.5
+        rate_off = 1.5
+
+        # Define some other properties of the process,
+        # in a way that is not object-oriented.
+        info = get_example_tolerance_process_info(rate_on, rate_off)
+        (primary_distn, Q_primary, primary_to_part,
+                compound_to_primary, compound_to_tolerances, compound_distn,
+                Q_compound) = info
+
+        # Summarize properties of the process.
+        nprimary = len(primary_distn)
+        nparts = len(set(primary_to_part.values()))
+        compound_total_rates = get_total_rates(Q_compound)
+        primary_total_rates = get_total_rates(Q_primary)
+        tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+
+        # Sample a non-tiny random tree without branch lengths.
+        T = get_random_agglom_tree(maxnodes=5)
+        root = 0
+
+        # Add some random branch lengths onto the edges of the tree.
+        for na, nb in nx.bfs_edges(T, root):
+            scale = 2.6
+            T[na][nb]['weight'] = np.random.exponential(scale=scale)
+
+        # Sample a single unconditional history on the tree
+        # using some arbitrary process.
+        # The purpose is really to sample the states at the leaves.
+        T_forward_sample = get_forward_sample(
+                T, Q_primary, root, primary_distn)
+
+        # Get the sampled leaf states from the forward sample.
+        leaf_to_primary_state = {}
+        for node in T_forward_sample:
+            if len(T_forward_sample[node]) == 1:
+                nb = get_first_element(T_forward_sample[node])
+                edge = T_forward_sample[node][nb]
+                primary_state = edge['state']
+                leaf_to_primary_state[node] = primary_state
+
+        # Get the state restrictions
+        # associated with the sampled leaf states.
+        node_to_allowed_compound_states = {}
+        node_to_allowed_primary_states = {}
+        for node in T:
+            if node in leaf_to_primary_state:
+                primary_state = leaf_to_primary_state[node]
+                allowed_primary = {primary_state}
+                allowed_compound = set()
+                for comp, prim in enumerate(compound_to_primary):
+                    if prim == primary_state:
+                        allowed_compound.add(comp)
+            else:
+                allowed_primary = set(primary_distn)
+                allowed_compound = set(compound_distn)
+            node_to_allowed_primary_states[node] = allowed_primary
+            node_to_allowed_compound_states[node] = allowed_compound
+
+        # Define the number of samples.
+        nsamples = 1000
+        sqrt_nsamp = np.sqrt(nsamples)
+
+        # Initialize some statistics lists that will be analogous
+        # to the pm_ lists.
+        v1_neg_ll_contribs_dwell = []
+        v1_neg_ll_contribs_init = []
+        v1_neg_ll_contribs_trans = []
+        for prim_trajectory, tol_trajectories in _sample_tmjp.gen_histories_v1(
+                T, root, Q_primary, primary_to_part,
+                leaf_to_primary_state, rate_on, rate_off,
+                primary_distn, nhistories=nsamples):
+
+            # Get primary trajectory stats.
+            primary_info = get_history_statistics(prim_trajectory, root=root)
+            dwell_times, root_state, transitions = primary_info
+
+            # Add primary process initial contribution.
+            init_prim_ll = np.log(primary_distn[root_state])
+
+            # Add the transition stat contribution of the primary process.
+            trans_prim_ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_primary[sa][sb]['weight']
+                trans_prim_ll += special.xlogy(ntransitions, rate)
+
+            # Get pm_ ll contributions of expectations of
+            # tolerance process transitions.
+            tol_info = get_tolerance_expectations(
+                    primary_to_part, rate_on, rate_off,
+                    Q_primary, prim_trajectory, root)
+            dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
+
+            # Append the pm_ neg ll trans component of log likelihood.
+            v1_trans_ll = trans_prim_ll + trans_tol_ll
+            v1_neg_ll_contribs_trans.append(-v1_trans_ll)
+
+            # Append the pm_ neg ll init component of log likelihood.
+            v1_init_ll = init_prim_ll + init_tol_ll
+            v1_neg_ll_contribs_init.append(-v1_init_ll)
+
+            # Append the pm_ neg ll dwell component of log likelihood.
+            v1_neg_ll_contribs_dwell.append(-dwell_tol_ll)
+
+        # Do some Rao-Teh conditional samples,
+        # and get the negative expected log likelihood.
+        #
+        # statistics for the full process samples
+        sampled_root_distn = defaultdict(float)
+        neg_ll_contribs_init = []
+        neg_ll_contribs_dwell = []
+        neg_ll_contribs_trans = []
+        #
+        # Statistics for the partial process samples.
+        # The idea for the pm_ prefix is that we can use the compound
+        # process Rao-Teh to sample the pure primary process without bias
+        # if we throw away the tolerance process information.
+        # Then with these unbiased primary process history samples,
+        # we can compute conditional expectations of statistics of interest
+        # by integrating over the possible tolerance trajectories.
+        # This allows us to test this integration without worrying that
+        # the primary process history samples are biased.
+        pm_neg_ll_contribs_dwell = []
+        pm_neg_ll_contribs_init = []
+        pm_neg_ll_contribs_trans = []
+        #
+        for T_aug in gen_restricted_histories(
+                T, Q_compound, node_to_allowed_compound_states,
+                root=root, root_distn=compound_distn,
+                uniformization_factor=2, nhistories=nsamples):
+
+            # Get some stats of the histories.
+            info = get_history_statistics(T_aug, root=root)
+            dwell_times, root_state, transitions = info
+
+            # contribution of root state to log likelihood
+            sampled_root_distn[root_state] += 1.0 / nsamples
+            ll = np.log(compound_distn[root_state])
+            neg_ll_contribs_init.append(-ll)
+
+            # contribution of dwell times
+            ll = 0.0
+            for state, dwell in dwell_times.items():
+                ll -= dwell * compound_total_rates[state]
+            neg_ll_contribs_dwell.append(-ll)
+
+            # contribution of transitions
+            ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_compound[sa][sb]['weight']
+                ll += special.xlogy(ntransitions, rate)
+            neg_ll_contribs_trans.append(-ll)
+
+            # Get a tree annotated with only the primary process,
+            # after having thrown away the sampled tolerance
+            # process data.
+
+            # First copy the unbiased compound state trajectory tree.
+            # Then convert the state annotation from compound state
+            # to primary state.
+            # Then use graph transformations to detect and remove
+            # degree-2 vertices whose adjacent states are identical.
+            T_primary_aug = T_aug.copy()
+            for na, nb in nx.bfs_edges(T_primary_aug, root):
+                edge = T_primary_aug[na][nb]
+                compound_state = edge['state']
+                primary_state = compound_to_primary[compound_state]
+                edge['state'] = primary_state
+            extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
+            T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
+
+            # Get primary trajectory stats.
+            primary_info = get_history_statistics(T_primary_aug, root=root)
+            dwell_times, root_state, transitions = primary_info
+
+            # Add primary process initial contribution.
+            init_prim_ll = np.log(primary_distn[root_state])
+
+            # Add the transition stat contribution of the primary process.
+            trans_prim_ll = 0.0
+            for sa, sb in transitions.edges():
+                ntransitions = transitions[sa][sb]['weight']
+                rate = Q_primary[sa][sb]['weight']
+                trans_prim_ll += special.xlogy(ntransitions, rate)
+
+            # Get pm_ ll contributions of expectations of
+            # tolerance process transitions.
+            tol_info = get_tolerance_expectations(
+                    primary_to_part, rate_on, rate_off,
+                    Q_primary, T_primary_aug, root)
+            dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
+
+            # Append the pm_ neg ll trans component of log likelihood.
+            pm_trans_ll = trans_prim_ll + trans_tol_ll
+            pm_neg_ll_contribs_trans.append(-pm_trans_ll)
+
+            # Append the pm_ neg ll init component of log likelihood.
+            pm_init_ll = init_prim_ll + init_tol_ll
+            pm_neg_ll_contribs_init.append(-pm_init_ll)
+
+            # Append the pm_ neg ll dwell component of log likelihood.
+            pm_neg_ll_contribs_dwell.append(-dwell_tol_ll)
+
+        print()
+        print('--- tmjp v1 test ---')
+        print('nsamples:', nsamples)
+        print()
+        print('neg ll init   :', np.mean(neg_ll_contribs_init))
+        print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
+        print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
+        print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
+        print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
+        print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
+        print()
+        print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
+        print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
+        print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
+        print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
+        print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
+        print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
+        print()
+        print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
+        print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
+        print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
+        print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
+        print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
+        print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
+        print()
+        raise Exception('print tmjp v1 summaries')
 
