@@ -1154,10 +1154,10 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
         # Define the number of samples per repeat.
-        nsamples = 10
+        nsamples = 1000
         sqrt_nsamp = np.sqrt(nsamples)
 
-        nrepeats = 10
+        nrepeats = 1
         for repeat_index in range(nrepeats):
 
             # Sample a non-tiny random tree without branch lengths.
@@ -1166,7 +1166,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
             # Add some random branch lengths onto the edges of the tree.
             for na, nb in nx.bfs_edges(T, root):
-                scale = 2.6
+                scale = 0.6
                 T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
             # Sample a single unconditional history on the tree
@@ -1201,6 +1201,36 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
                     allowed_compound = set(compound_distn)
                 node_to_allowed_primary_states[node] = allowed_primary
                 node_to_allowed_compound_states[node] = allowed_compound
+
+            # Compute the conditional expected log likelihood explicitly
+            # using some Markov jump process functions.
+
+            # Get some posterior expectations.
+            expectation_info = get_expected_history_statistics(
+                    T, node_to_allowed_compound_states,
+                    root, root_distn=compound_distn, Q_default=Q_compound)
+            dwell_times, post_root_distn, transitions = expectation_info
+
+            # Use some posterior expectations
+            # to get the root distribution contribution to differential entropy.
+            diff_ent_init = 0.0
+            for state, prob in post_root_distn.items():
+                diff_ent_init -= special.xlogy(prob, compound_distn[state])
+
+            # Use some posterior expectations
+            # to get the dwell time contribution to differential entropy.
+            diff_ent_dwell = 0.0
+            for s, rate in compound_total_rates.items():
+                diff_ent_dwell += dwell_times[s] * rate
+
+            # Use some posterior expectations
+            # to get the transition contribution to differential entropy.
+            diff_ent_trans = 0.0
+            for sa in set(Q_compound) & set(transitions):
+                for sb in set(Q_compound[sa]) & set(transitions[sa]):
+                    rate = Q_compound[sa][sb]['weight']
+                    ntrans_expected = transitions[sa][sb]['weight']
+                    diff_ent_trans -= ntrans_expected * np.log(rate)
 
             # Initialize some statistics lists that will be analogous
             # to the pm_ lists.
@@ -1352,6 +1382,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('--- tmjp v1 test ---')
         print('nsamples:', nsamples)
         print()
+        print('diff ent init :', diff_ent_init)
         print('neg ll init   :', np.mean(neg_ll_contribs_init))
         print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
         print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
@@ -1359,6 +1390,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
         print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
         print()
+        print('diff ent dwell:', diff_ent_dwell)
         print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
         print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
         print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
@@ -1366,6 +1398,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
         print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
         print()
+        print('diff ent trans:', diff_ent_trans)
         print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
         print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
         print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))

@@ -491,7 +491,7 @@ def resample_tolerance_states_v1(
     # Otherwise this set will be {0, 1}.
     chunk_node_to_allowed_states = {}
     for chunk_node in chunk_tree:
-        if tolerance_class in chunk_node_to_tol_set:
+        if tolerance_class in chunk_node_to_tol_set[chunk_node]:
             allowed_states = {1}
         else:
             allowed_states = {0, 1}
