@@ -3,6 +3,7 @@
 from __future__ import division, print_function, absolute_import
 
 import itertools
+from collections import defaultdict
 
 import networkx as nx
 
@@ -270,7 +271,6 @@ class TestAddTrajectories(TestCase):
         T_base.add_edge(0, 3, weight=0.1)
         T_base.add_edge(3, 4, weight=0.1)
         T_base.add_edge(3, 5, weight=0.1)
-        T_current = T_base.copy()
         root = 0
 
         # Define a trajectory that is bad
@@ -284,6 +284,152 @@ class TestAddTrajectories(TestCase):
         traj.add_edge(0, 5, state=0, weight=0.1)
         assert_raises(ValueError, add_trajectories,
                 T_base, root, [traj])
+
+    def test_edge_to_event_times(self):
+        # The merged tree will look like the following,
+        # where 'x' is a node in the original tree,
+        # and 'a' is a node introduced by trajectory merging,
+        # and 'o' is an event node.
+        #
+        #      x
+        #     /|\
+        #    / | \
+        #   |  |  |
+        #   o  o  x
+        #   |  |  |
+        #   x  |  | (0, 0)
+        #      x  |
+        #         x
+        #        /| (0, 0)
+        #       / a
+        #      /  | (0, 10)
+        #     |   a
+        #     x   | (5, 10)
+        #         a
+        #         | (5, 0)
+        #         o
+        #         | (5, 0)
+        #         a
+        #         | (0, 0)
+        #         x
+        #
+        T = nx.Graph()
+        T.add_edge(0, 1, weight=0.1)
+        T.add_edge(0, 2, weight=0.1)
+        T.add_edge(0, 3, weight=0.1)
+        T.add_edge(3, 4, weight=0.1)
+        T.add_edge(3, 5, weight=0.1)
+        T.add_edge(4, 6, weight=0.1)
+        root = 0
+
+        # Define a trajectory with an extra segment along one edge.
+        traj_a = nx.Graph()
+        traj_a.add_edge(0, 1, weight=0.1, state=0)
+        traj_a.add_edge(0, 2, weight=0.1, state=0)
+        traj_a.add_edge(0, 3, weight=0.1, state=0)
+        traj_a.add_edge(3, 4, weight=0.1, state=0)
+        traj_a.add_edge(3, 5, weight=0.1, state=0)
+        traj_a.add_edge(4, 10, weight=0.025, state=0)
+        traj_a.add_edge(10, 11, weight=0.05, state=5)
+        traj_a.add_edge(11, 6, weight=0.025, state=0)
+
+        # Define a trajectory with an interleaving segment.
+        traj_b = nx.Graph()
+        traj_b.add_edge(0, 1, weight=0.1, state=0)
+        traj_b.add_edge(0, 2, weight=0.1, state=0)
+        traj_b.add_edge(0, 3, weight=0.1, state=0)
+        traj_b.add_edge(3, 4, weight=0.1, state=0)
+        traj_b.add_edge(3, 5, weight=0.1, state=0)
+        traj_b.add_edge(4, 20, weight=0.02, state=0)
+        traj_b.add_edge(20, 21, weight=0.02, state=10)
+        traj_b.add_edge(21, 6, weight=0.06, state=0)
+
+        # Define a few event times along directed edges,
+        # where the edge direction radiates away from the root.
+        edge_to_event_times = {
+                (0, 1) : {0.06},
+                (0, 2) : {0.02},
+                (4, 6) : {0.045},
+                }
+
+        # Construct the merged tree.
+        T_merged, event_nodes = add_trajectories(
+                T, root,
+                [traj_a, traj_b],
+                edge_to_event_times=edge_to_event_times)
+
+        # After this point are some tests.
+
+        # Check the total number of nodes in the merged tree.
+        assert_equal(len(T_merged.edges()), 13)
+
+        # Check the multiset of edge state pairs in the merged tree.
+        state_pair_to_count = defaultdict(int)
+        for edge in nx.bfs_edges(T_merged, root):
+            na, nb = edge
+            states = T_merged[na][nb]['states']
+            state_pair = tuple(states)
+            assert_equal(len(state_pair), 2)
+            state_pair_to_count[state_pair] += 1
+        assert_equal(state_pair_to_count[(0, 10)], 1)
+        assert_equal(state_pair_to_count[(5, 10)], 1)
+        assert_equal(state_pair_to_count[(5, 0)], 2)
+        expected_state_pairs = set([(0, 0), (0, 10), (5, 10), (5, 0)])
+        assert_equal(set(state_pair_to_count), expected_state_pairs)
+
+        # Check that the number of event nodes is correct.
+        assert_equal(len(edge_to_event_times), len(event_nodes))
+
+        # The merged tree must contain all of the nodes of the original tree.
+        missing_nodes = set(T) - set(T_merged)
+        assert_equal(missing_nodes, set())
+
+        # The base tree, the two trajectories, and the merged tree
+        # should all have the same weighted size.
+        weighted_size = T.size(weight='weight')
+        assert_allclose(traj_a.size(weight='weight'), weighted_size)
+        assert_allclose(traj_b.size(weight='weight'), weighted_size)
+        assert_allclose(T_merged.size(weight='weight'), weighted_size)
+
+        # Each event node must be adjacent to exactly two edges
+        # in the merged tree, and both of these edges
+        # must be annotated with the same sequence of state values.
+        for node in event_nodes:
+            assert_equal(T_merged.degree(node), 2)
+            na, nb = T_merged[node]
+            na_states = T_merged[node][na]['states']
+            nb_states = T_merged[node][nb]['states']
+            assert_equal(na_states, nb_states)
+
+        # Print the edges of the merged tree.
+        """
+        print()
+        print('--- add_trajectories test output ---')
+        print(event_nodes)
+        for edge in nx.bfs_edges(T_merged, root):
+            na, nb = edge
+            weight = T_merged[na][nb]['weight']
+            states = T_merged[na][nb]['states']
+            print(na, nb, weight, states)
+        print()
+        """
+
+        """
+        0 8 0.02 [0, 0]
+        0 3 0.1 [0, 0]
+        0 7 0.06 [0, 0]
+        8 2 0.08 [0, 0]
+        3 4 0.1 [0, 0]
+        3 5 0.1 [0, 0]
+        7 1 0.04 [0, 0]
+        4 9 0.02 [0, 0]
+        9 10 0.005 [0, 10]
+        10 11 0.015 [5, 10]
+        11 12 0.005 [5, 0]
+        12 13 0.03 [5, 0]
+        13 6 0.025 [0, 0]
+        """
+
 
 
 class TestGetNodeToState(TestCase):

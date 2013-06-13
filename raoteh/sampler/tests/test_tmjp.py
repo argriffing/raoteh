@@ -1127,6 +1127,8 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         raise Exception('print tmjp entropy stuff')
 
 
+    # this test is slow...
+    @decorators.skipif(True)
     def test_sample_tmjp_v1(self):
         # Compare summaries of samples from the product space
         # of the compound process to summaries of samples that uses
