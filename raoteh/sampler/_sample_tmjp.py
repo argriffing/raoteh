@@ -25,16 +25,6 @@ from raoteh.sampler import (
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
 
-from raoteh.sampler._mjp import (
-        get_total_rates,
-        get_trajectory_log_likelihood,
-        )
-
-from raoteh.sampler._sample_mc import (
-        resample_edge_states,
-        resample_restricted_edge_states,
-        )
-
 from raoteh.sampler._sample_mjp import (
         get_uniformized_transition_matrix,
         )
@@ -111,7 +101,7 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
             node_to_primary_state)
 
     # Summarize the primary process in ways that are useful for Rao-Teh.
-    primary_total_rates = get_total_rates(Q_primary)
+    primary_total_rates = _mjp.get_total_rates(Q_primary)
     primary_max_total_rate = max(primary_total_rates.values())
     primary_omega = uniformization_factor * primary_max_total_rate
     primary_poisson_rates = dict(
@@ -125,7 +115,7 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
     Q_tolerance = _tmjp.get_tolerance_rate_matrix(rate_off, rate_on)
 
     # Summarize the tolerance process in ways that are useful for Rao-Teh.
-    tolerance_total_rates = get_total_rates(Q_tolerance)
+    tolerance_total_rates = _mjp.get_total_rates(Q_tolerance)
     tolerance_max_total_rate = max(tolerance_total_rates.values())
     tolerance_omega = uniformization_factor * tolerance_max_total_rate
     tolerance_poisson_rates = dict(

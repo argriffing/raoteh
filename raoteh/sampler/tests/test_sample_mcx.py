@@ -15,18 +15,9 @@ from numpy.testing import (run_module_suite, TestCase,
 
 from raoteh.sampler import _mc0, _mcx
 
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb, get_first_element)
+from raoteh.sampler import _sample_mcx
 
-from raoteh.sampler._mc import (
-        construct_node_to_restricted_pmap,
-        )
-
-from raoteh.sampler._sample_mc import(
-        resample_states,
-        resample_edge_states,
-        get_test_transition_matrix,
-        )
+from raoteh.sampler._util import StructuralZeroProb
 
 
 class TestNodeStateSampler(TestCase):
@@ -61,8 +52,9 @@ class TestNodeStateSampler(TestCase):
                     node_to_pset, P_default=P)
             assert_raises(
                     StructuralZeroProb,
-                    resample_states,
-                    T, P, node_to_state, root=root)
+                    _sample_mcx.resample_states,
+                    T, root,
+                    node_to_state, P_default=P)
 
         # But if the path endpoints have states
         # that allow the intermediate state to act as a bridge,
@@ -70,8 +62,9 @@ class TestNodeStateSampler(TestCase):
         root_distn = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
         node_to_state = {0: 0, 2: 2}
         for root in T:
-            observed = resample_states(
-                    T, P, node_to_state, root, root_distn)
+            observed = _sample_mcx.resample_states(
+                    T, root,
+                    node_to_state, root_distn=root_distn, P_default=P)
             expected = {0: 0, 1: 1, 2: 2}
             assert_equal(observed, expected)
 
@@ -81,8 +74,9 @@ class TestNodeStateSampler(TestCase):
         root_distn = {0: 0.1, 1: 0.2, 2: 0.3, 3: 0.4}
         node_to_state = {0: 3, 2: 1}
         for root in T:
-            observed = resample_states(
-                    T, P, node_to_state, root, root_distn)
+            observed = _sample_mcx.resample_states(
+                    T, root,
+                    node_to_state, root_distn=root_distn, P_default=P)
             expected = {0: 3, 1: 2, 2: 1}
             assert_equal(observed, expected)
 
@@ -104,8 +98,9 @@ class TestNodeStateSampler(TestCase):
         for root in T:
             assert_raises(
                     StructuralZeroProb,
-                    resample_states,
-                    T, P, node_to_state, root, root_distn)
+                    _sample_mcx.resample_states,
+                    T, root,
+                    node_to_state, root_distn=root_distn, P_default=P)
 
     def test_resample_states_separated_regions(self):
         # This test includes multiple regions of nodes with unknown states,
@@ -144,8 +139,8 @@ class TestNodeStateSampler(TestCase):
         # Check that the correct internal states are sampled,
         # regardless of the root choice.
         for root in T:
-            observed = resample_states(
-                    T, P, node_to_state, root, root_distn)
+            observed = _sample_mcx.resample_states(T, root,
+                    node_to_state, root_distn=root_distn, P_default=P)
             expected = {
                     0 : 0,
                     10 : 1,
@@ -215,9 +210,9 @@ class TestEdgeStateSampler(TestCase):
         for root in non_event_nodes:
 
             # Sample the edges states.
-            T_aug = resample_edge_states(
-                    T, P, node_to_state, event_nodes,
-                    root=root, root_distn=root_distn)
+            T_aug = _sample_mcx.resample_edge_states(
+                    T, root, P, event_nodes,
+                    node_to_state=node_to_state, root_distn=root_distn)
             
             # The unweighted and weighted tree size should be unchanged.
             assert_equal(T.size(), T_aug.size())
@@ -246,7 +241,7 @@ class TestEdgeStateSampler(TestCase):
         # This test uses a more complicated transition matrix.
 
         # This transition matrix is on a 4x4 grid.
-        P = get_test_transition_matrix()
+        P = _mc0.get_example_transition_matrix()
 
         # Define a very sparse tree.
         T = nx.Graph()
@@ -281,16 +276,24 @@ class TestEdgeStateSampler(TestCase):
         non_event_nodes = set(T) - event_nodes
 
         # Sample the edges states.
-        T_aug = resample_edge_states(T, P, node_to_state, event_nodes)
-        
-        # The unweighted and weighted tree size should be unchanged.
-        assert_equal(T.size(), T_aug.size())
-        assert_allclose(T.size(weight='weight'), T_aug.size(weight='weight'))
+        # Try all non-event nodes as roots.
+        for root in non_event_nodes:
 
-        # The origin node must have state 22.
-        assert_equal(T_aug[0][10]['state'], 22)
-        assert_equal(T_aug[0][20]['state'], 22)
-        assert_equal(T_aug[0][30]['state'], 22)
+            # Sample the edges states.
+            T_aug = _sample_mcx.resample_edge_states(
+                    T, root, P, event_nodes,
+                    node_to_state=node_to_state, root_distn=None)
+            
+            # The unweighted and weighted tree size should be unchanged.
+            assert_equal(T.size(), T_aug.size())
+            assert_allclose(
+                    T.size(weight='weight'),
+                    T_aug.size(weight='weight'))
+
+            # The origin node must have state 22.
+            assert_equal(T_aug[0][10]['state'], 22)
+            assert_equal(T_aug[0][20]['state'], 22)
+            assert_equal(T_aug[0][30]['state'], 22)
 
 
 if __name__ == '__main__':

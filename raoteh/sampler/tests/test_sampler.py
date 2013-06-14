@@ -1,4 +1,6 @@
-"""Test Rao-Teh sampler.
+"""
+Test Rao-Teh sampling on Markov-chain-like models on trees.
+
 """
 from __future__ import division, print_function, absolute_import
 
@@ -12,6 +14,8 @@ from scipy import special
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises,
         decorators)
+
+from raoteh.sampler import _mc0
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
@@ -41,8 +45,6 @@ from raoteh.sampler._sampler import (
         resample_poisson,
         get_feasible_history,
         )
-
-from raoteh.sampler._sample_mc import get_test_transition_matrix
 
 
 def get_neg_ll(T_aug, Q, root, distn):
@@ -537,7 +539,7 @@ class TestFeasibleHistorySampler(TestCase):
     def test_get_feasible_history(self):
 
         # This transition matrix is on a 4x4 grid.
-        P = get_test_transition_matrix()
+        P = _mc0.get_example_transition_matrix()
 
         # Define a very sparse tree.
         T = nx.Graph()

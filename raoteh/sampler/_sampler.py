@@ -26,7 +26,6 @@ from raoteh.sampler._mjp import (
         )
 
 from raoteh.sampler._sample_mc import (
-        resample_edge_states,
         resample_restricted_edge_states,
         )
 

@@ -29,115 +29,7 @@ from raoteh.sampler._mc import (
 __all__ = []
 
 
-def get_test_transition_matrix():
-    # This returns a sparse transition matrix for testing.
-    # It uses an hack for the node indices, because I want to keep integers.
-    # This transition graph looks kind of like the following ascii art.
-    #
-    # 41 --- 42 --- 43 --- 44
-    #  |      |      |      |
-    # 31 --- 32 --- 33 --- 34
-    #  |      |      |      |
-    # 21 --- 22 --- 23 --- 24
-    #  |      |      |      |
-    # 11 --- 12 --- 13 --- 14
-    #
-    P = nx.DiGraph()
-    weighted_edges = []
-    for i in (1, 2, 3, 4):
-        for j in (1, 2, 3, 4):
-            source = i*10 + j
-            sinks = []
-            for di in (-1, 0, 1):
-                for dj in (-1, 0, 1):
-                    ni = i + di
-                    nj = j + dj
-                    if not (di and dj):
-                        if (1 <= ni <= 4) and (1 <= nj <= 4):
-                            sink = ni*10 + nj
-                            sinks.append(sink)
-            nsinks = len(sinks)
-            weight = 1 / float(nsinks)
-            for sink in sinks:
-                weighted_edges.append((source, sink, weight))
-    P.add_weighted_edges_from(weighted_edges)
-    return P
-
-
-# TODO under destruction
-def resample_states(T, P, node_to_state, root=None, root_distn=None):
-    """
-    This function applies to a tree for which nodes will be assigned states.
-
-    It is somewhat obsolete.
-
-    Parameters
-    ----------
-    T : unweighted undirected acyclic networkx graph
-        States do not change within chunks represented by nodes in this tree.
-    P : weighted directed networkx graph
-        A sparse transition matrix assumed to be identical for all edges.
-        The weights are transition probabilities.
-    node_to_state : dict
-        A map from nodes to states.
-        Nodes with unknown states do not correspond to keys in this map.
-    root : integer, optional
-        Root of the tree.
-    root_distn : dict, optional
-        Map from root state to probability.
-
-    Returns
-    -------
-    node_to_sampled_state : dict
-        A map from each node of T to its state.
-        If the state was not defined by the node_to_state argument,
-        then the state will have been sampled.
-
-    Notes
-    -----
-    Nodes other than tips of the tree may have known states.
-    If no root is provided,
-    then an arbitrary node with a known state will be chosen as the root.
-
-    See also
-    --------
-    resample_restricted_states
-
-    """
-
-    """
-    # If the root has not been provided, then pick one with a known state.
-    # If no state is known then pick an arbitrary root.
-    if root is None:
-        if node_to_state:
-            root = get_first_element(node_to_state)
-        else:
-            root = get_first_element(T)
-
-    # Construct the set of all possible states.
-    all_states = set(P)
-    if root_distn is not None:
-        all_states.update(root_distn)
-
-    # Construct the map from each node to its set of allowed states.
-    node_to_allowed_states = {}
-    for node in T:
-        if node in node_to_state:
-            node_to_allowed_states[node] = {node_to_state[node]}
-        else:
-            node_to_allowed_states[node] = all_states
-
-    # Sample the state at each node.
-    return resample_restricted_states(T, node_to_allowed_states,
-            root, root_distn, P_default=P)
-    """
-
-    if root is None:
-        root = get_first_element(T)
-    return _sample_mcx.resample_states(T, root,
-            node_to_state=node_to_state, root_distn=root_distn, P_default=P)
-
-
+#TODO this is obsolete; use _mcy.resample_states instead
 def resample_restricted_states(T, node_to_allowed_states,
         root, prior_root_distn=None, P_default=None):
     """
@@ -277,7 +169,8 @@ def resample_restricted_states(T, node_to_allowed_states,
     return node_to_sampled_state
 
 
-def resample_edge_states(T, P, node_to_state, event_nodes,
+#TODO use a function in _sample_mcx instead
+def xxx_resample_edge_states(T, P, node_to_state, event_nodes,
         root=None, root_distn=None):
     """
     This function applies to a tree for which edges will be assigned states.

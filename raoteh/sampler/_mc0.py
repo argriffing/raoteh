@@ -20,6 +20,41 @@ from raoteh.sampler._util import (
 __all__ = []
 
 
+def get_example_transition_matrix():
+    # This returns a sparse transition matrix for testing.
+    # It uses an hack for the node indices, because I want to keep integers.
+    # This transition graph looks kind of like the following ascii art.
+    #
+    # 41 --- 42 --- 43 --- 44
+    #  |      |      |      |
+    # 31 --- 32 --- 33 --- 34
+    #  |      |      |      |
+    # 21 --- 22 --- 23 --- 24
+    #  |      |      |      |
+    # 11 --- 12 --- 13 --- 14
+    #
+    P = nx.DiGraph()
+    weighted_edges = []
+    for i in (1, 2, 3, 4):
+        for j in (1, 2, 3, 4):
+            source = i*10 + j
+            sinks = []
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    ni = i + di
+                    nj = j + dj
+                    if not (di and dj):
+                        if (1 <= ni <= 4) and (1 <= nj <= 4):
+                            sink = ni*10 + nj
+                            sinks.append(sink)
+            nsinks = len(sinks)
+            weight = 1 / float(nsinks)
+            for sink in sinks:
+                weighted_edges.append((source, sink, weight))
+    P.add_weighted_edges_from(weighted_edges)
+    return P
+
+
 def get_node_to_set(T, root, node_to_pset, P_default=None):
     """
     For each node get the set of states that give positive likelihood.
