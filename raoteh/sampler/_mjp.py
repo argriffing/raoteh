@@ -16,9 +16,14 @@ from raoteh.sampler import _mc0, _mc
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
-        get_dense_rate_matrix, sparse_expm,
-        expm_frechet_is_simple, simple_expm_frechet,
+        get_dense_rate_matrix,
         get_first_element, get_arbitrary_tip)
+
+from raoteh.sampler._linalg import (
+        sparse_expm,
+        expm_frechet_is_simple,
+        simple_expm_frechet,
+        )
 
 from raoteh.sampler._mc import (
         construct_node_to_restricted_pmap,

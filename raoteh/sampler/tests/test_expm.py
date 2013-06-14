@@ -11,10 +11,8 @@ import scipy.linalg
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
-from raoteh.sampler._util import (
-        sparse_expm,
-        get_dense_rate_matrix,
-        )
+from raoteh.sampler._linalg import sparse_expm
+from raoteh.sampler._util import get_dense_rate_matrix
 
 
 def _check_sparse_expm(Q_sparse, t):

@@ -23,6 +23,9 @@ from raoteh.sampler._util import (
         NumericalZeroProb,
         get_first_element,
         get_arbitrary_tip,
+        )
+
+from raoteh.sampler._linalg import (
         sparse_expm,
         expm_frechet_is_simple,
         simple_expm_frechet,

@@ -19,7 +19,11 @@ from raoteh.sampler import _mc0
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
-        get_first_element, sparse_expm,
+        get_first_element,
+        )
+
+from raoteh.sampler._linalg import (
+        sparse_expm,
         )
 
 from raoteh.sampler._mc import (
