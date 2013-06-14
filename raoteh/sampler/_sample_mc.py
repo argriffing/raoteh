@@ -7,168 +7,18 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _sample_mcx
+from raoteh.sampler import _sample_mcx, _sample_mcy
 
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_first_element,
-        get_normalized_dict_distn,
-        get_unnormalized_dict_distn,
-        dict_random_choice,
-        )
+from raoteh.sampler._util import StructuralZeroProb
 
-from raoteh.sampler._graph_transform import (
-        get_chunk_tree,
-        )
-
-from raoteh.sampler._mc import (
-        construct_node_to_restricted_pmap,
-        )
+from raoteh.sampler._graph_transform import get_chunk_tree
 
 
 __all__ = []
 
 
-#TODO this is obsolete; use _mcy.resample_states instead
-def resample_restricted_states(T, node_to_allowed_states,
-        root, prior_root_distn=None, P_default=None):
-    """
-    This function applies to a tree for which nodes will be assigned states.
 
-    Parameters
-    ----------
-    T : unweighted undirected acyclic networkx graph
-        States do not change within chunks represented by nodes in this tree.
-        Edges may be annotated with a sparse transition matrix P
-        as a weighted directed networkx graph.
-    node_to_allowed_states : dict
-        Maps each node to a set of allowed states.
-    root : integer
-        Root node.
-    prior_root_distn : dict, optional
-        Map from root state to prior probability.
-        If the distribution is not provided,
-        the it will be assumed to be uninformative.
-    P_default : weighted directed networkx graph, optional
-        Edges that are not explicitly annotated with a transition matrix P
-        will use this default transition matrix instead.
-        The edge weights are transition probabilities.
-
-    Returns
-    -------
-    node_to_sampled_state : dict
-        A map from each node of T to its sampled state.
-
-    See also
-    --------
-    resample_states
-
-    """
-    # Check for failure to annotate the nodes.
-    bad = set(T) - set(node_to_allowed_states)
-    if bad:
-        raise ValueError('the following nodes in the tree '
-                'are not annotated with allowed states: ' + str(sorted(bad)))
-
-    # Check for annotated non-nodes.
-    bad = set(node_to_allowed_states) - set(T)
-    if bad:
-        raise ValueError('the following nodes are annotated '
-                'with allowed states, but these nodes do not appear '
-                'in the tree: ' + str(sorted(bad)))
-
-    # Check that the root is in the tree.
-    if root not in T:
-        raise ValueError('the specified root ' + str(root) + 'is not '
-                'a node in the tree')
-
-    # Check for blatant infeasibility.
-    bad = set(n for n, s in node_to_allowed_states.items() if not s)
-    if bad:
-        raise StructuralZeroProb('the following nodes have no allowed states '
-                'according to their annotation: ' + str(sorted(bad)))
-
-    # Check for blatant root infeasibility
-    # caused partially by sparsity of the prior root distribution.
-    if prior_root_distn is not None:
-        if not prior_root_distn:
-            raise StructuralZeroProb('no root state is feasible '
-                    'because no state has a positive prior probability')
-        if not set(prior_root_distn) & node_to_allowed_states[root]:
-            raise StructuralZeroProb('no root state is feasible '
-                    'because the states with positive prior probability '
-                    'are disallowed by the annotation')
-
-    # Bookkeeping structure related to tree traversal.
-    predecessors = nx.dfs_predecessors(T, root)
-
-    # For each node, get a sparse map from state to subtree probability.
-    node_to_pmap = construct_node_to_restricted_pmap(
-            T, root, node_to_allowed_states, P_default)
-
-    # Sample the node states, beginning at the root.
-    node_to_sampled_state = {}
-
-    # Sample the states.
-    for node in nx.dfs_preorder_nodes(T, root):
-
-        # Get the precomputed pmap associated with the node.
-        # This is a sparse map from state to subtree likelihood.
-        pmap = node_to_pmap[node]
-
-        # Check for infeasibility caused by pmap sparsity.
-        if not pmap:
-            if node == root:
-                raise StructuralZeroProb('no root state is feasible because '
-                        'the subtree has zero likelihood for each state')
-            else:
-                raise StructuralZeroProb('no state is feasible '
-                        'for node %s because the subtree has zero likelihood '
-                        'for each state' % node)
-
-        # Define the posterior distribution over states at the node.
-        if node == root:
-            prior_distn = prior_root_distn
-        else:
-
-            # Get the parent node and its state.
-            parent_node = predecessors[node]
-            parent_state = node_to_sampled_state[parent_node]
-
-            # Get the transition probability matrix.
-            P = T[parent_node][node].get('P', P_default)
-            if P is None:
-                raise ValueError(
-                        'no transition probability matrix is available')
-            
-            # Check that the parent state has transitions.
-            if parent_state not in P:
-                raise StructuralZeroProb(
-                        'no transition from the parent state is possible')
-
-            # Get the distribution of a non-root node.
-            sinks = set(P[parent_state]) & node_to_allowed_states[node]
-            if not sinks:
-                raise StructuralZeroProb(
-                        'all allowed transitions from the parent node, '
-                        'given its sampled state, lead to disallowed '
-                        'states at the current node')
-            prior_distn = dict((s, P[parent_state][s]['weight']) for s in sinks)
-            if not set(prior_distn) & set(pmap):
-                raise StructuralZeroProb(
-                        'all transitions from the parent node, '
-                        'in its currently sampled state, to an allowed '
-                        'state in the current node, lead to only subtrees '
-                        'with likelihood zero')
-
-        # Sample the state from the posterior distribution.
-        dpost_unnormal = get_unnormalized_dict_distn(pmap, prior_distn)
-        node_to_sampled_state[node] = dict_random_choice(dpost_unnormal)
-
-    # Return the map of sampled states.
-    return node_to_sampled_state
-
-
+#TODO move this into the _sample_mcy module
 def resample_restricted_edge_states(T, P, node_to_allowed_states, event_nodes,
         root, prior_root_distn=None):
     """
@@ -283,9 +133,10 @@ def resample_restricted_edge_states(T, P, node_to_allowed_states, event_nodes,
     # on the edges.
     chunk_root = non_event_map[root]
     chunk_root_distn = prior_root_distn
-    chunk_node_to_sampled_state = resample_restricted_states(
-            chunk_tree, chunk_node_to_allowed_states,
-            root=chunk_root, prior_root_distn=chunk_root_distn, P_default=P)
+    chunk_node_to_sampled_state = _sample_mcy.resample_states(
+            chunk_tree, chunk_root,
+            node_to_allowed_states=chunk_node_to_allowed_states,
+            root_distn=chunk_root_distn, P_default=P)
 
     # Copy the original tree before adding states to the edges.
     T = T.copy()

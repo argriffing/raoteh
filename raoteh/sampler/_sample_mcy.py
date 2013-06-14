@@ -9,7 +9,7 @@ the joint states using the node_to_pmap.
 """
 from __future__ import division, print_function, absolute_import
 
-from raoteh.sampler import _mc0, _mcy, _sample_mc0
+from raoteh.sampler import _util, _mc0, _mcy, _sample_mc0
 
 
 __all__ = []
@@ -62,10 +62,9 @@ def resample_states(T, root,
 
     # Check that the root node_to_set is not empty.
     if not node_to_set[root]:
-        print()
-        print(node_to_pset)
-        print(node_to_set)
-        raise Exception('internal error')
+        raise _util.StructuralZeroProb('root node_to_set is empty\n'
+                'node_to_pset: %s\n'
+                'node_to_set: %s\n' % (node_to_pset, node_to_set))
 
     # Get the map from each node to a sparse map
     # from each feasible state to the subtree likelihood.
