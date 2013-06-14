@@ -15,7 +15,7 @@ import random
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform, _mjp
+from raoteh.sampler import _graph_transform, _mjp, _sample_mcy
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
@@ -23,10 +23,6 @@ from raoteh.sampler._util import (
 from raoteh.sampler._mjp import (
         get_total_rates,
         get_trajectory_log_likelihood,
-        )
-
-from raoteh.sampler._sample_mc import (
-        resample_restricted_edge_states,
         )
 
 from raoteh.sampler._sample_mjp import (
@@ -383,9 +379,10 @@ def gen_restricted_histories(T, Q, node_to_allowed_states,
 
         # Resample edge states.
         event_nodes = set(T) - initial_nodes
-        T = resample_restricted_edge_states(
-                T, P, node_to_allowed_states, event_nodes,
-                root=root, prior_root_distn=root_distn)
+        T = _sample_mcy.resample_edge_states(
+                T, root, P, event_nodes,
+                node_to_allowed_states=node_to_allowed_states,
+                root_distn=root_distn)
 
 
 def gen_mh_histories(T, Q, node_to_allowed_states,
@@ -543,9 +540,10 @@ def gen_mh_histories(T, Q, node_to_allowed_states,
 
         # Resample edge states.
         event_nodes = set(T) - initial_nodes
-        T = resample_restricted_edge_states(
-                T, P, node_to_allowed_states, event_nodes,
-                root=root, prior_root_distn=root_distn)
+        T = _sample_mcy.resample_edge_states(
+                T, root, P, event_nodes,
+                node_to_allowed_states=node_to_allowed_states,
+                root_distn=root_distn)
 
 
 def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
@@ -691,9 +689,10 @@ def get_restricted_feasible_history(
 
         # Try to sample edge states.
         try:
-            return resample_restricted_edge_states(
-                    T, P, node_to_allowed_states, event_nodes,
-                    root=root, prior_root_distn=root_distn)
+            return _sample_mcy.resample_edge_states(
+                    T, root, P, event_nodes,
+                    node_to_allowed_states=node_to_allowed_states,
+                    root_distn=root_distn)
         except StructuralZeroProb as e:
             pass
 
