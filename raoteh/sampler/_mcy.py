@@ -18,12 +18,79 @@ will be silently ignored.
 """
 from __future__ import division, print_function, absolute_import
 
+import numpy as np
 import networkx as nx
+
+import pyfelscore
 
 from raoteh.sampler import _mc0
 
 
 __all__ = []
+
+
+def _get_node_to_pset_same_transition_matrix(T, root, P,
+        node_to_allowed_states=None):
+    T_bfs = nx.bfs_tree(T, root)
+    preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
+    sorted_states = sorted(P)
+    nnodes = len(preorder_nodes)
+    nstates = len(sorted_states)
+    n_to_canon = dict((n, i) for i, n in enumerate(preorder_nodes))
+    s_to_canon = dict((s, i) for i, s in enumerate(sorted_states))
+
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices = []
+    tree_csr_indptr = [0]
+    node_count = 0
+    for na_canon, na in enumerate(preorder_nodes):
+        if na in T_bfs:
+            for nb in T_bfs[na]:
+                nb_canon = n_to_canon[nb]
+                tree_csr_indices.append(nb_canon)
+                node_count += 1
+        tree_csr_indptr.append(node_count)
+
+    # Put the transition matrix into sparse boolean csr form.
+    trans_csr_indices = []
+    trans_csr_indptr = [0]
+    state_count = 0
+    for sa_canon, sa in enumerate(sorted_states):
+        for sb in P[sa]:
+            sb_canon = s_to_canon[sb]
+            trans_csr_indices.append(sb_canon)
+            state_count += 1
+        trans_csr_indptr.append(state_count)
+
+    # Define the state mask.
+    state_mask = np.ones((nnodes, nstates), dtype=int)
+    if node_to_allowed_states is not None:
+        for na_canon, na in enumerate(preorder_nodes):
+            if na in node_to_allowed_states:
+                allowed_states = node_to_allowed_states[na]
+                for sa_canon, sa in enumerate(sorted_states):
+                    if sa not in allowed_states:
+                        state_mask[na_canon, sa_canon] = 0
+
+    # Update the state mask.
+    pyfelscore.mcy_get_node_to_pset(
+            np.array(tree_csr_indices, dtype=int),
+            np.array(tree_csr_indptr, dtype=int),
+            np.array(trans_csr_indices, dtype=int),
+            np.array(trans_csr_indptr, dtype=int),
+            state_mask)
+    
+    # Convert the updated state mask into a node_to_pset dict.
+    node_to_pset = {}
+    for na_canon, na in enumerate(preorder_nodes):
+        allowed_states = set()
+        for sa_canon, sa in enumerate(sorted_states):
+            if state_mask[na_canon, sa_canon]:
+                allowed_states.add(sa)
+        node_to_pset[na] = allowed_states
+
+    # Return the node_to_pset dict.
+    return node_to_pset
 
 
 def get_node_to_pset(T, root,
@@ -56,6 +123,14 @@ def get_node_to_pset(T, root,
         A map from a node to the set of states with positive subtree likelihood.
 
     """
+    # Use a specialized function if P_default is available.
+    has_custom_P = any('P' in T[na][nb] for na, nb in T.edges())
+    if (P_default is not None) and (not has_custom_P):
+        node_to_pset = _get_node_to_pset_same_transition_matrix(
+                T, root, P_default,
+                node_to_allowed_states=node_to_allowed_states)
+        return node_to_pset
+
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
     predecessors = nx.dfs_predecessors(T, root)
