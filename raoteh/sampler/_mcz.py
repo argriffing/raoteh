@@ -26,6 +26,22 @@ from raoteh.sampler import _mc0, _mcy
 __all__ = []
 
 
+
+def get_node_to_set(T, root,
+        node_to_state_to_likelihood=None, P_default=None):
+    # Construct the map to sets from the map to dictionaries.
+    if node_to_state_to_likelihood is not None:
+        node_to_allowed_states = {}
+        for node, state_to_likelihood in node_to_state_to_likelihood.items():
+            node_to_allowed_states[node] = set(state_to_likelihood)
+    else:
+        node_to_allowed_states = None
+
+    # Return the node_to_set from the analgous function of simpler type.
+    return _mcy.get_node_to_set(T, root,
+            node_to_allowed_states=node_to_allowed_states, P_default=P_default)
+
+
 def get_node_to_pset(T, root,
         node_to_state_to_likelihood=None, P_default=None):
     """
@@ -112,11 +128,9 @@ def get_node_to_pmap(T, root,
     # and the edge-specific transition matrix sparsity patterns
     # and the observed states.
     if node_to_set is None:
-        node_to_pset = get_node_to_pset(T, root,
+        node_to_set = get_node_to_set(T, root,
                 node_to_state_to_likelihood=node_to_state_to_likelihood,
                 P_default=P_default)
-        node_to_set = _mc0.get_node_to_set(T, root,
-                node_to_pset, P_default=P_default)
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)

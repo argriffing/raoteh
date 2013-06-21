@@ -56,17 +56,13 @@ def resample_states(T, root,
     # after accounting for the rooted tree shape
     # and the edge-specific transition matrix sparsity patterns
     # and the observed states.
-    node_to_pset = _mcy.get_node_to_pset(T, root,
+    node_to_set = _mcy.get_node_to_set(T, root,
             node_to_allowed_states=node_to_allowed_states,
             P_default=P_default)
-    node_to_set = _mc0.get_node_to_set(T, root,
-            node_to_pset, P_default=P_default)
 
     # Check that the root node_to_set is not empty.
     if not node_to_set[root]:
-        raise _util.StructuralZeroProb('root node_to_set is empty\n'
-                'node_to_pset: %s\n'
-                'node_to_set: %s\n' % (node_to_pset, node_to_set))
+        raise _util.StructuralZeroProb('root node_to_set is empty')
 
     # Get the map from each node to a sparse map
     # from each feasible state to the subtree likelihood.

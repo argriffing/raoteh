@@ -46,9 +46,9 @@ def _digraph_to_bool_csr(G, ordered_nodes):
 
     Returns
     -------
-    csr_indices : sequence of indices
+    csr_indices : ndarray of indices
         Part of the csr interface.
-    csr_indptr : sequence of pointers
+    csr_indptr : ndarray of pointers
         Part of the csr interface.
 
     """
@@ -63,6 +63,8 @@ def _digraph_to_bool_csr(G, ordered_nodes):
                 csr_indices.append(nb_index)
                 node_count += 1
         csr_indptr.append(node_count)
+    csr_indices = np.array(csr_indices, dtype=int)
+    csr_indptr = np.array(csr_indptr, dtype=int)
     return csr_indices, csr_indptr
 
 
@@ -105,8 +107,47 @@ def _state_mask_to_dict(state_mask, preorder_nodes, sorted_states):
 
 def _get_node_to_set_same_transition_matrix(T, root, P,
         node_to_allowed_states=None):
-    pass
+    T_bfs = nx.bfs_tree(T, root)
+    preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
+    sorted_states = sorted(P)
 
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices, tree_csr_indptr = _digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
+
+    # Put the transition matrix into sparse boolean csr form.
+    trans_csr_indices, trans_csr_indptr = _digraph_to_bool_csr(
+            P, sorted_states)
+
+    # Define the state mask.
+    state_mask = _define_state_mask(
+            node_to_allowed_states, preorder_nodes, sorted_states)
+
+    # Update the state mask, using the backward pass.
+    pyfelscore.mcy_get_node_to_pset(
+            tree_csr_indices,
+            tree_csr_indptr,
+            trans_csr_indices,
+            trans_csr_indptr,
+            state_mask)
+
+    # Update the state mask, using the forward pass and a temporary array.
+    nstates = len(sorted_states)
+    tmp_state_mask = np.zeros(nstates, dtype=int)
+    pyfelscore.get_node_to_set(
+            tree_csr_indices,
+            tree_csr_indptr,
+            trans_csr_indices,
+            trans_csr_indptr,
+            state_mask,
+            tmp_state_mask)
+
+    # Convert the updated state mask into a node_to_pset dict.
+    node_to_set = _state_mask_to_dict(
+            state_mask, preorder_nodes, sorted_states)
+
+    # Return the node_to_set dict.
+    return node_to_set
 
 
 def _get_node_to_pset_same_transition_matrix(T, root, P,
@@ -129,10 +170,10 @@ def _get_node_to_pset_same_transition_matrix(T, root, P,
 
     # Update the state mask.
     pyfelscore.mcy_get_node_to_pset(
-            np.array(tree_csr_indices, dtype=int),
-            np.array(tree_csr_indptr, dtype=int),
-            np.array(trans_csr_indices, dtype=int),
-            np.array(trans_csr_indptr, dtype=int),
+            tree_csr_indices,
+            tree_csr_indptr,
+            trans_csr_indices,
+            trans_csr_indptr,
             state_mask)
 
     # Convert the updated state mask into a node_to_pset dict.
@@ -141,6 +182,28 @@ def _get_node_to_pset_same_transition_matrix(T, root, P,
 
     # Return the node_to_pset dict.
     return node_to_pset
+
+
+def get_node_to_set(T, root,
+        node_to_allowed_states=None, P_default=None):
+    """
+    For each node, get the set of allowed states subject to constraints.
+
+    """
+    # Use a specialized function if P_default is available.
+    # Otherwise get the pset and use mc0 to get the set.
+    has_custom_P = any('P' in T[na][nb] for na, nb in T.edges())
+    if (P_default is not None) and (not has_custom_P):
+        node_to_set = _get_node_to_set_same_transition_matrix(
+                T, root, P_default,
+                node_to_allowed_states=node_to_allowed_states)
+    else:
+        node_to_pset = get_node_to_pset(T, root,
+            node_to_allowed_states=node_to_allowed_states,
+            P_default=P_default)
+        node_to_set = _mc0.get_node_to_set(T, root, node_to_pset,
+                P_default=P_default)
+    return node_to_set
 
 
 def get_node_to_pset(T, root,
@@ -288,11 +351,9 @@ def get_node_to_pmap(T, root,
     # and the edge-specific transition matrix sparsity patterns
     # and the observed states.
     if node_to_set is None:
-        node_to_pset = get_node_to_pset(T, root,
+        node_to_set = get_node_to_set(T, root,
                 node_to_allowed_states=node_to_allowed_states,
                 P_default=P_default)
-        node_to_set = _mc0.get_node_to_set(T, root,
-                node_to_pset, P_default=P_default)
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
