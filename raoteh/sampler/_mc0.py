@@ -10,6 +10,8 @@ from collections import defaultdict
 import numpy as np
 import networkx as nx
 
+import pyfelscore
+
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_first_element, get_arbitrary_tip,
@@ -58,6 +60,42 @@ def get_example_transition_matrix():
 def get_node_to_set(T, root, node_to_pset, P_default=None):
     """
     For each node get the set of states that give positive likelihood.
+
+    Parameters
+    ----------
+    T : undirected unweighted acyclic networkx graph
+        A tree whose edges are optionally annotated
+        with edge-specific state transition probability matrix P.
+    root : integer
+        The root node.
+    node_to_pset : dict
+        A map from a node to the set of states with positive subtree likelihood.
+    P_default : networkx directed weighted graph, optional
+        Sparse transition matrix to be used for edges
+        which are not annotated with an edge-specific transition matrix.
+
+    Returns
+    -------
+    node_to_set : dict
+        Maps each node to a set of states that give positive likelihood.
+
+    Notes
+    -----
+    This function depends on the nature of the data observations
+    only through the node_to_pset map.
+    Another way of thinking about this function is that it gives
+    the set of states that have positive posterior probability.
+
+    """
+    return get_node_to_set_unaccelerated(
+            T, root, node_to_pset, P_default=P_default)
+
+
+def get_node_to_set_unaccelerated(T, root, node_to_pset, P_default=None):
+    """
+    For each node get the set of states that give positive likelihood.
+
+    Does not use pyfelscore acceleration.
 
     Parameters
     ----------
