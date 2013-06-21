@@ -29,6 +29,44 @@ from raoteh.sampler import _mc0
 __all__ = []
 
 
+def _digraph_to_csr(G, ordered_nodes):
+    """
+
+    Parameters
+    ----------
+    G : networkx directed graph
+        The unweighted graph to convert into csr form.
+    ordered_nodes : sequence of nodes
+        Nodes listed in a requested order.
+
+    Returns
+    -------
+    csr_indices : sequence of indices
+        Part of the csr interface.
+    csr_indptr : sequence of pointers
+        Part of the csr interface.
+
+    """
+    node_to_index = dict((n, i) for i, n in enumerate(ordered_nodes))
+    csr_indices = []
+    csr_indptr = [0]
+    node_count = 0
+    for na_index, na in enumerate(ordered_nodes):
+        if na in G:
+            for nb in G[na]:
+                nb_index = node_to_index[nb]
+                csr_indices.append(nb_index)
+                node_count += 1
+        csr_indptr.append(node_count)
+    return csr_indices, csr_indptr
+
+
+def _get_node_to_set_same_transition_matrix(T, root, P,
+        node_to_allowed_states=None):
+    pass
+
+
+
 def _get_node_to_pset_same_transition_matrix(T, root, P,
         node_to_allowed_states=None):
     T_bfs = nx.bfs_tree(T, root)
@@ -40,27 +78,10 @@ def _get_node_to_pset_same_transition_matrix(T, root, P,
     s_to_canon = dict((s, i) for i, s in enumerate(sorted_states))
 
     # Put the tree into sparse boolean csr form.
-    tree_csr_indices = []
-    tree_csr_indptr = [0]
-    node_count = 0
-    for na_canon, na in enumerate(preorder_nodes):
-        if na in T_bfs:
-            for nb in T_bfs[na]:
-                nb_canon = n_to_canon[nb]
-                tree_csr_indices.append(nb_canon)
-                node_count += 1
-        tree_csr_indptr.append(node_count)
+    tree_csr_indices, tree_csr_indptr = _digraph_to_csr(T_bfs, preorder_nodes)
 
     # Put the transition matrix into sparse boolean csr form.
-    trans_csr_indices = []
-    trans_csr_indptr = [0]
-    state_count = 0
-    for sa_canon, sa in enumerate(sorted_states):
-        for sb in P[sa]:
-            sb_canon = s_to_canon[sb]
-            trans_csr_indices.append(sb_canon)
-            state_count += 1
-        trans_csr_indptr.append(state_count)
+    trans_csr_indices, trans_csr_indptr = _digraph_to_csr(P, sorted_states)
 
     # Define the state mask.
     state_mask = np.ones((nnodes, nstates), dtype=int)
