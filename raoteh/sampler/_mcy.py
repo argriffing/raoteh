@@ -29,8 +29,13 @@ from raoteh.sampler import _mc0
 __all__ = []
 
 
-def _digraph_to_csr(G, ordered_nodes):
+def _digraph_to_bool_csr(G, ordered_nodes):
     """
+    This is a helper function for converting between networkx and cython.
+
+    The output consists of two out of the three arrays of the csr interface.
+    The third csr array (data) is not needed
+    because we only care about the boolean sparsity structure.
 
     Parameters
     ----------
@@ -61,6 +66,43 @@ def _digraph_to_csr(G, ordered_nodes):
     return csr_indices, csr_indptr
 
 
+def _define_state_mask(node_to_allowed_states, preorder_nodes, sorted_states):
+    """
+    Define the state mask.
+    """
+    nnodes = len(preorder_nodes)
+    nstates = len(sorted_states)
+    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
+    state_to_index = dict((s, i) for i, s in enumerate(sorted_states))
+    state_mask = np.ones((nnodes, nstates), dtype=int)
+    if node_to_allowed_states is not None:
+        for na_index, na in enumerate(preorder_nodes):
+            if na in node_to_allowed_states:
+                allowed_states = node_to_allowed_states[na]
+                for sa_index, sa in enumerate(sorted_states):
+                    if sa not in allowed_states:
+                        state_mask[na_index, sa_index] = 0
+    return state_mask
+
+    
+def _state_mask_to_dict(state_mask, preorder_nodes, sorted_states):
+    """
+    Convert the updated state mask into a node_to_pset dict.
+    """
+    nnodes = len(preorder_nodes)
+    nstates = len(sorted_states)
+    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
+    state_to_index = dict((s, i) for i, s in enumerate(sorted_states))
+    node_to_pset = {}
+    for na_index, na in enumerate(preorder_nodes):
+        allowed_states = set()
+        for sa_index, sa in enumerate(sorted_states):
+            if state_mask[na_index, sa_index]:
+                allowed_states.add(sa)
+        node_to_pset[na] = allowed_states
+    return node_to_pset
+
+
 def _get_node_to_set_same_transition_matrix(T, root, P,
         node_to_allowed_states=None):
     pass
@@ -72,26 +114,18 @@ def _get_node_to_pset_same_transition_matrix(T, root, P,
     T_bfs = nx.bfs_tree(T, root)
     preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
     sorted_states = sorted(P)
-    nnodes = len(preorder_nodes)
-    nstates = len(sorted_states)
-    n_to_canon = dict((n, i) for i, n in enumerate(preorder_nodes))
-    s_to_canon = dict((s, i) for i, s in enumerate(sorted_states))
 
     # Put the tree into sparse boolean csr form.
-    tree_csr_indices, tree_csr_indptr = _digraph_to_csr(T_bfs, preorder_nodes)
+    tree_csr_indices, tree_csr_indptr = _digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
 
     # Put the transition matrix into sparse boolean csr form.
-    trans_csr_indices, trans_csr_indptr = _digraph_to_csr(P, sorted_states)
+    trans_csr_indices, trans_csr_indptr = _digraph_to_bool_csr(
+            P, sorted_states)
 
     # Define the state mask.
-    state_mask = np.ones((nnodes, nstates), dtype=int)
-    if node_to_allowed_states is not None:
-        for na_canon, na in enumerate(preorder_nodes):
-            if na in node_to_allowed_states:
-                allowed_states = node_to_allowed_states[na]
-                for sa_canon, sa in enumerate(sorted_states):
-                    if sa not in allowed_states:
-                        state_mask[na_canon, sa_canon] = 0
+    state_mask = _define_state_mask(
+            node_to_allowed_states, preorder_nodes, sorted_states)
 
     # Update the state mask.
     pyfelscore.mcy_get_node_to_pset(
@@ -100,15 +134,10 @@ def _get_node_to_pset_same_transition_matrix(T, root, P,
             np.array(trans_csr_indices, dtype=int),
             np.array(trans_csr_indptr, dtype=int),
             state_mask)
-    
+
     # Convert the updated state mask into a node_to_pset dict.
-    node_to_pset = {}
-    for na_canon, na in enumerate(preorder_nodes):
-        allowed_states = set()
-        for sa_canon, sa in enumerate(sorted_states):
-            if state_mask[na_canon, sa_canon]:
-                allowed_states.add(sa)
-        node_to_pset[na] = allowed_states
+    node_to_pset = _state_mask_to_dict(
+            state_mask, preorder_nodes, sorted_states)
 
     # Return the node_to_pset dict.
     return node_to_pset
