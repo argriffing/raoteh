@@ -51,7 +51,7 @@ from raoteh.sampler._sample_tree import (
 
 class TestMonteCarloLikelihoodRatio(TestCase):
 
-    @decorators.skipif(True)
+    @decorators.slow
     def test_tmjp_primary_leaf_marginal_distn_sum(self):
         # Test that a set of marginal probabilities adds up to 1.
 
@@ -135,7 +135,7 @@ class TestMonteCarloLikelihoodRatio(TestCase):
         # the sum should be 1.
         assert_allclose(sum(obs_likelihoods), 1)
 
-    #@decorators.skipif(True)
+    @decorators.slow
     def test_monte_carlo_likelihood_ratio(self):
         # Define a tree with some branch lengths.
         # Use forward sampling from some process to get primary state
@@ -424,6 +424,7 @@ class TestExpectationMaximization(TestCase):
 
 class TestFullyAugmentedLikelihood(TestCase):
 
+    @decorators.slow
     def test_fully_augmented_likelihood_sufficient_statistics(self):
         # If we fix all of the parameters of the model except for the two
         # parameters that correspond to the tolerance transition rates,

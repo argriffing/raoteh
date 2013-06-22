@@ -87,7 +87,7 @@ class TestGetFeasibleHistory(TestCase):
 class TestToleranceProcessExpectedLogLikelihood(TestCase):
 
     #TODO split this function into multiple parts
-    #@decorators.skipif(True)
+    @decorators.slow
     def test_tmjp_monte_carlo_rao_teh_differential_entropy(self):
         # In this test, we look at conditional expected log likelihoods.
         # These are computed in two ways.
@@ -543,8 +543,7 @@ class TestToleranceProcessExpectedLogLikelihood(TestCase):
         raise Exception('print tmjp entropy stuff')
 
 
-    # this test is slow...
-    #@decorators.skipif(True)
+    @decorators.slow
     def test_sample_tmjp_v1(self):
         # Compare summaries of samples from the product space
         # of the compound process to summaries of samples that uses

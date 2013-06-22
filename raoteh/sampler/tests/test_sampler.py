@@ -128,7 +128,7 @@ class TestForwardSample(TestCase):
 
 class TestMJP_Entropy(TestCase):
 
-    @decorators.skipif(True, 'this test prints stuff')
+    @decorators.slow
     def test_mjp_reversible_differential_entropy(self):
 
         # Define a distribution over some states.
@@ -251,6 +251,7 @@ class TestMJP_Entropy(TestCase):
         print()
         raise Exception('print entropy stuff')
 
+    @decorators.slow
     def test_mjp_monte_carlo_rao_teh_differential_entropy(self):
 
         # Define a distribution over some states.
@@ -440,7 +441,7 @@ class TestRaoTehSampler(TestCase):
                 if a in node_to_state:
                     assert_equal(node_to_state[a], state)
 
-    #@decorators.skipif(True, 'benchmark monte carlo conditional expectation')
+    @decorators.slow
     def test_jukes_cantor_conditional_expectation(self):
         # Compare Monte Carlo conditional expectations to the true values.
 

@@ -26,7 +26,7 @@ from raoteh.sampler._sampler import (
 
 class TestShiwenIndel(TestCase):
 
-    @decorators.skipif(True)
+    @decorators.slow
     def test_shiwen_indel(self):
 
         # Define the parameters and conditions of the toy model.
