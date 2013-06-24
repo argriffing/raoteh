@@ -230,6 +230,8 @@ def get_likelihood(root_pmap, root_distn=None):
 
     # Check whether the likelihoods at the root, by themselves,
     # cause the likelihood to be zero.
+    if root_pmap is None:
+        raise ValueError('root_pmap is None')
     if not root_pmap:
         raise StructuralZeroProb(
                 'all root states give a subtree likelihood of zero')

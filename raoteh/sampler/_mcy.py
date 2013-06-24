@@ -23,10 +23,16 @@ import networkx as nx
 
 import pyfelscore
 
-from raoteh.sampler import _mc0
+from raoteh.sampler import _mc0, _util
+
 
 
 __all__ = []
+
+
+def _check_root(T, root):
+    if root not in T:
+        raise Exception('internal error: the root is not in the tree')
 
 
 def _digraph_to_bool_csr(G, ordered_nodes):
@@ -77,23 +83,25 @@ def _get_esd_transitions(G, preorder_nodes, sorted_states, P_default=None):
     node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
     esd_transitions = np.zeros((nnodes, nstates, nstates), dtype=float)
     for na_index, na in enumerate(preorder_nodes):
-        for nb in G[na]:
-            nb_index = node_to_index[nb]
-            edge_object = G[na][nb]
-            P = edge_object.get('P', P_default)
-            if P is None:
-                raise ValueError('expected either a default transition matrix '
-                        'or a transition matrix on the edge '
-                        'from node {0} to node {1}'.format(na, nb))
-            for sa_index, sa in enumerate(sorted_states):
-                if sa not in P:
-                    continue
-                for sb_index, sb in enumerate(sorted_states):
-                    if sb not in P[sa]:
+        if na in G:
+            for nb in G[na]:
+                nb_index = node_to_index[nb]
+                edge_object = G[na][nb]
+                P = edge_object.get('P', P_default)
+                if P is None:
+                    raise ValueError('expected either a default '
+                            'transition matrix '
+                            'or a transition matrix on the edge '
+                            'from node {0} to node {1}'.format(na, nb))
+                for sa_index, sa in enumerate(sorted_states):
+                    if sa not in P:
                         continue
-                    edge_object = P[sa][sb]
-                    prob = edge_object['weight']
-                    esd_transitions[nb_index, sa_index, sb_index] = prob
+                    for sb_index, sb in enumerate(sorted_states):
+                        if sb not in P[sa]:
+                            continue
+                        edge_object = P[sa][sb]
+                        prob = edge_object['weight']
+                        esd_transitions[nb_index, sa_index, sb_index] = prob
     return esd_transitions
 
 
@@ -103,8 +111,6 @@ def _define_state_mask(node_to_allowed_states, preorder_nodes, sorted_states):
     """
     nnodes = len(preorder_nodes)
     nstates = len(sorted_states)
-    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
-    state_to_index = dict((s, i) for i, s in enumerate(sorted_states))
     state_mask = np.ones((nnodes, nstates), dtype=int)
     if node_to_allowed_states is not None:
         for na_index, na in enumerate(preorder_nodes):
@@ -118,20 +124,16 @@ def _define_state_mask(node_to_allowed_states, preorder_nodes, sorted_states):
     
 def _state_mask_to_dict(state_mask, preorder_nodes, sorted_states):
     """
-    Convert the updated state mask into a node_to_pset dict.
+    Convert the updated state mask into a node_to_set dict.
     """
-    nnodes = len(preorder_nodes)
-    nstates = len(sorted_states)
-    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
-    state_to_index = dict((s, i) for i, s in enumerate(sorted_states))
-    node_to_pset = {}
+    node_to_set = {}
     for na_index, na in enumerate(preorder_nodes):
         allowed_states = set()
         for sa_index, sa in enumerate(sorted_states):
             if state_mask[na_index, sa_index]:
                 allowed_states.add(sa)
-        node_to_pset[na] = allowed_states
-    return node_to_pset
+        node_to_set[na] = allowed_states
+    return node_to_set
 
 
 def _get_node_to_set_same_transition_matrix(T, root, P,
@@ -204,10 +206,6 @@ def _esd_get_node_to_set(T, root,
     # Put the tree into sparse boolean csr form.
     tree_csr_indices, tree_csr_indptr = _digraph_to_bool_csr(
             T_bfs, preorder_nodes)
-
-    # Put the transition matrix into sparse boolean csr form.
-    trans_csr_indices, trans_csr_indptr = _digraph_to_bool_csr(
-            P, sorted_states)
 
     # Define the state mask.
     state_mask = _define_state_mask(
@@ -298,10 +296,6 @@ def _esd_get_node_to_pset(T, root,
     # Put the tree into sparse boolean csr form.
     tree_csr_indices, tree_csr_indptr = _digraph_to_bool_csr(
             T_bfs, preorder_nodes)
-
-    # Put the transition matrix into sparse boolean csr form.
-    trans_csr_indices, trans_csr_indptr = _digraph_to_bool_csr(
-            P, sorted_states)
 
     # Define the state mask.
     state_mask = _define_state_mask(
@@ -476,7 +470,145 @@ def unaccelerated_get_node_to_pset(T, root,
     return node_to_pset
 
 
+def _esd_get_node_to_pmap(T, root,
+        node_to_allowed_states=None, P_default=None, node_to_set=None):
+    # Construct the bfs tree, preserving transition matrices on the edges.
+    T_bfs = nx.DiGraph()
+    for na, nb in nx.bfs_edges(T, root):
+        T_bfs.add_edge(na, nb)
+        edge_object = T[na][nb]
+        P = edge_object.get('P', None)
+        if P is not None:
+            T_bfs[na][nb]['P'] = P
+
+    # Get the ordered list of nodes in preorder.
+    preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
+
+    # Get the set of all states in all transition matrices.
+    state_set = set()
+    for na, nb in T_bfs.edges():
+        edge_object = T_bfs[na][nb]
+        P = edge_object.get('P', P_default)
+        state_set.update(set(P))
+    sorted_states = sorted(state_set)
+
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices, tree_csr_indptr = _digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
+
+    # Define the state mask.
+    state_mask = _define_state_mask(
+            node_to_allowed_states, preorder_nodes, sorted_states)
+
+    # Construct the edge-specific transition matrix as an ndim-3 numpy array.
+    esd_transitions = _get_esd_transitions(
+            T_bfs, preorder_nodes, sorted_states, P_default=P_default)
+
+    # Backward pass to update the state mask.
+    pyfelscore.mcy_esd_get_node_to_pset(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask)
+
+    # Forward pass to update the state mask.
+    pyfelscore.esd_get_node_to_set(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask)
+
+    # Check for agreement on the set of possible states for each node.
+    if node_to_set is not None:
+        my_node_to_set = _state_mask_to_dict(
+                state_mask, preorder_nodes, sorted_states)
+        if my_node_to_set != node_to_set:
+            msg = 'internal error %s %s' % (my_node_to_set, node_to_set)
+            raise Exception(msg)
+
+    # Backward pass to get partial probabilities.
+    nnodes = len(preorder_nodes)
+    nstates = len(sorted_states)
+    subtree_probability = np.empty((nnodes, nstates), dtype=float)
+    pyfelscore.mcy_esd_get_node_to_pmap(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask,
+            subtree_probability)
+
+    # Convert the subtree probability ndarray to node_to_pmap.
+    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
+    state_to_index = dict((s, i) for i, s in enumerate(sorted_states))
+    node_to_pmap = {}
+    for na_index, na in enumerate(preorder_nodes):
+        allowed_states = set()
+        for sa_index, sa in enumerate(sorted_states):
+            if state_mask[na_index, sa_index]:
+                allowed_states.add(sa)
+        if node_to_set is not None:
+            if node_to_set[na] != allowed_states:
+                msg = 'internal error %s %s' % (node_to_set[na], allowed_states)
+                raise Exception(msg)
+        pmap = {}
+        for sa_index, sa in enumerate(sorted_states):
+            if sa in allowed_states:
+                pmap[sa] = subtree_probability[na_index, sa_index]
+        node_to_pmap[na] = pmap
+
+    # Return the node_to_pmap dict.
+    return node_to_pmap
+
+
 def get_node_to_pmap(T, root,
+        node_to_allowed_states=None, P_default=None, node_to_set=None):
+    """
+    For each node, construct the map from state to subtree likelihood.
+
+    Parameters
+    ----------
+    T : undirected unweighted acyclic networkx graph
+        A tree whose edges are optionally annotated
+        with edge-specific state transition probability matrix P.
+    root : integer
+        The root node.
+    node_to_allowed_states : dict, optional
+        A map from a node to a set of allowed states.
+        If the map is None then the sets of allowed states are assumed
+        to be unrestricted by observations.
+        Similarly, if a node is missing from this map
+        then its set of allowed states is assumed to be unrestricted.
+        Entries of this map that correspond to nodes not in the tree
+        will be silently ignored.
+    P_default : networkx directed weighted graph, optional
+        Sparse transition matrix to be used for edges
+        which are not annotated with an edge-specific transition matrix.
+    node_to_set : dict, optional
+        Maps nodes to possible states.
+
+    Returns
+    -------
+    node_to_pmap : dict
+        A map from a node to a map from a state to a subtree likelihood.
+
+    """
+    if len(T) == 1 and P_default is not None:
+        _check_root(T, root)
+        allowed_states = set(P_default)
+        if node_to_allowed_states is not None:
+            allowed_states &= node_to_allowed_states[root]
+        root_pmap = dict((s, 1.0) for s in allowed_states)
+        node_to_pmap = {root : root_pmap}
+    else:
+        node_to_pmap = _esd_get_node_to_pmap(T, root,
+                node_to_allowed_states=node_to_allowed_states,
+                P_default=P_default,
+                node_to_set=node_to_set)
+    return node_to_pmap
+
+
+#TODO use this for unit-testing
+def unaccelerated_get_node_to_pmap(T, root,
         node_to_allowed_states=None, P_default=None, node_to_set=None):
     """
     For each node, construct the map from state to subtree likelihood.
@@ -584,12 +716,31 @@ def get_likelihood(T, root,
         The likelihood.
 
     """
-    # Get likelihoods conditional on the root state.
-    node_to_pmap = get_node_to_pmap(T, root,
-            node_to_allowed_states=node_to_allowed_states,
-            P_default=P_default)
-    root_pmap = node_to_pmap[root]
-
-    # Return the likelihood.
-    return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
+    # If the tree has no edges then treat this as a special case.
+    # Otherwise, get likelihoods conditional on the root state
+    # and eturn the likelihood.
+    if len(T) == 1:
+        if _util.get_first_element(T) != root:
+            raise Exception('the tree has only a single node, '
+                    'but this node is not the root')
+        allowed_states = node_to_allowed_states[root]
+        if not allowed_states:
+            raise _util.StructuralZeroProb('the tree has only a single node, '
+                    'and no state is allowed for the root')
+        if root_distn is None:
+            return 1
+        else:
+            nonzero_prob_states = allowed_states & set(root_distn)
+            if not nonzero_prob_states:
+                raise _util.StructuralZeroProb('the tree has only '
+                        'a single node, and every state with positive '
+                        'prior probability at the root is disallowed '
+                        'by a node state constraint')
+            return sum(root_distn[s] for s in nonzero_prob_states)
+    else:
+        node_to_pmap = get_node_to_pmap(T, root,
+                node_to_allowed_states=node_to_allowed_states,
+                P_default=P_default)
+        root_pmap = node_to_pmap[root]
+        return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
 

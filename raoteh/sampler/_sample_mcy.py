@@ -70,6 +70,14 @@ def resample_states(T, root,
             node_to_allowed_states=node_to_allowed_states,
             P_default=P_default, node_to_set=node_to_set)
 
+    # Check some invariants.
+    if set(node_to_set) != set(node_to_pmap):
+        raise Exception('internal error')
+    for node, node_set in node_to_set.items():
+        if node_set != set(node_to_pmap[node]):
+            msg = 'internal error %s %s' % (node_to_set, node_to_pmap)
+            raise Exception(msg)
+
     # Use the generic sampler.
     return _sample_mc0.resample_states(T, root, node_to_pmap,
             root_distn=root_distn, P_default=P_default)

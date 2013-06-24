@@ -569,8 +569,13 @@ def test_sample_tmjp_v1():
     for repeat_index in range(nrepeats):
 
         # Sample a non-tiny random tree without branch lengths.
-        T = _sample_tree.get_random_agglom_tree(maxnodes=5)
+        maxnodes = 5
+        T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
         root = 0
+
+        # Check for the requested number of nodes.
+        nnodes = len(T)
+        assert_equal(nnodes, maxnodes)
 
         # Add some random branch lengths onto the edges of the tree.
         for na, nb in nx.bfs_edges(T, root):
