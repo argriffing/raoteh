@@ -68,6 +68,35 @@ def _digraph_to_bool_csr(G, ordered_nodes):
     return csr_indices, csr_indptr
 
 
+def _get_esd_transitions(G, preorder_nodes, sorted_states, P_default=None):
+    """
+    Construct the edge-specific transition matrix as an ndim-3 numpy array.
+    """
+    nnodes = len(preorder_nodes)
+    nstates = len(sorted_states)
+    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
+    esd_transitions = np.zeros((nnodes, nstates, nstates), dtype=float)
+    for na_index, na in enumerate(preorder_nodes):
+        for nb in G[na]:
+            nb_index = node_to_index[nb]
+            edge_object = G[na][nb]
+            P = edge_object.get('P', P_default)
+            if P is None:
+                raise ValueError('expected either a default transition matrix '
+                        'or a transition matrix on the edge '
+                        'from node {0} to node {1}'.format(na, nb))
+            for sa_index, sa in enumerate(sorted_states):
+                if sa not in P:
+                    continue
+                for sb_index, sb in enumerate(sorted_states):
+                    if sb not in P[sa]:
+                        continue
+                    edge_object = P[sa][sb]
+                    prob = edge_object['weight']
+                    esd_transitions[nb_index, sa_index, sb_index] = prob
+    return esd_transitions
+
+
 def _define_state_mask(node_to_allowed_states, preorder_nodes, sorted_states):
     """
     Define the state mask.
@@ -142,7 +171,67 @@ def _get_node_to_set_same_transition_matrix(T, root, P,
             state_mask,
             tmp_state_mask)
 
-    # Convert the updated state mask into a node_to_pset dict.
+    # Convert the updated state mask into a node_to_set dict.
+    node_to_set = _state_mask_to_dict(
+            state_mask, preorder_nodes, sorted_states)
+
+    # Return the node_to_set dict.
+    return node_to_set
+
+
+def _esd_get_node_to_set(T, root,
+        node_to_allowed_states=None, P_default=None):
+    # Construct the bfs tree, preserving transition matrices on the edges.
+    T_bfs = nx.DiGraph()
+    for na, nb in nx.bfs_edges(T, root):
+        T_bfs.add_edge(na, nb)
+        edge_object = T[na][nb]
+        P = edge_object.get('P', None)
+        if P is not None:
+            T_bfs[na][nb]['P'] = P
+
+    # Get the ordered list of nodes in preorder.
+    preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
+
+    # Get the set of all states in all transition matrices.
+    state_set = set()
+    for na, nb in T_bfs.edges():
+        edge_object = T_bfs[na][nb]
+        P = edge_object.get('P', P_default)
+        state_set.update(set(P))
+    sorted_states = sorted(state_set)
+
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices, tree_csr_indptr = _digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
+
+    # Put the transition matrix into sparse boolean csr form.
+    trans_csr_indices, trans_csr_indptr = _digraph_to_bool_csr(
+            P, sorted_states)
+
+    # Define the state mask.
+    state_mask = _define_state_mask(
+            node_to_allowed_states, preorder_nodes, sorted_states)
+
+    # Construct the edge-specific transition matrix as an ndim-3 numpy array.
+    esd_transitions = _get_esd_transitions(
+            T_bfs, preorder_nodes, sorted_states, P_default=P_default)
+
+    # Backward pass to update the state mask.
+    pyfelscore.mcy_esd_get_node_to_pset(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask)
+
+    # Forward pass to update the state mask.
+    pyfelscore.esd_get_node_to_set(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask)
+
+    # Convert the updated state mask into a node_to_set dict.
     node_to_set = _state_mask_to_dict(
             state_mask, preorder_nodes, sorted_states)
 
@@ -184,26 +273,82 @@ def _get_node_to_pset_same_transition_matrix(T, root, P,
     return node_to_pset
 
 
+def _esd_get_node_to_pset(T, root,
+        node_to_allowed_states=None, P_default=None):
+    # Construct the bfs tree, preserving transition matrices on the edges.
+    T_bfs = nx.DiGraph()
+    for na, nb in nx.bfs_edges(T, root):
+        T_bfs.add_edge(na, nb)
+        edge_object = T[na][nb]
+        P = edge_object.get('P', None)
+        if P is not None:
+            T_bfs[na][nb]['P'] = P
+
+    # Get the ordered list of nodes in preorder.
+    preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
+
+    # Get the set of all states in all transition matrices.
+    state_set = set()
+    for na, nb in T_bfs.edges():
+        edge_object = T_bfs[na][nb]
+        P = edge_object.get('P', P_default)
+        state_set.update(set(P))
+    sorted_states = sorted(state_set)
+
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices, tree_csr_indptr = _digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
+
+    # Put the transition matrix into sparse boolean csr form.
+    trans_csr_indices, trans_csr_indptr = _digraph_to_bool_csr(
+            P, sorted_states)
+
+    # Define the state mask.
+    state_mask = _define_state_mask(
+            node_to_allowed_states, preorder_nodes, sorted_states)
+
+    # Construct the edge-specific transition matrix as an ndim-3 numpy array.
+    esd_transitions = _get_esd_transitions(
+            T_bfs, preorder_nodes, sorted_states, P_default=P_default)
+
+    # Update the state mask.
+    pyfelscore.mcy_esd_get_node_to_pset(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask)
+
+    # Convert the updated state mask into a node_to_pset dict.
+    node_to_pset = _state_mask_to_dict(
+            state_mask, preorder_nodes, sorted_states)
+
+    # Return the node_to_pset dict.
+    return node_to_pset
+
+
 def get_node_to_set(T, root,
         node_to_allowed_states=None, P_default=None):
     """
     For each node, get the set of allowed states subject to constraints.
 
     """
-    # Use a specialized function if P_default is available.
-    # Otherwise get the pset and use mc0 to get the set.
-    has_custom_P = any('P' in T[na][nb] for na, nb in T.edges())
-    if (P_default is not None) and (not has_custom_P):
-        node_to_set = _get_node_to_set_same_transition_matrix(
+    # Pick a custom function depending on whether or not the same
+    # transition matrix is used for every edge.
+    bfs_edges = list(nx.bfs_edges(T, root))
+    any_custom_P = any('P' in T[na][nb] for na, nb in bfs_edges)
+    all_custom_P = all('P' in T[na][nb] for na, nb in bfs_edges)
+    if (P_default is None) and (not all_custom_P):
+        raise ValueError('expected a custom transition on each edge '
+                'when a default transition matrix is not available')
+    if (P_default is not None) and (not any_custom_P):
+        return _get_node_to_set_same_transition_matrix(
                 T, root, P_default,
                 node_to_allowed_states=node_to_allowed_states)
     else:
-        node_to_pset = get_node_to_pset(T, root,
-            node_to_allowed_states=node_to_allowed_states,
-            P_default=P_default)
-        node_to_set = _mc0.get_node_to_set(T, root, node_to_pset,
+        return _esd_get_node_to_set(
+                T, root,
+                node_to_allowed_states=node_to_allowed_states,
                 P_default=P_default)
-    return node_to_set
 
 
 def get_node_to_pset(T, root,
@@ -236,13 +381,30 @@ def get_node_to_pset(T, root,
         A map from a node to the set of states with positive subtree likelihood.
 
     """
-    # Use a specialized function if P_default is available.
-    has_custom_P = any('P' in T[na][nb] for na, nb in T.edges())
-    if (P_default is not None) and (not has_custom_P):
-        node_to_pset = _get_node_to_pset_same_transition_matrix(
+    # Use a specialized function if all edges use the same transition matrix.
+    # Otherwise use a different specialized function.
+    bfs_edges = list(nx.bfs_edges(T, root))
+    any_custom_P = any('P' in T[na][nb] for na, nb in bfs_edges)
+    all_custom_P = all('P' in T[na][nb] for na, nb in bfs_edges)
+    if (P_default is None) and (not all_custom_P):
+        raise ValueError('expected a custom transition on each edge '
+                'when a default transition matrix is not available')
+    if (P_default is not None) and (not any_custom_P):
+        return _get_node_to_pset_same_transition_matrix(
                 T, root, P_default,
                 node_to_allowed_states=node_to_allowed_states)
-        return node_to_pset
+    else:
+        return _esd_get_node_to_pset(T, root,
+                node_to_allowed_states=node_to_allowed_states,
+                P_default=P_default)
+
+
+#TODO use this to unit-test the accelerated function
+def unaccelerated_get_node_to_pset(T, root,
+        node_to_allowed_states=None, P_default=None):
+    """
+    This is unused, but could possibly be used for unit testing.
+    """
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)

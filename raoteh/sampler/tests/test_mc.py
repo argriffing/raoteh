@@ -93,6 +93,13 @@ def _get_random_test_setup(nstates):
         imissing = np.random.randint(nstates)
         node_to_allowed_states[n].remove(imissing)
 
+    # Final check on transition matrices on edges of T.
+    for na, nb in nx.bfs_edges(T, root):
+        edge_object = T[na][nb]
+        P = edge_object.get('P', None)
+        if P is None:
+            raise Exception('internal error')
+
     # Return the random info for testing.
     return T, root, root_distn, node_to_allowed_states
 
@@ -178,8 +185,8 @@ class TestMarkovChain(TestCase):
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
-            node_to_pmap = construct_node_to_restricted_pmap(
-                    T, root, node_to_allowed_states, P_default=P)
+            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+                    node_to_allowed_states=node_to_allowed_states, P_default=P)
             node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn, P_default=P)
 
@@ -212,8 +219,8 @@ class TestMarkovChain(TestCase):
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
-            node_to_pmap = construct_node_to_restricted_pmap(
-                    T, root, node_to_allowed_states)
+            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+                    node_to_allowed_states=node_to_allowed_states)
             node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn)
 
@@ -251,8 +258,8 @@ class TestMarkovChain(TestCase):
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
-            node_to_pmap = construct_node_to_restricted_pmap(
-                    T, root, node_to_allowed_states)
+            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+                    node_to_allowed_states=node_to_allowed_states)
             node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn)
 
@@ -273,8 +280,8 @@ class TestMarkovChain(TestCase):
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
             T_aug_naive = _mc0.get_joint_endpoint_distn_naive(T, root,
                     node_to_allowed_states, root_distn=root_distn)
-            node_to_pmap = construct_node_to_restricted_pmap(
-                    T, root, node_to_allowed_states)
+            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+                    node_to_allowed_states=node_to_allowed_states)
             node_to_distn = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn)
             T_aug_fast = _mc0.get_joint_endpoint_distn(
