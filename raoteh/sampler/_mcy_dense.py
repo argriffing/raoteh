@@ -35,60 +35,6 @@ from raoteh.sampler import _mc0, _util
 __all__ = []
 
 
-def _check_P(P):
-    if P is None:
-        raise ValueError('the transition matrix for this edge is None')
-    try:
-        if len(P.shape) != 2:
-            raise ValueError('expected len(P.shape) == 2')
-    except AttributeError as e:
-        try:
-            nnodes = P.number_of_nodes()
-            raise ValueError('expected an ndarray but found a networkx graph')
-        except AttributeError as e:
-            raise ValueError('expected an ndarray')
-    if P.shape[0] != P.shape[1]:
-        raise ValueError('expected the array to be square')
-
-
-#TODO move this function to a less specific module
-def _digraph_to_bool_csr(G, ordered_nodes):
-    """
-    This is a helper function for converting between networkx and cython.
-
-    The output consists of two out of the three arrays of the csr interface.
-    The third csr array (data) is not needed
-    because we only care about the boolean sparsity structure.
-
-    Parameters
-    ----------
-    G : networkx directed graph
-        The unweighted graph to convert into csr form.
-    ordered_nodes : sequence of nodes
-        Nodes listed in a requested order.
-
-    Returns
-    -------
-    csr_indices : ndarray of indices
-        Part of the csr interface.
-    csr_indptr : ndarray of pointers
-        Part of the csr interface.
-
-    """
-    node_to_index = dict((n, i) for i, n in enumerate(ordered_nodes))
-    csr_indices = []
-    csr_indptr = [0]
-    node_count = 0
-    for na_index, na in enumerate(ordered_nodes):
-        if na in G:
-            for nb in G[na]:
-                nb_index = node_to_index[nb]
-                csr_indices.append(nb_index)
-                node_count += 1
-        csr_indptr.append(node_count)
-    csr_indices = np.array(csr_indices, dtype=int)
-    csr_indptr = np.array(csr_indptr, dtype=int)
-    return csr_indices, csr_indptr
 
 
 def _get_esd_transitions(G, preorder_nodes, nstates, P_default=None):
