@@ -112,3 +112,8 @@ def get_arbitrary_tip(T, degrees=None):
     tips = (n for n, d in degrees.items() if d == 1)
     return get_first_element(tips)
 
+
+def _check_root(T, root):
+    if root not in T:
+        raise Exception('internal error: the root is not in the tree')
+
