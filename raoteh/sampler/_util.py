@@ -91,6 +91,55 @@ def get_normalized_dict_distn(d, prior=None):
     return dict((k, v / total_weight) for k, v in dpost.items())
 
 
+def get_unnormalized_ndarray_distn(d, prior=None):
+    """
+
+    Parameters
+    ----------
+    d : 1d ndarray
+        first array
+    prior : 1d ndarray, optional
+        second array
+
+    Returns
+    -------
+    out : 1d ndarray
+        output array
+
+    """
+    if d.min() < 0:
+        raise ValueError('expected non-negative entries')
+    if prior is None:
+        return d
+    else:
+        if prior.min() < 0:
+            raise ValueError('expected non-negative prior entries')
+        return d * prior
+
+
+def get_normalized_ndarray_distn(d, prior=None):
+    """
+
+    Parameters
+    ----------
+    d : 1d ndarray
+        first array
+    prior : 1d ndarray, optional
+        second array
+
+    Returns
+    -------
+    out : 1d ndarray
+        output array
+
+    """
+    dpost = get_unnormalized_ndarray_distn(d, prior)
+    total_weight = dpost.sum()
+    if not total_weight:
+        raise NumericalZeroProb('the denominator is zero')
+    return dpost / total_weight
+
+
 def get_arbitrary_tip(T, degrees=None):
     """
 

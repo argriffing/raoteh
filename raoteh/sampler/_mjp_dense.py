@@ -15,25 +15,20 @@ import scipy.linalg
 import scipy.stats
 from scipy import special
 
-from raoteh.sampler import _mc0, _mc
+from raoteh.sampler import _mc0, _mcy_dense
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_dense_rate_matrix,
         get_first_element, get_arbitrary_tip)
 
-from raoteh.sampler._linalg import (
-        sparse_expm,
-        expm_frechet_is_simple,
-        simple_expm_frechet,
-        )
-
-from raoteh.sampler._mc import (
-        construct_node_to_restricted_pmap,
-        )
-
 
 __all__ = []
+
+
+#TODO use something like raoteh.sampler._linalg.sparse_expm
+def custom_expm(Q, weight):
+    return scipy.linalg.expm(Q * weight)
 
 
 def get_total_rates(Q):
@@ -295,8 +290,8 @@ def get_expm_augmented_tree(T, root, Q_default=None):
         rate matrices Q.
     root : integer
         Root node.
-    Q_default : weighted directed networkx graph, optional
-        Sparse rate matrix.
+    Q_default : 2d ndarray, optional
+        Default rate matrix.
 
     Returns
     -------
@@ -311,7 +306,7 @@ def get_expm_augmented_tree(T, root, Q_default=None):
         Q = edge.get('Q', Q_default)
         if Q is None:
             raise ValueError('no rate matrix is available for this edge')
-        P = sparse_expm(Q, weight)
+        P = custom_expm(Q, weight)
         T_aug.add_edge(na, nb, weight=weight, P=P)
     return T_aug
 
@@ -329,11 +324,10 @@ def get_likelihood(T, node_to_allowed_states,
         Maps each node to a set of allowed states.
     root : integer
         Root node.
-    root_distn : dict, optional
-        Sparse distribution over states at the root.
-        This is optional if only one state is allowed at the root.
-    Q_default : directed weighted networkx graph, optional
-        A sparse rate matrix.
+    root_distn : 2d ndarray, optional
+        Distribution over states at the root.
+    Q_default : 2d ndarray, optional
+        A rate matrix.
 
     Returns
     -------
@@ -358,13 +352,12 @@ def get_likelihood(T, node_to_allowed_states,
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Return the Markov chain likelihood.
-    return _mc.get_restricted_likelihood(
-            T_aug, root, node_to_allowed_states,
+    return _mcy_dense.get_likelihood(T_aug, root, node_to_allowed_states,
             root_distn=root_distn, P_default=None)
 
 
 def get_expected_history_statistics(T, node_to_allowed_states,
-        root, root_distn=None, Q_default=None):
+        root, nstates, root_distn=None, Q_default=None):
     """
     This is a soft analog of get_history_statistics.
 
@@ -385,21 +378,22 @@ def get_expected_history_statistics(T, node_to_allowed_states,
         Maps each node to a set of allowed states.
     root : integer
         Root node.
-    root_distn : dict, optional
-        Sparse distribution over states at the root.
-        This is optional if only one state is allowed at the root.
-    Q_default : directed weighted networkx graph, optional
-        A sparse rate matrix.
+    nstates : integer
+        Number of states.
+    root_distn : 1d ndarray, optional
+        Distribution over states at the root.
+    Q_default : 2d ndarray, optional
+        A rate matrix.
 
     Returns
     -------
-    dwell_times : dict
-        Map from the state to the expected dwell time on the tree.
+    dwell_times : 1d ndarray
+        Expected dwell time on the tree, for each state.
         This does not depend on the root.
-    posterior_root_distn : dict
+    posterior_root_distn : 1d ndarray
         Posterior distribution of states at the root.
-    transitions : directed weighted networkx graph
-        A networkx graph that tracks the expected number of times
+    transitions : 2d ndarray
+        A 2d ndarray that tracks the expected number of times
         each transition type appears in the history.
         The expectation depends on the root.
 
@@ -408,26 +402,13 @@ def get_expected_history_statistics(T, node_to_allowed_states,
     if root not in T:
         raise ValueError('the specified root is not in the tree')
 
-    # Attempt to define the state space.
-    # This will use the default rate matrix if available,
-    # and it will try to use all available edge-specific rate matrices.
-    full_state_set = set()
-    if Q_default is not None:
-        full_state_set.update(Q_default)
-    for na, nb in nx.bfs_edges(T, root):
-        Q = T[na][nb].get('Q', None)
-        if Q is not None:
-            full_state_set.update(Q)
-    states = sorted(full_state_set)
-    nstates = len(states)
-
     # Construct the augmented tree by annotating each edge
     # with the appropriate state transition probability matrix.
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Construct the node to pmap dict.
-    node_to_pmap = construct_node_to_restricted_pmap(
-            T_aug, root, node_to_allowed_states)
+    node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root,
+            node_to_allowed_states=node_to_allowed_states)
 
     # Get the marginal state distribution for each node in the tree,
     # conditional on the known states.

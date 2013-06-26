@@ -35,6 +35,8 @@ from raoteh.sampler import _mc0, _util
 __all__ = []
 
 
+#TODO this module is under construction
+
 
 
 def _get_esd_transitions(G, preorder_nodes, nstates, P_default=None):
