@@ -7,32 +7,42 @@ together with a pre-order sequence of the nodes.
 
 """
 
+import numpy as np
 
-def _check_dense_P(P):
+
+__all__ = [
+        'check_square_dense',
+        'digraph_to_bool_csr',
+        'get_esd_transitions',
+        ]
+
+
+def check_square_dense(M):
     """
 
     Parameters
     ----------
-    P : (N, N) ndarray
-        Transition matrix as a numpy array.
+    M : square 2d ndarray
+        Matrix as a numpy ndarray.
 
     """
-    if P is None:
-        raise ValueError('the transition matrix for this edge is None')
+    if M is None:
+        raise ValueError('the matrix is None')
     try:
-        if len(P.shape) != 2:
-            raise ValueError('expected len(P.shape) == 2')
+        shape = M.shape
     except AttributeError as e:
         try:
-            nnodes = P.number_of_nodes()
-            raise ValueError('expected an ndarray but found a networkx graph')
+            nnodes = M.number_of_nodes()
+            raise ValueError('expected an ndarray but found a graph object')
         except AttributeError as e:
             raise ValueError('expected an ndarray')
-    if P.shape[0] != P.shape[1]:
+    if len(shape) != 2:
+        raise ValueError('expected len(M.shape) == 2')
+    if M.shape[0] != M.shape[1]:
         raise ValueError('expected the array to be square')
 
 
-def _digraph_to_bool_csr(G, ordered_nodes):
+def digraph_to_bool_csr(G, ordered_nodes):
     """
     This is a helper function for converting between networkx and cython.
 
@@ -71,9 +81,11 @@ def _digraph_to_bool_csr(G, ordered_nodes):
     return csr_indices, csr_indptr
 
 
-def _get_esd_transitions(G, preorder_nodes, nstates, P_default=None):
+def get_esd_transitions(G, preorder_nodes, nstates, P_default=None):
     """
     Construct the edge-specific transition matrix as an ndim-3 numpy array.
+
+    The 'esd' means 'edge-specific dense'.
 
     Parameters
     ----------
@@ -94,6 +106,8 @@ def _get_esd_transitions(G, preorder_nodes, nstates, P_default=None):
 
     """
     nnodes = len(preorder_nodes)
+    if nnodes != G.number_of_nodes():
+        raise ValueError('the number of nodes is inconsistent')
     node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
     esd_transitions = np.zeros((nnodes, nstates, nstates), dtype=float)
     for na_index, na in enumerate(preorder_nodes):
@@ -102,11 +116,7 @@ def _get_esd_transitions(G, preorder_nodes, nstates, P_default=None):
                 nb_index = node_to_index[nb]
                 edge_object = G[na][nb]
                 P = edge_object.get('P', P_default)
-                if P is None:
-                    raise ValueError('expected either a default '
-                            'transition matrix '
-                            'or a transition matrix on the edge '
-                            'from node {0} to node {1}'.format(na, nb))
+                check_square_dense(P)
                 esd_transitions[nb_index] = P
     return esd_transitions
 

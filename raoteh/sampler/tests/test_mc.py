@@ -12,12 +12,13 @@ import networkx as nx
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
-from raoteh.sampler import _mc0, _mcy
+from raoteh.sampler import _mc0, _mc0_dense
+from raoteh.sampler import _mcy, _mcy_dense
 
 from raoteh.sampler._sample_tree import get_random_branching_tree
 
 
-def _get_random_transition_matrix(nstates):
+def _get_random_nx_transition_matrix(nstates):
     """
     Sample a random sparse state transition matrix.
 
@@ -70,7 +71,7 @@ def _get_random_test_setup(nstates):
     # For each edge on the tree,
     # sample a random sparse state transition matrix.
     for na, nb in nx.bfs_edges(T, root):
-        T[na][nb]['P'] = _get_random_transition_matrix(nstates)
+        T[na][nb]['P'] = _get_random_nx_transition_matrix(nstates)
 
     # Sample a root distribution.
     # It should be a little bit sparse, for testing.
@@ -100,7 +101,7 @@ def _get_random_test_setup(nstates):
     return T, root, root_distn, node_to_allowed_states
 
 
-def _assert_distn_allclose(da, db):
+def _assert_dict_distn_allclose(da, db):
     # This is a helper function for testing.
     assert_equal(set(da), set(db))
     da_vector = np.array(
@@ -145,10 +146,20 @@ class TestMarkovChain(TestCase):
             (2, 2, 0.5),
             (2, 0, 0.25),
             (2, 1, 0.25)])
-        actual = _mc0.get_history_log_likelihood(T, root, node_to_state,
-                root_distn=root_distn, P_default=P)
         desired = 4 * np.log(0.5)
-        assert_equal(actual, desired)
+
+        # Check sparse mc0.
+        actual_sparse = _mc0.get_history_log_likelihood(
+                T, root, node_to_state,
+                root_distn=root_distn, P_default=P)
+        assert_equal(actual_sparse, desired)
+
+        # Check dense mc0.
+        P_dense = nx.to_numpy_matrix(P, nodelist=range(3))
+        actual_dense = _mc0_dense.get_history_log_likelihood(
+                T, root, node_to_state,
+                root_distn=root_distn, P_default=P_dense)
+        assert_equal(actual_dense, desired)
 
     def test_node_to_distn(self):
         # Test the marginal distributions of node states.
@@ -174,23 +185,57 @@ class TestMarkovChain(TestCase):
                 {0 : 0.25, 1 : 0.50, 2 : 0.25},
                 ):
 
-            # Get the node distributions naively.
+            # Code common to both sparse and dense tests.
             node_to_set = node_to_allowed_states
-            node_to_distn_naive = _mc0.get_node_to_distn_naive(T, root,
-                    node_to_set, root_distn=root_distn, P_default=P)
+
+            # Sparse test.
+
+            # Get the node distributions naively.
+            node_to_distn_naive_sparse = _mc0.get_node_to_distn_naive(
+                    T, root, node_to_set, root_distn=root_distn, P_default=P)
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
-            node_to_pmap = _mcy.get_node_to_pmap(T, root,
-                    node_to_allowed_states=node_to_allowed_states, P_default=P)
-            node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
+            node_to_pmap_sparse = _mcy.get_node_to_pmap(T, root,
+                    node_to_allowed_states=node_to_allowed_states,
+                    P_default=P)
+            node_to_distn_fast_sparse = _mc0.get_node_to_distn(
+                    T, root, node_to_pmap_sparse,
                     root_distn=root_distn, P_default=P)
 
             # Convert distributions to ndarrays for approximate comparison.
-            for node, distn in node_to_distn_naive.items():
-                _assert_distn_allclose(root_distn, distn)
-            for node, distn in node_to_distn_fast.items():
-                _assert_distn_allclose(root_distn, distn)
+            for node, distn in node_to_distn_naive_sparse.items():
+                _assert_dict_distn_allclose(root_distn, distn)
+            for node, distn in node_to_distn_fast_sparse.items():
+                _assert_dict_distn_allclose(root_distn, distn)
+
+            # Dense test.
+            # Get the dense transition matrix.
+            P_dense = nx.to_numpy_matrix(P, states)
+            root_ndarray_distn = np.array(
+                    [root_distn.get(s, 0) for s in range(nstates)],
+                    dtype=float)
+
+            # Get the node distributions naively.
+            node_to_distn_naive_dense = _mc0_dense.get_node_to_distn_naive(
+                    T, root, node_to_set, nstates,
+                    root_distn=root_ndarray_distn, P_default=P_dense)
+
+            # Get the node distributions more cleverly,
+            # through the restricted pmap.
+            node_to_pmap_dense = _mcy_dense.get_node_to_pmap(T, root, nstates,
+                    node_to_allowed_states=node_to_allowed_states,
+                    P_default=P_dense)
+            node_to_distn_fast_dense = _mc0_dense.get_node_to_distn(
+                    T, root, node_to_pmap_dense, nstates,
+                    root_distn=root_ndarray_distn, P_default=P_dense)
+
+            # Convert distributions to ndarrays for approximate comparison.
+            for node, distn in node_to_distn_naive_dense.items():
+                assert_allclose(root_ndarray_distn, distn)
+            for node, distn in node_to_distn_fast_dense.items():
+                assert_allclose(root_ndarray_distn, distn)
+
 
     def test_node_to_distn_naive_vs_fast_random(self):
         # Test the marginal distributions of node states.
@@ -223,13 +268,13 @@ class TestMarkovChain(TestCase):
             # Compare distributions at the root.
             root_distn_naive = node_to_distn_naive[root]
             root_distn_fast = node_to_distn_fast[root]
-            _assert_distn_allclose(root_distn_naive, root_distn_fast)
+            _assert_dict_distn_allclose(root_distn_naive, root_distn_fast)
 
             # Compare distributions at all nodes.
             for node in T:
                 distn_naive = node_to_distn_naive[node]
                 distn_fast = node_to_distn_fast[node]
-                _assert_distn_allclose(distn_naive, distn_fast)
+                _assert_dict_distn_allclose(distn_naive, distn_fast)
 
     def test_node_to_distn_unrestricted(self):
         # Test the marginal distributions of node states.
@@ -263,7 +308,7 @@ class TestMarkovChain(TestCase):
             for node in T:
                 distn_naive = node_to_distn_naive[node]
                 distn_fast = node_to_distn_fast[node]
-                _assert_distn_allclose(distn_naive, distn_fast)
+                _assert_dict_distn_allclose(distn_naive, distn_fast)
 
     def test_joint_endpoint_distn(self):
         # Test joint endpoint state distributions on edges.
