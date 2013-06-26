@@ -43,28 +43,6 @@ __all__ = []
 
 
 
-"""
-def _get_esd_transitions(G, preorder_nodes, nstates, P_default=None):
-    # Construct the edge-specific transition matrix as an ndim-3 numpy array.
-    nnodes = len(preorder_nodes)
-    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
-    esd_transitions = np.zeros((nnodes, nstates, nstates), dtype=float)
-    for na_index, na in enumerate(preorder_nodes):
-        if na in G:
-            for nb in G[na]:
-                nb_index = node_to_index[nb]
-                edge_object = G[na][nb]
-                P = edge_object.get('P', P_default)
-                if P is None:
-                    raise ValueError('expected either a default '
-                            'transition matrix '
-                            'or a transition matrix on the edge '
-                            'from node {0} to node {1}'.format(na, nb))
-                esd_transitions[nb_index] = P
-    return esd_transitions
-"""
-
-
 def _define_state_mask(node_to_allowed_states, preorder_nodes, nstates):
     """
     Define the state mask.
@@ -216,9 +194,13 @@ def get_node_to_pmap(T, root, nstates,
                 dtype=float)
         node_to_pmap = {root : root_pmap}
     else:
+        if node_to_set is not None:
+            best_state_restriction = node_to_set
+        else:
+            best_state_restriction = node_to_allowed_states
         state_mask, node_to_pmap = _esd_get_node_to_pmap(
                 T, root, nstates,
-                node_to_allowed_states=node_to_set,
+                node_to_allowed_states=best_state_restriction,
                 P_default=P_default)
     return node_to_pmap
 

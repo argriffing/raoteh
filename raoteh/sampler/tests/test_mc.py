@@ -18,6 +18,10 @@ from raoteh.sampler import _mcy, _mcy_dense
 from raoteh.sampler._sample_tree import get_random_branching_tree
 
 
+def _dict_to_array(d, nodelist):
+    return np.array([d.get(n, 0) for n in nodelist], dtype=float)
+
+
 def _get_random_nx_transition_matrix(nstates):
     """
     Sample a random sparse state transition matrix.
@@ -212,9 +216,7 @@ class TestMarkovChain(TestCase):
             # Dense test.
             # Get the dense transition matrix.
             P_dense = nx.to_numpy_matrix(P, states)
-            root_ndarray_distn = np.array(
-                    [root_distn.get(s, 0) for s in range(nstates)],
-                    dtype=float)
+            root_ndarray_distn = _dict_to_array(root_distn, range(nstates))
 
             # Get the node distributions naively.
             node_to_distn_naive_dense = _mc0_dense.get_node_to_distn_naive(
@@ -253,8 +255,12 @@ class TestMarkovChain(TestCase):
             assert_equal(len(T), len(node_to_allowed_states))
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
 
-            # Get the node distributions naively.
+            # Code common to both sparse and dense tests.
             node_to_set = node_to_allowed_states
+
+            # Sparse tests.
+
+            # Get the node distributions naively.
             node_to_distn_naive = _mc0.get_node_to_distn_naive(T, root,
                     node_to_set, root_distn=root_distn)
 
@@ -275,6 +281,46 @@ class TestMarkovChain(TestCase):
                 distn_naive = node_to_distn_naive[node]
                 distn_fast = node_to_distn_fast[node]
                 _assert_dict_distn_allclose(distn_naive, distn_fast)
+
+            # Dense tests.
+            # Use edge-specific dense ('esd') transition matrices.
+            # Get the dense root distribution.
+            T_esd = nx.Graph()
+            for na, nb in nx.bfs_edges(T, root):
+                P = T[na][nb]['P']
+                P_dense = nx.to_numpy_matrix(P, range(nstates))
+                T_esd.add_edge(na, nb, P=P_dense)
+            root_distn_dense = _dict_to_array(root_distn, range(nstates))
+
+            # Get the node distributions naively.
+            node_to_distn_naive_dense = _mc0_dense.get_node_to_distn_naive(
+                    T_esd, root, node_to_set, nstates,
+                    root_distn=root_distn_dense)
+
+            # Get the node distributions more cleverly,
+            # through the restricted pmap.
+            node_to_pmap_dense = _mcy_dense.get_node_to_pmap(
+                    T_esd, root, nstates,
+                    node_to_allowed_states=node_to_allowed_states)
+            for n, sparse_pmap in node_to_pmap.items():
+                a = _dict_to_array(sparse_pmap, range(nstates))
+                b = node_to_pmap_dense[n]
+                err_msg = 'n: %s' % n
+                assert_allclose(a, b, err_msg=err_msg)
+            node_to_distn_fast_dense = _mc0_dense.get_node_to_distn(
+                    T_esd, root, node_to_pmap_dense, nstates,
+                    root_distn=root_distn_dense)
+
+            # Compare distributions at the root.
+            root_distn_naive_dense = node_to_distn_naive_dense[root]
+            root_distn_fast_dense = node_to_distn_fast_dense[root]
+            assert_allclose(root_distn_naive_dense, root_distn_fast_dense)
+
+            # Compare distributions at all nodes.
+            for node in T_esd:
+                distn_naive_dense = node_to_distn_naive_dense[node]
+                distn_fast_dense = node_to_distn_fast_dense[node]
+                assert_allclose(distn_naive_dense, distn_fast_dense)
 
     def test_node_to_distn_unrestricted(self):
         # Test the marginal distributions of node states.
