@@ -338,8 +338,12 @@ class TestMarkovChain(TestCase):
             assert_equal(len(T), len(node_to_allowed_states))
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
 
-            # Get the node distributions naively.
+            # Code common to both sparse and dense tests.
             node_to_set = node_to_allowed_states
+
+            # Sparse tests.
+
+            # Get the node distributions naively.
             node_to_distn_naive = _mc0.get_node_to_distn_naive(T, root,
                     node_to_set, root_distn=root_distn)
 
@@ -355,6 +359,36 @@ class TestMarkovChain(TestCase):
                 distn_naive = node_to_distn_naive[node]
                 distn_fast = node_to_distn_fast[node]
                 _assert_dict_distn_allclose(distn_naive, distn_fast)
+
+            # Dense tests.
+            # Use edge-specific dense ('esd') transition matrices.
+            # Get the dense root distribution.
+            T_esd = nx.Graph()
+            for na, nb in nx.bfs_edges(T, root):
+                P = T[na][nb]['P']
+                P_dense = nx.to_numpy_matrix(P, range(nstates))
+                T_esd.add_edge(na, nb, P=P_dense)
+            root_distn_dense = _dict_to_array(root_distn, range(nstates))
+
+            # Get the node distributions naively.
+            node_to_distn_naive_dense = _mc0_dense.get_node_to_distn_naive(
+                    T_esd, root, node_to_set, nstates,
+                    root_distn=root_distn_dense)
+
+            # Get the node distributions more cleverly,
+            # through the restricted pmap.
+            node_to_pmap_dense = _mcy_dense.get_node_to_pmap(
+                    T_esd, root, nstates,
+                    node_to_allowed_states=node_to_allowed_states)
+            node_to_distn_fast_dense = _mc0_dense.get_node_to_distn(
+                    T_esd, root, node_to_pmap_dense, nstates,
+                    root_distn=root_distn_dense)
+
+            # Convert distributions to ndarrays for approximate comparison.
+            for node in T_esd:
+                distn_naive_dense = node_to_distn_naive_dense[node]
+                distn_fast_dense = node_to_distn_fast_dense[node]
+                assert_allclose(distn_naive_dense, distn_fast_dense)
 
     def test_joint_endpoint_distn(self):
         # Test joint endpoint state distributions on edges.
