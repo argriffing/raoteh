@@ -26,10 +26,6 @@ from raoteh.sampler._linalg import (
         sparse_expm,
         )
 
-from raoteh.sampler._mc import (
-        construct_node_to_restricted_pmap,
-        )
-
 from raoteh.sampler._mjp import (
         get_expm_augmented_tree,
         get_reversible_differential_entropy,

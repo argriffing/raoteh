@@ -28,20 +28,3 @@ from raoteh.sampler import _mc0, _mcx, _mcy
 __all__ = []
 
 
-#XXX under destruction
-def construct_node_to_restricted_pmap(
-        T, root, node_to_allowed_states=None,
-        P_default=None, states_default=None):
-    if states_default is not None:
-        raise NotImplementedError
-    return _mcy.get_node_to_pmap(T, root,
-            node_to_allowed_states=node_to_allowed_states,
-            P_default=P_default)
-
-
-#TODO under destruction
-def get_restricted_likelihood(T, root, node_to_allowed_states,
-        root_distn=None, P_default=None):
-    return _mcy.get_likelihood(T, root, node_to_allowed_states,
-        root_distn=root_distn, P_default=P_default)
-

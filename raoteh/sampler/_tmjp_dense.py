@@ -16,7 +16,7 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _mc0, _mc, _mjp
+from raoteh.sampler import _mc0, _mc, _mcy, _mjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb,
@@ -29,10 +29,6 @@ from raoteh.sampler._linalg import (
         sparse_expm,
         expm_frechet_is_simple,
         simple_expm_frechet,
-        )
-
-from raoteh.sampler._mc import (
-        construct_node_to_restricted_pmap,
         )
 
 from raoteh.sampler._mjp import (
@@ -250,8 +246,8 @@ def get_absorption_integral(T, node_to_allowed_states,
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Construct the node to pmap dict.
-    node_to_pmap = construct_node_to_restricted_pmap(
-            T_aug, root, node_to_allowed_states)
+    node_to_pmap = _mcy.get_node_to_pmap(T_aug, root,
+            node_to_allowed_states=node_to_allowed_states)
 
     # Get the marginal state distribution for each node in the tree,
     # conditional on the known states.

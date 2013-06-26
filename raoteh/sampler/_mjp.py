@@ -12,7 +12,7 @@ import scipy.linalg
 import scipy.stats
 from scipy import special
 
-from raoteh.sampler import _mc0, _mc
+from raoteh.sampler import _mc0, _mcy
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
@@ -23,10 +23,6 @@ from raoteh.sampler._linalg import (
         sparse_expm,
         expm_frechet_is_simple,
         simple_expm_frechet,
-        )
-
-from raoteh.sampler._mc import (
-        construct_node_to_restricted_pmap,
         )
 
 
@@ -367,8 +363,8 @@ def get_likelihood(T, node_to_allowed_states,
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Return the Markov chain likelihood.
-    return _mc.get_restricted_likelihood(
-            T_aug, root, node_to_allowed_states,
+    return _mcy.get_likelihood(T_aug, root,
+            node_to_allowed_states=node_to_allowed_states,
             root_distn=root_distn, P_default=None)
 
 
@@ -435,7 +431,7 @@ def get_expected_history_statistics(T, node_to_allowed_states,
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Construct the node to pmap dict.
-    node_to_pmap = construct_node_to_restricted_pmap(
+    node_to_pmap = _mcy.get_node_to_pmap(
             T_aug, root, node_to_allowed_states)
 
     # Get the marginal state distribution for each node in the tree,

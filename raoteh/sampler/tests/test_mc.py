@@ -12,11 +12,7 @@ import networkx as nx
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
-from raoteh.sampler import _mc0
-
-from raoteh.sampler._mc import (
-        construct_node_to_restricted_pmap,
-        )
+from raoteh.sampler import _mc0, _mcy
 
 from raoteh.sampler._sample_tree import get_random_branching_tree
 
@@ -185,7 +181,7 @@ class TestMarkovChain(TestCase):
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
-            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+            node_to_pmap = _mcy.get_node_to_pmap(T, root,
                     node_to_allowed_states=node_to_allowed_states, P_default=P)
             node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn, P_default=P)
@@ -219,7 +215,7 @@ class TestMarkovChain(TestCase):
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
-            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+            node_to_pmap = _mcy.get_node_to_pmap(T, root,
                     node_to_allowed_states=node_to_allowed_states)
             node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn)
@@ -258,7 +254,7 @@ class TestMarkovChain(TestCase):
 
             # Get the node distributions more cleverly,
             # through the restricted pmap.
-            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+            node_to_pmap = _mcy.get_node_to_pmap(T, root,
                     node_to_allowed_states=node_to_allowed_states)
             node_to_distn_fast = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn)
@@ -280,7 +276,7 @@ class TestMarkovChain(TestCase):
             assert_(all(len(v) > 1 for v in node_to_allowed_states.values()))
             T_aug_naive = _mc0.get_joint_endpoint_distn_naive(T, root,
                     node_to_allowed_states, root_distn=root_distn)
-            node_to_pmap = construct_node_to_restricted_pmap(T, root,
+            node_to_pmap = _mcy.get_node_to_pmap(T, root,
                     node_to_allowed_states=node_to_allowed_states)
             node_to_distn = _mc0.get_node_to_distn(T, root, node_to_pmap,
                     root_distn=root_distn)
