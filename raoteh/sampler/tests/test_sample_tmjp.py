@@ -46,6 +46,67 @@ from raoteh.sampler._tmjp import (
         )
 
 
+#TODO this should go into the _tmjp module.
+def _compound_ll_expectation_helper(
+        primary_to_part, rate_on, rate_off,
+        Q_primary, primary_distn, T_primary_aug, root):
+    """
+    Get contributions to the expected log likelihood of the compound process.
+
+    The primary process trajectory is fully observed,
+    but the binary tolerance states are unobserved.
+
+    Parameters
+    ----------
+    primary_to_part : x
+        x
+    rate_on : x
+        x
+    rate_off : x
+        x
+    Q_primary : x
+        x
+    primary_distn : x
+        x
+    T_primary_aug : x
+        x
+    root : integer
+        The root node.
+
+    Returns
+    -------
+    init_ll : float
+        x
+    dwell_ll : float
+        x
+    trans_ll : float
+        x
+
+    """
+    total_tree_length = T_primary_aug.size(weight='weight')
+    primary_info = get_history_statistics(T_primary_aug, root=root)
+    dwell_times, root_state, transitions = primary_info
+    post_root_distn = {root_state : 1}
+    neg_ll_info = _differential_entropy_helper_sparse(
+            Q_primary, primary_distn,
+            post_root_distn, dwell_times, transitions)
+    neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
+
+    tol_summary = get_tolerance_summary(
+            primary_to_part, rate_on, rate_off,
+            Q_primary, T_primary_aug, root)
+    tol_info = get_tolerance_ll_contribs(
+            rate_on, rate_off, total_tree_length, *tol_summary)
+    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
+
+    init_ll = -neg_init_prim_ll + init_tol_ll
+    dwell_ll = dwell_tol_ll
+    trans_ll = -neg_trans_prim_ll + trans_tol_ll
+
+    return init_ll, dwell_ll, trans_ll
+
+
+#TODO this should be just a log likelihood helper function in the _mjp module.
 def _differential_entropy_helper_sparse(
         Q, prior_root_distn,
         post_root_distn, post_dwell_times, post_transitions,
@@ -296,35 +357,13 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
         T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
 
-        # Get primary trajectory stats.
-        primary_info = get_history_statistics(T_primary_aug, root=root)
-        dwell_times, root_state, transitions = primary_info
-
-        # Primary process log likelihoods contributions.
-        # Note that we will ignore the dwell time contribution.
-        post_root_distn = {root_state : 1}
-        neg_ll_info = _differential_entropy_helper_sparse(
-                Q_primary, primary_distn,
-                post_root_distn, dwell_times, transitions)
-        prim_neg_ll_init, prim_neg_ll_dwell, prim_neg_ll_trans = neg_ll_info
-
-        # Get pm_ ll contributions of expectations of
-        # tolerance process transitions.
-        tol_info = get_tolerance_expectations(
+        ll_info = _compound_ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
-                Q_primary, T_primary_aug, root)
-        dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
-
-        # Append the pm_ neg ll trans component of log likelihood.
-        pm_trans_ll = -prim_neg_ll_trans + trans_tol_ll
-        pm_neg_ll_contribs_trans.append(-pm_trans_ll)
-
-        # Append the pm_ neg ll init component of log likelihood.
-        pm_init_ll = -prim_neg_ll_init + init_tol_ll
-        pm_neg_ll_contribs_init.append(-pm_init_ll)
-
-        # Append the pm_ neg ll dwell component of log likelihood.
-        pm_neg_ll_contribs_dwell.append(-dwell_tol_ll)
+                Q_primary, primary_distn, T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        pm_neg_ll_contribs_init.append(-ll_init)
+        pm_neg_ll_contribs_dwell.append(-ll_dwell)
+        pm_neg_ll_contribs_trans.append(-ll_trans)
 
     # Define a rate matrix for a primary process proposal distribution.
     Q_proposal = get_primary_proposal_rate_matrix(
@@ -348,7 +387,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     imp_neg_ll_contribs_dwell = []
     imp_neg_ll_contribs_trans = []
     importance_weights = []
-    for T_aug in _sampler.gen_histories(
+    for T_primary_aug in _sampler.gen_histories(
             T, Q_proposal, leaf_to_primary_state,
             root=root, root_distn=primary_distn,
             uniformization_factor=2, nhistories=nsamples):
@@ -359,7 +398,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         # importance sampling ratio.
         # The second purpose is to compute contributions
         # to the neg log likelihood estimate.
-        info = get_history_statistics(T_aug, root=root)
+        info = get_history_statistics(T_primary_aug, root=root)
         dwell_times, root_state, transitions = info
 
 
@@ -428,32 +467,20 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         # If we begin to include disease data into the analysis,
         # the tolerance histories will become more constrained.
         tolerance_ll = get_tolerance_process_log_likelihood(
-                Q_primary, primary_to_part, T_aug,
+                Q_primary, primary_to_part, T_primary_aug,
                 rate_off, rate_on, primary_distn, root)
         importance_weight = np.exp(tolerance_ll - proposal_ll)
 
         # Append the importance weight to the list.
         importance_weights.append(importance_weight)
 
-        # Get log likelihood contributions of expectations of
-        # tolerance process transitions.
-        tol_info = get_tolerance_expectations(
+        ll_info = _compound_ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
-                Q_primary, T_aug, root)
-        dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
-
-        # Add the log likelihood contribution
-        # of the initial state distribution.
-        imp_init_ll = primary_init_ll + init_tol_ll
-        imp_neg_ll_contribs_init.append(-imp_init_ll)
-
-        # Add the log likelihood contributions of the primary transitions.
-        imp_trans_ll = primary_trans_ll + trans_tol_ll
-        imp_neg_ll_contribs_trans.append(-imp_trans_ll)
-
-        # Add the log likelihood contributions
-        # of the dwell times.
-        imp_neg_ll_contribs_dwell.append(-dwell_tol_ll)
+                Q_primary, primary_distn, T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        imp_neg_ll_contribs_init.append(-ll_init)
+        imp_neg_ll_contribs_dwell.append(-ll_dwell)
+        imp_neg_ll_contribs_trans.append(-ll_trans)
 
     # define some expectations
     normalized_imp_trans = (np.array(importance_weights) * np.array(
@@ -481,7 +508,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
                 rate_off, rate_on, primary_distn, root)
 
     # Sample the histories.
-    for T_aug, accept_flag in _sampler.gen_mh_histories(
+    for T_primary_aug, accept_flag in _sampler.gen_mh_histories(
             T, Q_proposal, node_to_allowed_primary_states,
             target_log_likelihood_callback,
             root, root_distn=primary_distn,
@@ -492,35 +519,13 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         else:
             nrejected += 1
 
-        # Compute primary process statistics.
-        info = get_history_statistics(T_aug, root=root)
-        dwell_times, root_state, transitions = info
-
-        # Contribution of root state to log likelihood.
-        primary_init_ll = np.log(primary_distn[root_state])
-
-        # Count the contribution of primary process transitions.
-        ll = 0.0
-        for sa, sb in transitions.edges():
-            ntransitions = transitions[sa][sb]['weight']
-            rate = Q_primary[sa][sb]['weight']
-            ll += special.xlogy(ntransitions, rate)
-        primary_trans_ll = ll
-
-        # Get log likelihood contributions of expectations of
-        # tolerance process transitions.
-        tol_info = get_tolerance_expectations(
+        ll_info = _compound_ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
-                Q_primary, T_aug, root)
-        dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
-
-        # Add the log likelihood contributions.
-        met_trans_ll = primary_trans_ll + trans_tol_ll
-        met_neg_ll_contribs_trans.append(-met_trans_ll)
-        met_init_ll = primary_init_ll + init_tol_ll
-        met_neg_ll_contribs_init.append(-met_init_ll)
-        met_neg_ll_contribs_dwell.append(-dwell_tol_ll)
-
+                Q_primary, primary_distn, T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        met_neg_ll_contribs_init.append(-ll_init)
+        met_neg_ll_contribs_dwell.append(-ll_dwell)
+        met_neg_ll_contribs_trans.append(-ll_trans)
 
     print()
     print('--- tmjp experiment ---')
@@ -698,40 +703,15 @@ def test_sample_tmjp_v1():
                 primary_distn, nhistories=nsamples):
 
             # Unpack the sampled trajectories.
-            prim_trajectory, tol_trajectories = history_info
+            T_primary_aug, tol_trajectories = history_info
 
-            # Get primary trajectory stats.
-            primary_info = get_history_statistics(
-                    prim_trajectory, root=root)
-            dwell_times, root_state, transitions = primary_info
-
-            # Add primary process initial contribution.
-            init_prim_ll = np.log(primary_distn[root_state])
-
-            # Add the transition stat contribution of the primary process.
-            trans_prim_ll = 0.0
-            for sa, sb in transitions.edges():
-                ntransitions = transitions[sa][sb]['weight']
-                rate = Q_primary[sa][sb]['weight']
-                trans_prim_ll += special.xlogy(ntransitions, rate)
-
-            # Get pm_ ll contributions of expectations of
-            # tolerance process transitions.
-            tol_info = get_tolerance_expectations(
+            ll_info = _compound_ll_expectation_helper(
                     primary_to_part, rate_on, rate_off,
-                    Q_primary, prim_trajectory, root)
-            dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
-
-            # Append the pm_ neg ll trans component of log likelihood.
-            v1_trans_ll = trans_prim_ll + trans_tol_ll
-            v1_neg_ll_contribs_trans.append(-v1_trans_ll)
-
-            # Append the pm_ neg ll init component of log likelihood.
-            v1_init_ll = init_prim_ll + init_tol_ll
-            v1_neg_ll_contribs_init.append(-v1_init_ll)
-
-            # Append the pm_ neg ll dwell component of log likelihood.
-            v1_neg_ll_contribs_dwell.append(-dwell_tol_ll)
+                    Q_primary, primary_distn, T_primary_aug, root)
+            ll_init, ll_dwell, ll_trans = ll_info
+            v1_neg_ll_contribs_init.append(-ll_init)
+            v1_neg_ll_contribs_dwell.append(-ll_dwell)
+            v1_neg_ll_contribs_trans.append(-ll_trans)
 
         # Do some Rao-Teh conditional samples,
         # and get the negative expected log likelihood.
@@ -803,39 +783,13 @@ def test_sample_tmjp_v1():
             extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
             T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
 
-            # Get primary trajectory stats.
-            primary_info = get_history_statistics(T_primary_aug, root=root)
-            dwell_times, root_state, transitions = primary_info
-
-            # Add primary process initial contribution.
-            init_prim_ll = np.log(primary_distn[root_state])
-
-            # Add the transition stat contribution of the primary process.
-            trans_prim_ll = 0.0
-            for sa, sb in transitions.edges():
-                ntransitions = transitions[sa][sb]['weight']
-                rate = Q_primary[sa][sb]['weight']
-                trans_prim_ll += special.xlogy(ntransitions, rate)
-
-            # Get pm_ ll contributions of expectations of
-            # tolerance process transitions.
-            tol_summary = get_tolerance_summary(
+            ll_info = _compound_ll_expectation_helper(
                     primary_to_part, rate_on, rate_off,
-                    Q_primary, T_primary_aug, root)
-            tol_info = get_tolerance_ll_contribs(
-                    rate_on, rate_off, total_tree_length, *tol_summary)
-            init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
-
-            # Append the pm_ neg ll trans component of log likelihood.
-            pm_trans_ll = trans_prim_ll + trans_tol_ll
-            pm_neg_ll_contribs_trans.append(-pm_trans_ll)
-
-            # Append the pm_ neg ll init component of log likelihood.
-            pm_init_ll = init_prim_ll + init_tol_ll
-            pm_neg_ll_contribs_init.append(-pm_init_ll)
-
-            # Append the pm_ neg ll dwell component of log likelihood.
-            pm_neg_ll_contribs_dwell.append(-dwell_tol_ll)
+                    Q_primary, primary_distn, T_primary_aug, root)
+            init_ll, dwell_ll, trans_ll = ll_info
+            pm_neg_ll_contribs_init.append(-init_ll)
+            pm_neg_ll_contribs_dwell.append(-dwell_ll)
+            pm_neg_ll_contribs_trans.append(-trans_ll)
 
     print()
     print('--- tmjp v1 test ---')
