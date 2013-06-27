@@ -15,11 +15,8 @@ from numpy.testing import (run_module_suite, TestCase,
 from raoteh.sampler import _mc0, _mc0_dense
 from raoteh.sampler import _mcy, _mcy_dense
 
+from raoteh.sampler._density import dict_to_numpy_array
 from raoteh.sampler._sample_tree import get_random_branching_tree
-
-
-def _dict_to_array(d, nodelist):
-    return np.array([d.get(n, 0) for n in nodelist], dtype=float)
 
 
 def _get_random_nx_transition_matrix(nstates):
@@ -216,7 +213,7 @@ class TestMarkovChain(TestCase):
             # Dense test.
             # Get the dense transition matrix.
             P_dense = nx.to_numpy_matrix(P, states)
-            root_ndarray_distn = _dict_to_array(root_distn, range(nstates))
+            root_ndarray_distn = dict_to_numpy_array(root_distn, range(nstates))
 
             # Get the node distributions naively.
             node_to_distn_naive_dense = _mc0_dense.get_node_to_distn_naive(
@@ -290,7 +287,7 @@ class TestMarkovChain(TestCase):
                 P = T[na][nb]['P']
                 P_dense = nx.to_numpy_matrix(P, range(nstates))
                 T_esd.add_edge(na, nb, P=P_dense)
-            root_distn_dense = _dict_to_array(root_distn, range(nstates))
+            root_distn_dense = dict_to_numpy_array(root_distn, range(nstates))
 
             # Get the node distributions naively.
             node_to_distn_naive_dense = _mc0_dense.get_node_to_distn_naive(
@@ -303,7 +300,7 @@ class TestMarkovChain(TestCase):
                     T_esd, root, nstates,
                     node_to_allowed_states=node_to_allowed_states)
             for n, sparse_pmap in node_to_pmap.items():
-                a = _dict_to_array(sparse_pmap, range(nstates))
+                a = dict_to_numpy_array(sparse_pmap, range(nstates))
                 b = node_to_pmap_dense[n]
                 err_msg = 'n: %s' % n
                 assert_allclose(a, b, err_msg=err_msg)
@@ -368,7 +365,7 @@ class TestMarkovChain(TestCase):
                 P = T[na][nb]['P']
                 P_dense = nx.to_numpy_matrix(P, range(nstates))
                 T_esd.add_edge(na, nb, P=P_dense)
-            root_distn_dense = _dict_to_array(root_distn, range(nstates))
+            root_distn_dense = dict_to_numpy_array(root_distn, range(nstates))
 
             # Get the node distributions naively.
             node_to_distn_naive_dense = _mc0_dense.get_node_to_distn_naive(
@@ -430,7 +427,7 @@ class TestMarkovChain(TestCase):
                 P = T[na][nb]['P']
                 P_dense = nx.to_numpy_matrix(P, range(nstates))
                 T_esd.add_edge(na, nb, P=P_dense)
-            root_distn_dense = _dict_to_array(root_distn, range(nstates))
+            root_distn_dense = dict_to_numpy_array(root_distn, range(nstates))
 
             # Construct some dense structures.
             T_aug_naive_dense = _mc0_dense.get_joint_endpoint_distn_naive(

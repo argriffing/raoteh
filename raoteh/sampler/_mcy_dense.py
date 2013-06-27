@@ -39,9 +39,6 @@ from raoteh.sampler._density import (
 __all__ = []
 
 
-#TODO this module is under construction
-
-
 
 def _define_state_mask(node_to_allowed_states, preorder_nodes, nstates):
     """
@@ -55,21 +52,6 @@ def _define_state_mask(node_to_allowed_states, preorder_nodes, nstates):
             for sa in all_states - node_to_allowed_states[na]:
                 state_mask[na_index, sa] = 0
     return state_mask
-
-    
-# TODO is this obsolete
-def _state_mask_to_dict(state_mask, preorder_nodes, nstates):
-    """
-    Convert the updated state mask into a node_to_set dict.
-    """
-    node_to_set = {}
-    for na_index, na in enumerate(preorder_nodes):
-        allowed_states = set()
-        for sa_index, sa in enumerate(sorted_states):
-            if state_mask[na_index, sa_index]:
-                allowed_states.add(sa)
-        node_to_set[na] = allowed_states
-    return node_to_set
 
 
 def _esd_get_node_to_pmap(T, root, nstates,
@@ -206,6 +188,7 @@ def get_node_to_pmap(T, root, nstates,
 
 
 #TODO use this for unit-testing
+#TODO this has not been updated for dense matrices
 def unaccelerated_get_node_to_pmap(T, root,
         node_to_allowed_states=None, P_default=None, node_to_set=None):
     """

@@ -10,11 +10,15 @@ import networkx as nx
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
+from raoteh.sampler import _mjp, _mjp_dense
+
 from raoteh.sampler._mjp import (
-            get_history_dwell_times, get_history_root_state_and_transitions,
-            get_total_rates, get_conditional_transition_matrix,
-            get_expected_history_statistics,
-            )
+        get_history_dwell_times,
+        get_history_root_state_and_transitions,
+        get_total_rates,
+        get_conditional_transition_matrix,
+        get_expected_history_statistics,
+        )
 
 from raoteh.sampler._conditional_expectation import (
         get_jukes_cantor_rate_matrix,

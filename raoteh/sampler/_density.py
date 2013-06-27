@@ -11,10 +11,33 @@ import numpy as np
 
 
 __all__ = [
+        'dict_to_array',
         'check_square_dense',
         'digraph_to_bool_csr',
         'get_esd_transitions',
         ]
+
+
+def dict_to_numpy_array(d, nodelist=None):
+    """
+    This function is like a 1d analog of networkx.to_numpy_array().
+
+    Parameters
+    ----------
+    d : dict
+        Maps nodes to floats.
+    nodelist : sequence of nodes
+        Sequence of nodes in the order they appear in the array.
+
+    Returns
+    -------
+    out : 1d ndarray
+        Dense array of nodes.
+
+    """
+    if nodelist is None:
+        nodelist = tuple(d)
+    return np.array([d.get(n, 0) for n in nodelist], dtype=float)
 
 
 def check_square_dense(M):
