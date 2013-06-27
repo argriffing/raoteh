@@ -38,7 +38,6 @@ from raoteh.sampler._mjp import (
 
 from raoteh.sampler._tmjp import (
         get_tolerance_process_log_likelihood,
-        get_tolerance_expectations,
         get_tolerance_summary,
         get_tolerance_ll_contribs,
         get_primary_proposal_rate_matrix,
