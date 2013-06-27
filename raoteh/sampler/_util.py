@@ -70,6 +70,8 @@ def dict_random_choice(d):
 
 
 def get_unnormalized_dict_distn(d, prior=None):
+    if d is None:
+        raise ValueError('d is None')
     if not d:
         raise StructuralZeroProb('the main dict of weights is empty')
     if prior is None:

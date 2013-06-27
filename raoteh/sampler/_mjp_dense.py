@@ -15,12 +15,14 @@ import scipy.linalg
 import scipy.stats
 from scipy import special
 
-from raoteh.sampler import _mc0, _mcy_dense
+from raoteh.sampler import _mc0_dense, _mcy_dense
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
         get_dense_rate_matrix,
         get_first_element, get_arbitrary_tip)
+
+from raoteh.sampler._density import check_square_dense
 
 
 __all__ = []
@@ -356,8 +358,9 @@ def get_likelihood(T, node_to_allowed_states,
             root_distn=root_distn, P_default=None)
 
 
-def get_expected_history_statistics(T, node_to_allowed_states,
-        root, nstates, root_distn=None, Q_default=None):
+def get_expected_history_statistics(
+        T, node_to_allowed_states, root, nstates,
+        root_distn=None, Q_default=None):
     """
     This is a soft analog of get_history_statistics.
 
@@ -407,18 +410,19 @@ def get_expected_history_statistics(T, node_to_allowed_states,
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Construct the node to pmap dict.
-    node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root,
+    node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root, nstates,
             node_to_allowed_states=node_to_allowed_states)
 
     # Get the marginal state distribution for each node in the tree,
     # conditional on the known states.
-    node_to_distn = _mc0.get_node_to_distn(T_aug, root, node_to_pmap,
+    node_to_distn = _mc0_dense.get_node_to_distn(
+            T_aug, root, node_to_pmap, nstates,
             root_distn=root_distn)
 
     # For each edge in the tree, get the joint distribution
     # over the states at the endpoints of the edge.
-    T_joint = _mc0.get_joint_endpoint_distn(
-            T_aug, root, node_to_pmap, node_to_distn)
+    T_joint = _mc0_dense.get_joint_endpoint_distn(
+            T_aug, root, node_to_pmap, node_to_distn, nstates)
 
     # Compute the expectations of the dwell times and the transition counts
     # by iterating over all edges and using the edge-specific
@@ -429,19 +433,7 @@ def get_expected_history_statistics(T, node_to_allowed_states,
 
         # Get the sparse rate matrix to use for this edge.
         Q = T[na][nb].get('Q', Q_default)
-        if Q is None:
-            raise ValueError('no rate matrix is available for this edge')
-
-        Q_is_simple = expm_frechet_is_simple(Q)
-        if not Q_is_simple:
-            # Construct the dense local rate matrix
-            # for the purposes of frechet derivative.
-            Q_dense = np.zeros((nstates, nstates), dtype=float)
-            for sa_index, sa in enumerate(states):
-                for sb_index, sb in enumerate(states):
-                    if Q.has_edge(sa, sb):
-                        Q_dense[sa_index, sb_index] = Q[sa][sb]['weight']
-            Q_dense = Q_dense - np.diag(np.sum(Q_dense, axis=1))
+        check_square_dense(Q)
 
         # Get the elapsed time along the edge.
         t = T[na][nb]['weight']
@@ -453,50 +445,38 @@ def get_expected_history_statistics(T, node_to_allowed_states,
         J = T_joint[na][nb]['J']
 
         # Compute contributions to dwell time expectations along the path.
-        for sc_index, sc in enumerate(states):
-            if not Q_is_simple:
-                C = np.zeros((nstates, nstates), dtype=float)
-                C[sc_index, sc_index] = 1.0
-                interact = scipy.linalg.expm_frechet(
-                        t*Q_dense, t*C, compute_expm=False)
-            for sa_index, sa in enumerate(states):
-                for sb_index, sb in enumerate(states):
-                    if not J.has_edge(sa, sb):
+        for sc in range(nstates):
+            C = np.zeros((nstates, nstates), dtype=float)
+            C[sc, sc] = 1.0
+            interact = scipy.linalg.expm_frechet(
+                    t*Q, t*C, compute_expm=False)
+            for sa in range(nstates):
+                for sb in range(nstates):
+                    if not J[sa, sb]:
                         continue
-                    cond_prob = P[sa][sb]['weight']
-                    joint_prob = J[sa][sb]['weight']
-                    if Q_is_simple:
-                        x = simple_expm_frechet(
-                                Q, sa_index, sb_index, sc_index, sc_index, t)
-                    else:
-                        x = interact[sa_index, sb_index]
+                    cond_prob = P[sa, sb]
+                    joint_prob = J[sa, sb]
+                    x = interact[sa, sb]
                     # XXX simplify the joint_prob / cond_prob
                     expected_dwell_times[sc] += (joint_prob * x) / cond_prob
 
         # Compute contributions to transition count expectations.
-        for sc_index, sc in enumerate(states):
-            for sd_index, sd in enumerate(states):
-                if not Q.has_edge(sc, sd):
+        for sc in range(nstates):
+            for sd in range(nstates):
+                if not Q[sc, sd]:
                     continue
-                if not Q_is_simple:
-                    C = np.zeros((nstates, nstates), dtype=float)
-                    C[sc_index, sd_index] = 1.0
-                    interact = scipy.linalg.expm_frechet(
-                            t*Q_dense, t*C, compute_expm=False)
-                for sa_index, sa in enumerate(states):
-                    for sb_index, sb in enumerate(states):
-                        if not J.has_edge(sa, sb):
+                C = np.zeros((nstates, nstates), dtype=float)
+                C[sc, sd] = 1.0
+                interact = scipy.linalg.expm_frechet(
+                        t*Q, t*C, compute_expm=False)
+                for sa in range(nstates):
+                    for sb in range(nstates):
+                        if not J[sa, sb]:
                             continue
-                        cond_prob = P[sa][sb]['weight']
-                        joint_prob = J[sa][sb]['weight']
-                        if Q_is_simple:
-                            rate = Q[sc][sd]['weight']
-                            x = simple_expm_frechet(Q,
-                                    sa_index, sb_index,
-                                    sc_index, sd_index, t)
-                        else:
-                            rate = Q_dense[sc_index, sd_index]
-                            x = interact[sa_index, sb_index]
+                        cond_prob = P[sa, sb]
+                        joint_prob = J[sa, sb]
+                        rate = Q[sc, sd]
+                        x = interact[sa, sb]
                         # XXX simplify the joint_prob / cond_prob
                         contrib = (joint_prob * rate * x) / cond_prob
                         if not expected_transitions.has_edge(sc, sd):

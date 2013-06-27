@@ -11,17 +11,10 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
 from raoteh.sampler import _mjp, _mjp_dense
+
 from raoteh.sampler._density import (
         dict_to_numpy_array,
         rate_matrix_to_numpy_array,
-        )
-
-from raoteh.sampler._mjp import (
-        get_history_dwell_times,
-        get_history_root_state_and_transitions,
-        get_total_rates,
-        get_conditional_transition_matrix,
-        get_expected_history_statistics,
         )
 
 from raoteh.sampler._conditional_expectation import (
@@ -40,7 +33,7 @@ class TestMarkovJumpProcess(TestCase):
             (1, 0, 1),
             (1, 2, 1),
             (2, 1, 1)])
-        observed = get_total_rates(Q)
+        observed = _mjp.get_total_rates(Q)
         expected = {
                 0 : 1,
                 1 : 2,
@@ -95,12 +88,14 @@ class TestMarkovJumpProcess(TestCase):
                             a, b, t, nstates)
                     expected_dwell_times[i] = interaction / probability
 
+                # Sparse testing.
+
                 # Get the MJP expected history statistics.
                 # Check the expected dwell times for various roots.
                 for root in T:
 
                     # Get the expected dwell times by brute force.
-                    info = get_expected_history_statistics(
+                    info = _mjp.get_expected_history_statistics(
                             T, node_to_allowed_states, root, Q_default=Q)
                     mjp_dwell, mjp_init, mjp_trans = info
 
@@ -109,6 +104,25 @@ class TestMarkovJumpProcess(TestCase):
                         assert_allclose(
                                 expected_dwell_times[i],
                                 mjp_dwell[i])
+
+                # Dense testing.
+                Q_dense = rate_matrix_to_numpy_array(Q)
+
+                # Get the MJP expected history statistics.
+                # Check the expected dwell times for various roots.
+                for root in T:
+
+                    # Get the expected dwell times by brute force.
+                    info = _mjp_dense.get_expected_history_statistics(
+                            T, node_to_allowed_states, root, nstates,
+                            Q_default=Q_dense)
+                    mjp_dwell_dense, mjp_init_dense, mjp_trans_dense = info
+
+                    # Compare to the expected dwell times.
+                    for i in range(nstates):
+                        assert_allclose(
+                                expected_dwell_times[i],
+                                mjp_dwell_dense[i])
 
 
 if __name__ == '__main__':

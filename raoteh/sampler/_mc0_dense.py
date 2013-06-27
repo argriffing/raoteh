@@ -201,6 +201,7 @@ def get_likelihood(root_pmap, root_distn=None):
     return likelihood
 
 
+#TODO this is not tested adequately
 def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn, nstates):
     """
 
@@ -212,7 +213,7 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn, nstates):
     root : integer
         Root node.
     node_to_pmap : dict
-        Map from node to a map from a state to the subtree likelihood.
+        Map from a node to a 1d array giving subtree likelihoods per state.
         This map incorporates state restrictions.
     node_to_distn : dict
         Conditional marginal state distribution at each node.
@@ -235,7 +236,11 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn, nstates):
         P = T[na][nb]['P']
         _density.check_square_dense(P)
         J = np.zeros_like(P)
-        for sa, pa in node_to_distn[na].items():
+        distn = node_to_distn[na]
+        if distn.shape[0] != nstates:
+            raise Exception('nstates inconsistency')
+        for sa in range(nstates):
+            pa = distn[sa]
 
             # Construct the conditional transition probabilities.
             sb_weights = np.zeros(P.shape[0], dtype=float)

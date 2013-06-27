@@ -440,7 +440,8 @@ class TestMarkovChain(TestCase):
                     T_esd, root, node_to_pmap_dense, nstates,
                     root_distn=root_distn_dense)
             T_aug_fast_dense = _mc0_dense.get_joint_endpoint_distn(
-                    T_esd, root, node_to_pmap_dense, node_to_distn, nstates)
+                    T_esd, root,
+                    node_to_pmap_dense, node_to_distn_dense, nstates)
 
             # Check that transition probability distributions agree.
             for na, nb in nx.bfs_edges(T_esd, root):
