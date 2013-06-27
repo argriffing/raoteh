@@ -576,9 +576,130 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         proposal_marginal_likelihood))
 
 
-#TODO for profiling, break this into two parts.
-#TODO the first part computes expectations over the compound process
-#TODO the second part computes expectations from rao-teh sampling
+def _tmjp_clever_sample_helper(
+        T, root, Q_primary, primary_to_part,
+        leaf_to_primary_state, rate_on, rate_off,
+        primary_distn, nhistories):
+    """
+    A helper function for speed profiling.
+
+    The args are the same as for _sample_tmjp.gen_histories_v1().
+
+    """
+    neg_ll_contribs_init = []
+    neg_ll_contribs_dwell = []
+    neg_ll_contribs_trans = []
+    for history_info in _sample_tmjp.gen_histories_v1(
+            T, root, Q_primary, primary_to_part,
+            leaf_to_primary_state, rate_on, rate_off,
+            primary_distn, nhistories=nhistories):
+        T_primary_aug, tol_trajectories = history_info
+        ll_info = _compound_ll_expectation_helper(
+                primary_to_part, rate_on, rate_off,
+                Q_primary, primary_distn, T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        neg_ll_contribs_init.append(-ll_init)
+        neg_ll_contribs_dwell.append(-ll_dwell)
+        neg_ll_contribs_trans.append(-ll_trans)
+    return neg_ll_contribs_init, neg_ll_contribs_dwell, neg_ll_contribs_trans
+
+
+def _tmjp_dumb_sample_helper(
+        T, primary_to_part, compound_to_primary,
+        Q_compound, compound_distn,
+        Q_primary, primary_distn,
+        node_to_allowed_compound_states,
+        root, rate_on, rate_off,
+        nsamples):
+    """
+    """
+    # Precompute some stuff.
+    compound_total_rates = _mjp.get_total_rates(Q_compound)
+
+    # Do some Rao-Teh conditional samples,
+    # and get the negative expected log likelihood.
+    #
+    # statistics for the full process samples
+    neg_ll_contribs_init = []
+    neg_ll_contribs_dwell = []
+    neg_ll_contribs_trans = []
+    #
+    # Statistics for the partial process samples.
+    # The idea for the pm_ prefix is that we can use the compound
+    # process Rao-Teh to sample the pure primary process without bias
+    # if we throw away the tolerance process information.
+    # Then with these unbiased primary process history samples,
+    # we can compute conditional expectations of statistics of interest
+    # by integrating over the possible tolerance trajectories.
+    # This allows us to test this integration without worrying that
+    # the primary process history samples are biased.
+    pm_neg_ll_contribs_init = []
+    pm_neg_ll_contribs_dwell = []
+    pm_neg_ll_contribs_trans = []
+    #
+    for T_aug in _sampler.gen_restricted_histories(
+            T, Q_compound, node_to_allowed_compound_states,
+            root=root, root_distn=compound_distn,
+            uniformization_factor=2, nhistories=nsamples):
+
+        # Get some stats of the histories.
+        info = get_history_statistics(T_aug, root=root)
+        dwell_times, root_state, transitions = info
+
+        # log likelihood contribution of initial state
+        ll = np.log(compound_distn[root_state])
+        neg_ll_contribs_init.append(-ll)
+
+        # log likelihood contribution of dwell times
+        ll = 0.0
+        for state, dwell in dwell_times.items():
+            ll -= dwell * compound_total_rates[state]
+        neg_ll_contribs_dwell.append(-ll)
+
+        # log likelihood contribution of transitions
+        ll = 0.0
+        for sa, sb in transitions.edges():
+            ntransitions = transitions[sa][sb]['weight']
+            rate = Q_compound[sa][sb]['weight']
+            ll += special.xlogy(ntransitions, rate)
+        neg_ll_contribs_trans.append(-ll)
+
+        # Get a tree annotated with only the primary process,
+        # after having thrown away the sampled tolerance
+        # process data.
+
+        # First copy the unbiased compound state trajectory tree.
+        # Then convert the state annotation from compound state
+        # to primary state.
+        # Then use graph transformations to detect and remove
+        # degree-2 vertices whose adjacent states are identical.
+        T_primary_aug = T_aug.copy()
+        for na, nb in nx.bfs_edges(T_primary_aug, root):
+            edge = T_primary_aug[na][nb]
+            compound_state = edge['state']
+            primary_state = compound_to_primary[compound_state]
+            edge['state'] = primary_state
+        extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
+        T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
+
+        ll_info = _compound_ll_expectation_helper(
+                primary_to_part, rate_on, rate_off,
+                Q_primary, primary_distn, T_primary_aug, root)
+        init_ll, dwell_ll, trans_ll = ll_info
+        pm_neg_ll_contribs_init.append(-init_ll)
+        pm_neg_ll_contribs_dwell.append(-dwell_ll)
+        pm_neg_ll_contribs_trans.append(-trans_ll)
+    neg_ll_info = (
+            neg_ll_contribs_init,
+            neg_ll_contribs_dwell,
+            neg_ll_contribs_trans)
+    pm_neg_ll_info = (
+            pm_neg_ll_contribs_init,
+            pm_neg_ll_contribs_dwell,
+            pm_neg_ll_contribs_trans)
+    return neg_ll_info, pm_neg_ll_info
+
+
 @decorators.slow
 def test_sample_tmjp_v1():
     # Compare summaries of samples from the product space
@@ -676,104 +797,31 @@ def test_sample_tmjp_v1():
             post_root_distn, dwell_times, transitions)
         diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
 
-        # Initialize some statistics lists that will be analogous
-        # to the pm_ lists.
-        v1_neg_ll_contribs_dwell = []
-        v1_neg_ll_contribs_init = []
-        v1_neg_ll_contribs_trans = []
-        for history_info in _sample_tmjp.gen_histories_v1(
+        # Get neg ll contribs using the dumb sampler.
+        # This calls a separate function for more isolated profiling.
+        neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
+                T, primary_to_part, compound_to_primary,
+                Q_compound, compound_distn,
+                Q_primary, primary_distn,
+                node_to_allowed_compound_states,
+                root, rate_on, rate_off,
+                nsamples)
+        neg_ll_contribs_init = neg_ll_info[0]
+        neg_ll_contribs_dwell = neg_ll_info[1]
+        neg_ll_contribs_trans = neg_ll_info[2]
+        pm_neg_ll_contribs_init = pm_neg_ll_info[0]
+        pm_neg_ll_contribs_dwell = pm_neg_ll_info[1]
+        pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
+
+        # Get neg ll contribs using the clever sampler.
+        # This calls a separate function for more isolated profiling.
+        v1_info = _tmjp_clever_sample_helper(
                 T, root, Q_primary, primary_to_part,
                 leaf_to_primary_state, rate_on, rate_off,
-                primary_distn, nhistories=nsamples):
-
-            # Unpack the sampled trajectories.
-            T_primary_aug, tol_trajectories = history_info
-
-            ll_info = _compound_ll_expectation_helper(
-                    primary_to_part, rate_on, rate_off,
-                    Q_primary, primary_distn, T_primary_aug, root)
-            ll_init, ll_dwell, ll_trans = ll_info
-            v1_neg_ll_contribs_init.append(-ll_init)
-            v1_neg_ll_contribs_dwell.append(-ll_dwell)
-            v1_neg_ll_contribs_trans.append(-ll_trans)
-
-        # Do some Rao-Teh conditional samples,
-        # and get the negative expected log likelihood.
-        #
-        # statistics for the full process samples
-        sampled_root_distn = defaultdict(float)
-        neg_ll_contribs_init = []
-        neg_ll_contribs_dwell = []
-        neg_ll_contribs_trans = []
-        #
-        # Statistics for the partial process samples.
-        # The idea for the pm_ prefix is that we can use the compound
-        # process Rao-Teh to sample the pure primary process without bias
-        # if we throw away the tolerance process information.
-        # Then with these unbiased primary process history samples,
-        # we can compute conditional expectations of statistics of interest
-        # by integrating over the possible tolerance trajectories.
-        # This allows us to test this integration without worrying that
-        # the primary process history samples are biased.
-        pm_neg_ll_contribs_dwell = []
-        pm_neg_ll_contribs_init = []
-        pm_neg_ll_contribs_trans = []
-        #
-        for T_aug in _sampler.gen_restricted_histories(
-                T, Q_compound, node_to_allowed_compound_states,
-                root=root, root_distn=compound_distn,
-                uniformization_factor=2, nhistories=nsamples):
-
-            # Get some stats of the histories.
-            info = get_history_statistics(T_aug, root=root)
-            dwell_times, root_state, transitions = info
-
-            # Update the sampled root distribution.
-            sampled_root_distn[root_state] += 1.0 / nsamples
-
-            # log likelihood contribution of initial state
-            ll = np.log(compound_distn[root_state])
-            neg_ll_contribs_init.append(-ll)
-
-            # log likelihood contribution of dwell times
-            ll = 0.0
-            for state, dwell in dwell_times.items():
-                ll -= dwell * compound_total_rates[state]
-            neg_ll_contribs_dwell.append(-ll)
-
-            # log likelihood contribution of transitions
-            ll = 0.0
-            for sa, sb in transitions.edges():
-                ntransitions = transitions[sa][sb]['weight']
-                rate = Q_compound[sa][sb]['weight']
-                ll += special.xlogy(ntransitions, rate)
-            neg_ll_contribs_trans.append(-ll)
-
-            # Get a tree annotated with only the primary process,
-            # after having thrown away the sampled tolerance
-            # process data.
-
-            # First copy the unbiased compound state trajectory tree.
-            # Then convert the state annotation from compound state
-            # to primary state.
-            # Then use graph transformations to detect and remove
-            # degree-2 vertices whose adjacent states are identical.
-            T_primary_aug = T_aug.copy()
-            for na, nb in nx.bfs_edges(T_primary_aug, root):
-                edge = T_primary_aug[na][nb]
-                compound_state = edge['state']
-                primary_state = compound_to_primary[compound_state]
-                edge['state'] = primary_state
-            extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
-            T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
-
-            ll_info = _compound_ll_expectation_helper(
-                    primary_to_part, rate_on, rate_off,
-                    Q_primary, primary_distn, T_primary_aug, root)
-            init_ll, dwell_ll, trans_ll = ll_info
-            pm_neg_ll_contribs_init.append(-init_ll)
-            pm_neg_ll_contribs_dwell.append(-dwell_ll)
-            pm_neg_ll_contribs_trans.append(-trans_ll)
+                primary_distn, nsamples)
+        v1_neg_ll_contribs_init = v1_info[0]
+        v1_neg_ll_contribs_dwell = v1_info[1]
+        v1_neg_ll_contribs_trans = v1_info[2]
 
     print()
     print('--- tmjp v1 test ---')
