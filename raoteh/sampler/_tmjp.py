@@ -315,6 +315,189 @@ def get_absorption_integral(T, node_to_allowed_states,
     return absorption_expectation
 
 
+def get_tolerance_summary(
+        primary_to_part, rate_on, rate_off, Q_primary, T_primary, root):
+    """
+    Get tolerance process expectations conditional on a primary trajectory.
+
+    Given a primary process trajectory,
+    compute some log likelihood contributions
+    related to the tolerance process.
+
+    Parameters
+    ----------
+    primary_to_part : dict
+        Map from the primary state to the tolerance class.
+    rate_on : float
+        x
+    rate_off : float
+        x
+    Q_primary : x
+        x
+    T_primary : x
+        x
+    root : integer
+        The root node.
+
+    Returns
+    -------
+    expected_initial_on : float
+        x
+    expected_initial_off : float
+        x
+    expected_dwell_on : float
+        x
+    expected_dwell_off : float
+        x
+    expected_nabsorptions : float
+        x
+    expected_ngains : float
+        x
+    expected_nlosses : float
+        x
+
+    Notes
+    -----
+    This function assumes that no tolerance process data is observed
+    at the leaves, other than what could be inferred through
+    the primary process observations at the leaves.
+    The ordering of the arguments of this function was chosen haphazardly.
+
+    """
+    # Summarize the tolerance process.
+    total_weight = T_primary.size(weight='weight')
+    nparts = len(set(primary_to_part.values()))
+    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+
+    # Compute conditional expectations of statistics
+    # of the tolerance process.
+    # This requires constructing independent piecewise homogeneous
+    # Markov jump processes for each tolerance class.
+    expected_ngains = 0.0
+    expected_nlosses = 0.0
+    expected_dwell_on = 0.0
+    expected_initial_on = 0.0
+    expected_nabsorptions = 0.0
+    for tolerance_class in range(nparts):
+
+        # Get the restricted inhomogeneous Markov jump process
+        # associated with the tolerance class,
+        # conditional on the trajectory of the primary state.
+        T_tol, node_to_allowed_tolerances =  get_inhomogeneous_mjp(
+                primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
+                tolerance_class)
+
+        # Compute conditional expectations of dwell times
+        # and transitions for this tolerance class.
+        expectation_info = get_expected_history_statistics(
+                T_tol, node_to_allowed_tolerances,
+                root, root_distn=tolerance_distn)
+        dwell_times, post_root_distn, transitions = expectation_info
+
+        # Get the dwell time log likelihood contribution.
+        if 1 in dwell_times:
+            expected_dwell_on += dwell_times[1]
+
+        # Get the transition log likelihood contribution.
+        if transitions.has_edge(0, 1):
+            expected_ngains += transitions[0][1]['weight']
+        if transitions.has_edge(1, 0):
+            expected_nlosses += transitions[1][0]['weight']
+
+        # Get the initial state log likelihood contribution.
+        if 1 in post_root_distn:
+            expected_initial_on += post_root_distn[1]
+
+        # Get an expectation that connects
+        # the blinking process to the primary process.
+        # This is the expected number of times that
+        # a non-forbidden primary process "absorption"
+        # into the current blinking state
+        # would have been expected to occur.
+        expected_nabsorptions += get_absorption_integral(
+                T_tol, node_to_allowed_tolerances,
+                root, root_distn=tolerance_distn)
+
+    # Summarize expectations.
+    expected_initial_off = nparts - expected_initial_on
+    expected_dwell_off = total_weight * nparts - expected_dwell_on
+
+    # Return expectations.
+    return (
+            expected_initial_on, expected_initial_off,
+            expected_dwell_on, expected_dwell_off,
+            expected_nabsorptions,
+            expected_ngains, expected_nlosses)
+
+
+def get_tolerance_ll_contribs(
+        rate_on, rate_off, total_tree_length,
+        expected_initial_on, expected_initial_off,
+        expected_dwell_on, expected_dwell_off,
+        expected_nabsorptions,
+        expected_ngains, expected_nlosses,
+        ):
+    """
+    Tolerance process log likelihood contributions.
+
+    Note that the contributions associated with dwell times
+    subsume the primary process dwell time log likelihood contributions.
+    The first group of args defines parameters of the process.
+    The second group defines the posterior tolerance distribution at the root.
+    The third group defines the posterior tolerance dwell times.
+    The fourth group is just a virtual posterior nabsorptions count which
+    is related to dwell times of the primary process.
+    The fifth group defines posterior transition expectations.
+
+    Parameters
+    ----------
+    rate_on : float
+        x
+    rate_off : float
+        x
+    total_tree_length : float
+        x
+    expected_initial_on : float
+        x
+    expected_initial_off : float
+        x
+    expected_dwell_on : float
+        x
+    expected_dwell_off : float
+        x
+    expected_nabsorptions : float
+        x
+    expected_ngains : float
+        x
+    expected_nlosses : float
+        x
+
+    Returns
+    -------
+    init_ll_contrib : float
+        x
+    dwell_ll_contrib : float
+        x
+    trans_ll_contrib : float
+        x
+
+    """
+    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+    init_ll_contrib = (
+            special.xlogy(expected_initial_on - 1, tolerance_distn[1]) +
+            special.xlogy(expected_initial_off, tolerance_distn[0]))
+    dwell_ll_contrib = -(
+            expected_dwell_off * rate_on +
+            (expected_dwell_on - total_tree_length) * rate_off +
+            expected_nabsorptions)
+    trans_ll_contrib = (
+            special.xlogy(expected_ngains, rate_on) +
+            special.xlogy(expected_nlosses, rate_off))
+    return init_ll_contrib, dwell_ll_contrib, trans_ll_contrib
+
+
+#TODO this function is obsolete
+#TODO work in progress ... split this function into two parts
 def get_tolerance_expectations(
         primary_to_part, rate_on, rate_off, Q_primary, T_primary, root):
     """

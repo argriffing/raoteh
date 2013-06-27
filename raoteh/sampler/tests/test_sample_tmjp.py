@@ -39,6 +39,8 @@ from raoteh.sampler._mjp import (
 from raoteh.sampler._tmjp import (
         get_tolerance_process_log_likelihood,
         get_tolerance_expectations,
+        get_tolerance_summary,
+        get_tolerance_ll_contribs,
         get_primary_proposal_rate_matrix,
         get_example_tolerance_process_info,
         )
@@ -619,6 +621,9 @@ def test_sample_tmjp_v1():
             scale = 0.6
             T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
+        # Get the total tree length.
+        total_tree_length = T.size(weight='weight')
+
         # Sample a single unconditional history on the tree
         # using some arbitrary process.
         # The purpose is really to sample the states at the leaves.
@@ -814,10 +819,12 @@ def test_sample_tmjp_v1():
 
             # Get pm_ ll contributions of expectations of
             # tolerance process transitions.
-            tol_info = get_tolerance_expectations(
+            tol_summary = get_tolerance_summary(
                     primary_to_part, rate_on, rate_off,
                     Q_primary, T_primary_aug, root)
-            dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
+            tol_info = get_tolerance_ll_contribs(
+                    rate_on, rate_off, total_tree_length, *tol_summary)
+            init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
 
             # Append the pm_ neg ll trans component of log likelihood.
             pm_trans_ll = trans_prim_ll + trans_tol_ll
