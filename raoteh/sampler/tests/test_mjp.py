@@ -11,6 +11,10 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
 from raoteh.sampler import _mjp, _mjp_dense
+from raoteh.sampler._density import (
+        dict_to_numpy_array,
+        rate_matrix_to_numpy_array,
+        )
 
 from raoteh.sampler._mjp import (
         get_history_dwell_times,
@@ -42,6 +46,14 @@ class TestMarkovJumpProcess(TestCase):
                 1 : 2,
                 2 : 1}
         assert_equal(observed, expected)
+
+        # Check dense total rates.
+        nstates = 3
+        nodelist = range(nstates)
+        Q_dense = rate_matrix_to_numpy_array(Q, nodelist=nodelist)
+        desired_dense = dict_to_numpy_array(expected, nodelist=nodelist)
+        actual_dense = _mjp_dense.get_total_rates(Q_dense)
+        assert_allclose(actual_dense, desired_dense)
 
     def test_jukes_cantor_conditional_expectation(self):
         # Compare conditional expectations to the true values.

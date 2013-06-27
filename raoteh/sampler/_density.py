@@ -5,17 +5,53 @@ The sparse representation of trees in this module is usually
 as a directed networkx graph relating arbitrary nodes,
 together with a pre-order sequence of the nodes.
 
+The sparse representation of transition rate matrices
+and transition probability matrices are both as
+directed weighted networkx graphs.
+In the case of rate matrices, the networkx graph does not have loops.
+
+The dense representation of transition rate matrices
+and transition probability matrices are both as
+numpy ndarrays with float dtype.
+
 """
 
+import networkx as nx
 import numpy as np
 
 
 __all__ = [
-        'dict_to_array',
         'check_square_dense',
         'digraph_to_bool_csr',
         'get_esd_transitions',
+        'dict_to_array',
+        'rate_matrix_to_numpy_array',
         ]
+
+
+def rate_matrix_to_numpy_array(Q_sparse, **kwargs):
+    """
+    Analogous to networkx.to_numpy_matrix().
+
+    This function also sets the diagonal entries of the output matrix
+    so that the rows sum to zero.
+
+    Parameters
+    ----------
+    Q_sparse : directed weighted networkx graph
+        A sparse representation of a rate matrix.
+    kwargs : dict
+        These keyword args are passed through to nx.to_numpy_matrix().
+
+    Returns
+    -------
+    Q_dense : 2d ndarray
+        A dense representation of a rate matrix.
+
+    """
+    pre_Q_dense = nx.to_numpy_matrix(Q_sparse, **kwargs).A
+    Q_dense = pre_Q_dense - np.diag(pre_Q_dense.sum(axis=1))
+    return Q_dense
 
 
 def dict_to_numpy_array(d, nodelist=None):
