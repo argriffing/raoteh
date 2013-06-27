@@ -407,13 +407,49 @@ class TestMarkovChain(TestCase):
                     root_distn=root_distn)
             T_aug_fast = _mc0.get_joint_endpoint_distn(
                     T, root, node_to_pmap, node_to_distn)
+
+            # Sparse tests.
+
+            # Check that transition sparsity patterns agree.
             for na, nb in nx.bfs_edges(T, root):
                 assert_(T_aug_naive.has_edge(na, nb))
                 assert_(T_aug_fast.has_edge(na, nb))
+
+            # Check that transition probability distributions agree.
             for na, nb in nx.bfs_edges(T, root):
                 J_naive = T_aug_naive[na][nb]['J']
                 J_fast = T_aug_fast[na][nb]['J']
                 _assert_nx_matrix_allclose(J_naive, J_fast)
+
+            # Dense tests.
+
+            # Use edge-specific dense ('esd') transition matrices.
+            # Get the dense root distribution.
+            T_esd = nx.Graph()
+            for na, nb in nx.bfs_edges(T, root):
+                P = T[na][nb]['P']
+                P_dense = nx.to_numpy_matrix(P, range(nstates))
+                T_esd.add_edge(na, nb, P=P_dense)
+            root_distn_dense = _dict_to_array(root_distn, range(nstates))
+
+            # Construct some dense structures.
+            T_aug_naive_dense = _mc0_dense.get_joint_endpoint_distn_naive(
+                    T_esd, root,
+                    node_to_allowed_states, root_distn=root_distn_dense)
+            node_to_pmap_dense = _mcy_dense.get_node_to_pmap(
+                    T_esd, root, nstates,
+                    node_to_allowed_states=node_to_allowed_states)
+            node_to_distn_dense = _mc0_dense.get_node_to_distn(
+                    T_esd, root, node_to_pmap_dense, nstates,
+                    root_distn=root_distn_dense)
+            T_aug_fast_dense = _mc0_dense.get_joint_endpoint_distn(
+                    T_esd, root, node_to_pmap_dense, node_to_distn, nstates)
+
+            # Check that transition probability distributions agree.
+            for na, nb in nx.bfs_edges(T_esd, root):
+                J_naive_dense = T_aug_naive_dense[na][nb]['J']
+                J_fast_dense = T_aug_fast_dense[na][nb]['J']
+                assert_allclose(J_naive_dense, J_fast_dense)
 
 
 if __name__ == '__main__':

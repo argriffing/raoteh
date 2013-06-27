@@ -201,7 +201,7 @@ def get_likelihood(root_pmap, root_distn=None):
     return likelihood
 
 
-def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn):
+def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn, nstates):
     """
 
     Parameters
@@ -216,6 +216,8 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn):
         This map incorporates state restrictions.
     node_to_distn : dict
         Conditional marginal state distribution at each node.
+    nstates : integer
+        Number of states.
 
     Returns
     -------
@@ -237,9 +239,10 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn):
 
             # Construct the conditional transition probabilities.
             sb_weights = np.zeros(P.shape[0], dtype=float)
-            for sb, b in pmap.items():
+            for sb in range(nstates):
+                b = pmap[sb]
                 a = P[sa, sb]
-                sb_weights[sb] = a*b
+                sb_weights[sb] = a * b
             sb_distn = sb_weights / sb_weights.sum()
 
             # Add to the joint distn.
@@ -360,6 +363,9 @@ def get_node_to_distn(T, root, node_to_pmap, nstates,
     """
     if P_default is not None:
         _density.check_square_dense(P_default)
+    if root_distn is not None:
+        if root_distn.shape[0] != nstates:
+            raise ValueError('inconsistent root distribution')
 
     # Bookkeeping.
     predecessors = nx.dfs_predecessors(T, root)
@@ -441,6 +447,9 @@ def get_node_to_distn_naive(T, root, node_to_set, nstates,
     """
     if P_default is not None:
         _density.check_square_dense(P_default)
+    if root_distn is not None:
+        if root_distn.shape[0] != nstates:
+            raise ValueError('inconsistent root distribution')
 
     nodes, allowed_states = zip(*node_to_set.items())
     node_to_weights = dict((n, np.zeros(nstates, dtype=float)) for n in nodes)
