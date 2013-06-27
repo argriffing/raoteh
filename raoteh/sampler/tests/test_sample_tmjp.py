@@ -577,8 +577,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
 
 
 #TODO for profiling, break this into two parts.
-#TODO the first part would be the explicit expectations
-#TODO the second part would be the expectations estimated from rao teh sampling
+#TODO the first part computes expectations over the compound process
+#TODO the second part computes expectations from rao-teh sampling
 @decorators.slow
 def test_sample_tmjp_v1():
     # Compare summaries of samples from the product space
@@ -670,26 +670,11 @@ def test_sample_tmjp_v1():
                 root, root_distn=compound_distn, Q_default=Q_compound)
         dwell_times, post_root_distn, transitions = expectation_info
 
-        # Use some posterior expectations
-        # to get the root distribution contribution to differential entropy.
-        diff_ent_init = 0.0
-        for state, prob in post_root_distn.items():
-            diff_ent_init -= special.xlogy(prob, compound_distn[state])
-
-        # Use some posterior expectations
-        # to get the dwell time contribution to differential entropy.
-        diff_ent_dwell = 0.0
-        for s, rate in compound_total_rates.items():
-            diff_ent_dwell += dwell_times[s] * rate
-
-        # Use some posterior expectations
-        # to get the transition contribution to differential entropy.
-        diff_ent_trans = 0.0
-        for sa in set(Q_compound) & set(transitions):
-            for sb in set(Q_compound[sa]) & set(transitions[sa]):
-                rate = Q_compound[sa][sb]['weight']
-                ntrans_expected = transitions[sa][sb]['weight']
-                diff_ent_trans -= ntrans_expected * np.log(rate)
+        # Compute contributions to differential entropy.
+        diff_ent_info = _differential_entropy_helper_sparse(
+            Q_compound, compound_distn,
+            post_root_distn, dwell_times, transitions)
+        diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
 
         # Initialize some statistics lists that will be analogous
         # to the pm_ lists.
