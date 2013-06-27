@@ -266,7 +266,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
 
         sampled_root_distn[root_state] += 1.0 / nsamples
 
-        # Get the contributions to the differential entropy.
+        # Compound process log likelihoods contributions.
         post_root_distn = {root_state : 1}
         neg_ll_info = _differential_entropy_helper_sparse(
                 Q_compound, compound_distn,
@@ -298,15 +298,13 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         primary_info = get_history_statistics(T_primary_aug, root=root)
         dwell_times, root_state, transitions = primary_info
 
-        # Add primary process initial contribution.
-        init_prim_ll = np.log(primary_distn[root_state])
-
-        # Add the transition stat contribution of the primary process.
-        trans_prim_ll = 0.0
-        for sa, sb in transitions.edges():
-            ntransitions = transitions[sa][sb]['weight']
-            rate = Q_primary[sa][sb]['weight']
-            trans_prim_ll += special.xlogy(ntransitions, rate)
+        # Primary process log likelihoods contributions.
+        # Note that we will ignore the dwell time contribution.
+        post_root_distn = {root_state : 1}
+        neg_ll_info = _differential_entropy_helper_sparse(
+                Q_primary, primary_distn,
+                post_root_distn, dwell_times, transitions)
+        prim_neg_ll_init, prim_neg_ll_dwell, prim_neg_ll_trans = neg_ll_info
 
         # Get pm_ ll contributions of expectations of
         # tolerance process transitions.
@@ -316,11 +314,11 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         dwell_tol_ll, init_tol_ll, trans_tol_ll = tol_info
 
         # Append the pm_ neg ll trans component of log likelihood.
-        pm_trans_ll = trans_prim_ll + trans_tol_ll
+        pm_trans_ll = -prim_neg_ll_trans + trans_tol_ll
         pm_neg_ll_contribs_trans.append(-pm_trans_ll)
 
         # Append the pm_ neg ll init component of log likelihood.
-        pm_init_ll = init_prim_ll + init_tol_ll
+        pm_init_ll = -prim_neg_ll_init + init_tol_ll
         pm_neg_ll_contribs_init.append(-pm_init_ll)
 
         # Append the pm_ neg ll dwell component of log likelihood.
