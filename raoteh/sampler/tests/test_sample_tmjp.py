@@ -77,6 +77,9 @@ def _differential_entropy_helper_sparse(
         Transition contribution to differential entropy.
 
     """
+    # Get the total rates.
+    total_rates = _mjp.get_total_rates(Q)
+
     # Initial state distribution contribution to differential entropy.
     diff_ent_init = 0.0
     for state, prob in post_root_distn.items():
@@ -84,12 +87,12 @@ def _differential_entropy_helper_sparse(
 
     # Dwell time contribution to differential entropy.
     diff_ent_dwell = 0.0
-    for s, rate in compound_total_rates.items():
-        diff_ent_dwell += post_dwell_times[s] * rate
+    for s in set(total_rates) & set(post_dwell_times):
+        diff_ent_dwell += post_dwell_times[s] * total_rates[s]
 
     # Transition contribution to differential entropy.
     diff_ent_trans = 0.0
-    for sa in set(Q) & set(transitions):
+    for sa in set(Q) & set(post_transitions):
         for sb in set(Q[sa]) & set(post_transitions[sa]):
             rate = Q[sa][sb]['weight']
             ntrans_expected = post_transitions[sa][sb]['weight']
@@ -261,24 +264,17 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         info = get_history_statistics(T_aug, root=root)
         dwell_times, root_state, transitions = info
 
-        # contribution of root state to log likelihood
         sampled_root_distn[root_state] += 1.0 / nsamples
-        ll = np.log(compound_distn[root_state])
-        neg_ll_contribs_init.append(-ll)
 
-        # contribution of dwell times
-        ll = 0.0
-        for state, dwell in dwell_times.items():
-            ll -= dwell * compound_total_rates[state]
-        neg_ll_contribs_dwell.append(-ll)
-
-        # contribution of transitions
-        ll = 0.0
-        for sa, sb in transitions.edges():
-            ntransitions = transitions[sa][sb]['weight']
-            rate = Q_compound[sa][sb]['weight']
-            ll += special.xlogy(ntransitions, rate)
-        neg_ll_contribs_trans.append(-ll)
+        # Get the contributions to the differential entropy.
+        post_root_distn = {root_state : 1}
+        neg_ll_info = _differential_entropy_helper_sparse(
+                Q_compound, compound_distn,
+                post_root_distn, dwell_times, transitions)
+        neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
+        neg_ll_contribs_init.append(neg_ll_init)
+        neg_ll_contribs_dwell.append(neg_ll_dwell)
+        neg_ll_contribs_trans.append(neg_ll_trans)
 
         # Get a tree annotated with only the primary process,
         # after having thrown away the sampled tolerance
