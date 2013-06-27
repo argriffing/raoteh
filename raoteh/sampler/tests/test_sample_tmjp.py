@@ -44,6 +44,61 @@ from raoteh.sampler._tmjp import (
         )
 
 
+def _differential_entropy_helper_sparse(
+        Q, prior_root_distn,
+        post_root_distn, post_dwell_times, post_transitions,
+        ):
+    """
+    Use posterior expectations to help compute differential entropy.
+
+    Parameters
+    ----------
+    Q : weighted directed networkx graph
+        Rate matrix.
+    prior_root_distn : dict
+        Prior distribution at the root.
+        If Q is a time-reversible rate matrix,
+        then the prior root distribution
+        could be the stationary distribution associated with Q.
+    post_root_distn : dict
+        Posterior state distribution at the root.
+    post_dwell_times : dict
+        Posterior expected dwell time for each state.
+    post_transitions : weighted directed networkx graph
+        Posterior expected count of each transition type.
+
+    Returns
+    -------
+    diff_ent_init : float
+        Initial state distribution contribution to differential entropy.
+    diff_ent_dwell : float
+        Dwell time contribution to differential entropy.
+    diff_ent_trans : float
+        Transition contribution to differential entropy.
+
+    """
+    # Initial state distribution contribution to differential entropy.
+    diff_ent_init = 0.0
+    for state, prob in post_root_distn.items():
+        diff_ent_init -= special.xlogy(prob, prior_root_distn[state])
+
+    # Dwell time contribution to differential entropy.
+    diff_ent_dwell = 0.0
+    for s, rate in compound_total_rates.items():
+        diff_ent_dwell += post_dwell_times[s] * rate
+
+    # Transition contribution to differential entropy.
+    diff_ent_trans = 0.0
+    for sa in set(Q) & set(transitions):
+        for sb in set(Q[sa]) & set(post_transitions[sa]):
+            rate = Q[sa][sb]['weight']
+            ntrans_expected = post_transitions[sa][sb]['weight']
+            diff_ent_trans -= special.xlogy(ntrans_expected, rate)
+
+    # Return the contributions to differential entropy.
+    return diff_ent_init, diff_ent_dwell, diff_ent_trans
+
+
 def test_get_feasible_history():
 
     # Define a base tree and root.
@@ -536,6 +591,9 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         proposal_marginal_likelihood))
 
 
+#TODO for profiling, break this into two parts.
+#TODO the first part would be the explicit expectations
+#TODO the second part would be the expectations estimated from rao teh sampling
 @decorators.slow
 def test_sample_tmjp_v1():
     # Compare summaries of samples from the product space
@@ -722,18 +780,20 @@ def test_sample_tmjp_v1():
             info = get_history_statistics(T_aug, root=root)
             dwell_times, root_state, transitions = info
 
-            # contribution of root state to log likelihood
+            # Update the sampled root distribution.
             sampled_root_distn[root_state] += 1.0 / nsamples
+
+            # log likelihood contribution of initial state
             ll = np.log(compound_distn[root_state])
             neg_ll_contribs_init.append(-ll)
 
-            # contribution of dwell times
+            # log likelihood contribution of dwell times
             ll = 0.0
             for state, dwell in dwell_times.items():
                 ll -= dwell * compound_total_rates[state]
             neg_ll_contribs_dwell.append(-ll)
 
-            # contribution of transitions
+            # log likelihood contribution of transitions
             ll = 0.0
             for sa, sb in transitions.edges():
                 ntransitions = transitions[sa][sb]['weight']

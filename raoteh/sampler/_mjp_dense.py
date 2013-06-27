@@ -48,6 +48,7 @@ def get_total_rates(Q):
         Total rate out of each state.
 
     """
+    check_square_dense(Q)
     return -np.diag(Q)
 
 
@@ -69,6 +70,7 @@ def get_conditional_transition_matrix(Q, total_rates=None):
         conditional on an instantaneous transition.
 
     """
+    check_square_dense(Q)
     if total_rates is None:
         total_rates = get_total_rates(Q)
     P = Q / total_rates
@@ -306,8 +308,7 @@ def get_expm_augmented_tree(T, root, Q_default=None):
         edge = T[na][nb]
         weight = edge['weight']
         Q = edge.get('Q', Q_default)
-        if Q is None:
-            raise ValueError('no rate matrix is available for this edge')
+        check_square_dense(Q)
         P = custom_expm(Q, weight)
         T_aug.add_edge(na, nb, weight=weight, P=P)
     return T_aug
@@ -431,7 +432,7 @@ def get_expected_history_statistics(
     expected_transitions = nx.DiGraph()
     for na, nb in nx.bfs_edges(T, root):
 
-        # Get the sparse rate matrix to use for this edge.
+        # Get the rate matrix to use for this edge.
         Q = T[na][nb].get('Q', Q_default)
         check_square_dense(Q)
 

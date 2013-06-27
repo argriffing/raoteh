@@ -18,7 +18,7 @@ from numpy.testing import (
         assert_equal, assert_allclose, assert_, assert_raises, decorators,
         )
 
-from raoteh.sampler import _mjp, _sample_tmjp
+from raoteh.sampler import _mjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
