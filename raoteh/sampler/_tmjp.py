@@ -16,7 +16,7 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _mc0, _mc, _mcy, _mjp
+from raoteh.sampler import _mc0, _mcy, _mjp
 
 from raoteh.sampler._util import (
         StructuralZeroProb,
