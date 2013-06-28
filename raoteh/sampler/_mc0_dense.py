@@ -241,18 +241,15 @@ def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn, nstates):
             raise Exception('nstates inconsistency')
         for sa in range(nstates):
             pa = distn[sa]
+            if pa:
 
-            # Construct the conditional transition probabilities.
-            sb_weights = np.zeros(P.shape[0], dtype=float)
-            for sb in range(nstates):
-                b = pmap[sb]
-                a = P[sa, sb]
-                sb_weights[sb] = a * b
-            sb_distn = sb_weights / sb_weights.sum()
+                # Construct the conditional transition probabilities.
+                sb_weights = P[sa] * pmap
+                sb_distn = get_normalized_ndarray_distn(sb_weights)
 
-            # Add to the joint distn.
-            for sb, pb in enumerate(sb_distn):
-                J[sa, sb] = pa * pb
+                # Add to the joint distn.
+                for sb, pb in enumerate(sb_distn):
+                    J[sa, sb] = pa * pb
 
         # Add the joint distribution.
         T_aug.add_edge(na, nb, J=J)
@@ -396,6 +393,8 @@ def get_node_to_distn(T, root, node_to_pmap, nstates,
             # Get the transition matrix associated with this edge.
             P = T[parent_node][node].get('P', P_default)
             _density.check_square_dense(P)
+            if P.shape[0] != nstates:
+                raise Exception('internal inconsistency')
 
             # For each parent state,
             # get the distribution over child states;
@@ -404,18 +403,15 @@ def get_node_to_distn(T, root, node_to_pmap, nstates,
             distn = np.zeros(nstates, dtype=float)
             for sa in range(nstates):
                 pa = parent_distn[sa]
+                if pa:
 
-                # Construct the conditional transition probabilities.
-                sb_weights = np.zeros(nstates, dtype=float)
-                for sb in range(nstates):
-                    b = pmap[sb]
-                    a = P[sa, sb]
-                    sb_weights[sb] = a * b
-                sb_distn = get_normalized_ndarray_distn(sb_weights)
+                    # Construct the conditional transition probabilities.
+                    sb_weights = P[sa] * pmap
+                    sb_distn = get_normalized_ndarray_distn(sb_weights)
 
-                # Add to the marginal distn.
-                for sb in range(nstates):
-                    distn[sb] += pa * sb_distn[sb]
+                    # Add to the marginal distn.
+                    for sb in range(nstates):
+                        distn[sb] += pa * sb_distn[sb]
 
         # Set the node_to_distn.
         node_to_distn[node] = distn

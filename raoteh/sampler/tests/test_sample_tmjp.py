@@ -17,7 +17,9 @@ from numpy.testing import (run_module_suite, TestCase,
 
 from raoteh.sampler import (
         _mjp,
+        _mjp_dense,
         _tmjp,
+        _tmjp_dense,
         _sampler,
         _sample_tmjp,
         _sample_tree,
@@ -25,6 +27,12 @@ from raoteh.sampler import (
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
+
+from raoteh.sampler._density import (
+        dict_to_numpy_array,
+        rate_matrix_to_numpy_array,
+        check_square_dense,
+        )
 
 from raoteh.sampler._graph_transform import(
         get_redundant_degree_two_nodes,
@@ -43,6 +51,7 @@ from raoteh.sampler._tmjp import (
         get_primary_proposal_rate_matrix,
         get_example_tolerance_process_info,
         )
+
 
 
 #TODO this should go into the _tmjp module.
@@ -86,14 +95,86 @@ def _compound_ll_expectation_helper(
     primary_info = get_history_statistics(T_primary_aug, root=root)
     dwell_times, root_state, transitions = primary_info
     post_root_distn = {root_state : 1}
+
     neg_ll_info = _differential_entropy_helper_sparse(
             Q_primary, primary_distn,
             post_root_distn, dwell_times, transitions)
     neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
 
+    # This function call is the speed bottleneck for this function.
     tol_summary = get_tolerance_summary(
             primary_to_part, rate_on, rate_off,
             Q_primary, T_primary_aug, root)
+
+    tol_info = get_tolerance_ll_contribs(
+            rate_on, rate_off, total_tree_length, *tol_summary)
+    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
+
+    init_ll = -neg_init_prim_ll + init_tol_ll
+    dwell_ll = dwell_tol_ll
+    trans_ll = -neg_trans_prim_ll + trans_tol_ll
+
+    return init_ll, dwell_ll, trans_ll
+
+
+#TODO this should go into the _tmjp_dense module.
+def _compound_ll_expectation_helper_dense(
+        primary_to_part, rate_on, rate_off,
+        Q_primary, primary_distn, T_primary_aug, root):
+    """
+    Get contributions to the expected log likelihood of the compound process.
+
+    The primary process trajectory is fully observed,
+    but the binary tolerance states are unobserved.
+
+    Parameters
+    ----------
+    primary_to_part : x
+        x
+    rate_on : x
+        x
+    rate_off : x
+        x
+    Q_primary : 2d ndarray
+        Primary rate matrix.
+    primary_distn : 1d ndarray
+        Primary process state distribution.
+    T_primary_aug : x
+        x
+    root : integer
+        The root node.
+
+    Returns
+    -------
+    init_ll : float
+        x
+    dwell_ll : float
+        x
+    trans_ll : float
+        x
+
+    """
+    check_square_dense(Q_primary)
+    nprimary = Q_primary.shape[0]
+    if primary_distn.shape[0] != nprimary:
+        raise ValueError('inconsistency in the number of primary states')
+
+    total_tree_length = T_primary_aug.size(weight='weight')
+    primary_info = _mjp_dense.get_history_statistics(
+            T_primary_aug, nprimary, root=root)
+    dwell_times, root_state, transitions = primary_info
+    post_root_distn = np.zeros(nprimary, dtype=float)
+    post_root_distn[root_state] = 1
+
+    neg_ll_info = _differential_entropy_helper_dense(
+            Q_primary, primary_distn,
+            post_root_distn, dwell_times, transitions)
+    neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
+
+    tol_summary = _tmjp_dense.get_tolerance_summary(
+            primary_to_part, rate_on, rate_off,
+            Q_primary, T_primary_aug, root)
+
     tol_info = get_tolerance_ll_contribs(
             rate_on, rate_off, total_tree_length, *tol_summary)
     init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
@@ -159,6 +240,60 @@ def _differential_entropy_helper_sparse(
             rate = Q[sa][sb]['weight']
             ntrans_expected = post_transitions[sa][sb]['weight']
             diff_ent_trans -= special.xlogy(ntrans_expected, rate)
+
+    # Return the contributions to differential entropy.
+    return diff_ent_init, diff_ent_dwell, diff_ent_trans
+
+
+#TODO this should be a log likelihood helper function in the _mjp_dense module.
+def _differential_entropy_helper_dense(
+        Q, prior_root_distn,
+        post_root_distn, post_dwell_times, post_transitions,
+        ):
+    """
+    Use posterior expectations to help compute differential entropy.
+
+    Parameters
+    ----------
+    Q : 2d ndarray
+        Rate matrix.
+    prior_root_distn : 1d ndarray
+        Prior distribution at the root.
+        If Q is a time-reversible rate matrix,
+        then the prior root distribution
+        could be the stationary distribution associated with Q.
+    post_root_distn : 1d ndarray
+        Posterior state distribution at the root.
+    post_dwell_times : 1d ndarray
+        Posterior expected dwell time for each state.
+    post_transitions : 2d ndarray
+        Posterior expected count of each transition type.
+
+    Returns
+    -------
+    diff_ent_init : float
+        Initial state distribution contribution to differential entropy.
+    diff_ent_dwell : float
+        Dwell time contribution to differential entropy.
+    diff_ent_trans : float
+        Transition contribution to differential entropy.
+
+    """
+    check_square_dense(Q)
+    check_square_dense(post_transitions)
+    nstates = Q.shape[0]
+
+    # Get the total rates.
+    total_rates = _mjp_dense.get_total_rates(Q)
+
+    # Initial state distribution contribution to differential entropy.
+    diff_ent_init = -special.xlogy(post_root_distn, post_root_distn).sum()
+
+    # Dwell time contribution to differential entropy.
+    diff_ent_dwell = post_dwell_times.dot(total_rates)
+
+    # Transition contribution to differential entropy.
+    diff_ent_trans = -special.xlogy(post_transitions, Q).sum()
 
     # Return the contributions to differential entropy.
     return diff_ent_init, diff_ent_dwell, diff_ent_trans
@@ -576,6 +711,41 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         proposal_marginal_likelihood))
 
 
+def _tmjp_clever_sample_helper_dense(
+        T, root, Q_primary, primary_to_part,
+        leaf_to_primary_state, rate_on, rate_off,
+        primary_distn, nhistories):
+    """
+    A helper function for speed profiling.
+
+    The args are the same as for _sample_tmjp.gen_histories_v1().
+
+    """
+    primary_states = list(primary_to_part)
+    primary_distn_dense = dict_to_numpy_array(
+            primary_distn, nodelist=primary_states)
+    Q_primary_dense = rate_matrix_to_numpy_array(
+            Q_primary, nodelist=primary_states)
+
+    neg_ll_contribs_init = []
+    neg_ll_contribs_dwell = []
+    neg_ll_contribs_trans = []
+    for history_info in _sample_tmjp.gen_histories_v1(
+            T, root, Q_primary, primary_to_part,
+            leaf_to_primary_state, rate_on, rate_off,
+            primary_distn, nhistories=nhistories):
+        T_primary_aug, tol_trajectories = history_info
+        ll_info = _compound_ll_expectation_helper_dense(
+                primary_to_part, rate_on, rate_off,
+                Q_primary_dense, primary_distn_dense,
+                T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        neg_ll_contribs_init.append(-ll_init)
+        neg_ll_contribs_dwell.append(-ll_dwell)
+        neg_ll_contribs_trans.append(-ll_trans)
+    return neg_ll_contribs_init, neg_ll_contribs_dwell, neg_ll_contribs_trans
+
+
 def _tmjp_clever_sample_helper(
         T, root, Q_primary, primary_to_part,
         leaf_to_primary_state, rate_on, rate_off,
@@ -797,6 +967,16 @@ def test_sample_tmjp_v1():
             post_root_distn, dwell_times, transitions)
         diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
 
+        # Get neg ll contribs using the clever sampler.
+        # This calls a separate function for more isolated profiling.
+        dense_info = _tmjp_clever_sample_helper_dense(
+                T, root, Q_primary, primary_to_part,
+                leaf_to_primary_state, rate_on, rate_off,
+                primary_distn, nsamples)
+        d_neg_ll_contribs_init = dense_info[0]
+        d_neg_ll_contribs_dwell = dense_info[1]
+        d_neg_ll_contribs_trans = dense_info[2]
+
         # Get neg ll contribs using the dumb sampler.
         # This calls a separate function for more isolated profiling.
         neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
@@ -834,6 +1014,8 @@ def test_sample_tmjp_v1():
     print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
     print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
     print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
+    print('d neg ll init :', np.mean(d_neg_ll_contribs_init))
+    print('error         :', np.std(d_neg_ll_contribs_init) / sqrt_nsamp)
     print()
     print('diff ent dwell:', diff_ent_dwell)
     print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
@@ -842,6 +1024,8 @@ def test_sample_tmjp_v1():
     print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
     print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
     print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
+    print('d neg ll dwell:', np.mean(d_neg_ll_contribs_dwell))
+    print('error         :', np.std(d_neg_ll_contribs_dwell) / sqrt_nsamp)
     print()
     print('diff ent trans:', diff_ent_trans)
     print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
@@ -850,6 +1034,8 @@ def test_sample_tmjp_v1():
     print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
     print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
     print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
+    print('d neg ll trans:', np.mean(d_neg_ll_contribs_trans))
+    print('error         :', np.std(d_neg_ll_contribs_trans) / sqrt_nsamp)
 
 
 

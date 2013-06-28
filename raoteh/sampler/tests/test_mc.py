@@ -156,7 +156,7 @@ class TestMarkovChain(TestCase):
         assert_equal(actual_sparse, desired)
 
         # Check dense mc0.
-        P_dense = nx.to_numpy_matrix(P, nodelist=range(3))
+        P_dense = nx.to_numpy_matrix(P, nodelist=range(3)).A
         actual_dense = _mc0_dense.get_history_log_likelihood(
                 T, root, node_to_state,
                 root_distn=root_distn, P_default=P_dense)
@@ -212,7 +212,7 @@ class TestMarkovChain(TestCase):
 
             # Dense test.
             # Get the dense transition matrix.
-            P_dense = nx.to_numpy_matrix(P, states)
+            P_dense = nx.to_numpy_matrix(P, states).A
             root_ndarray_distn = dict_to_numpy_array(root_distn, range(nstates))
 
             # Get the node distributions naively.
@@ -285,7 +285,7 @@ class TestMarkovChain(TestCase):
             T_esd = nx.Graph()
             for na, nb in nx.bfs_edges(T, root):
                 P = T[na][nb]['P']
-                P_dense = nx.to_numpy_matrix(P, range(nstates))
+                P_dense = nx.to_numpy_matrix(P, range(nstates)).A
                 T_esd.add_edge(na, nb, P=P_dense)
             root_distn_dense = dict_to_numpy_array(root_distn, range(nstates))
 
@@ -363,7 +363,7 @@ class TestMarkovChain(TestCase):
             T_esd = nx.Graph()
             for na, nb in nx.bfs_edges(T, root):
                 P = T[na][nb]['P']
-                P_dense = nx.to_numpy_matrix(P, range(nstates))
+                P_dense = nx.to_numpy_matrix(P, range(nstates)).A
                 T_esd.add_edge(na, nb, P=P_dense)
             root_distn_dense = dict_to_numpy_array(root_distn, range(nstates))
 
@@ -425,7 +425,7 @@ class TestMarkovChain(TestCase):
             T_esd = nx.Graph()
             for na, nb in nx.bfs_edges(T, root):
                 P = T[na][nb]['P']
-                P_dense = nx.to_numpy_matrix(P, range(nstates))
+                P_dense = nx.to_numpy_matrix(P, range(nstates)).A
                 T_esd.add_edge(na, nb, P=P_dense)
             root_distn_dense = dict_to_numpy_array(root_distn, range(nstates))
 

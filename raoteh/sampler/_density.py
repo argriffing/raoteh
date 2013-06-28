@@ -24,7 +24,7 @@ __all__ = [
         'check_square_dense',
         'digraph_to_bool_csr',
         'get_esd_transitions',
-        'dict_to_array',
+        'dict_to_numpy_array',
         'rate_matrix_to_numpy_array',
         ]
 
