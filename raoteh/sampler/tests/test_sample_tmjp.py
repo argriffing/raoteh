@@ -849,6 +849,56 @@ def _tmjp_clever_sample_helper_debug(
     return neg_ll_contribs, d_neg_ll_contribs
 
 
+def _tmjp_clever_sample_helper_dense(
+        T, root, Q_primary, primary_to_part,
+        leaf_to_primary_state, rate_on, rate_off,
+        primary_distn, nhistories):
+    """
+    A helper function for speed profiling.
+
+    The args are the same as for _sample_tmjp.gen_histories_v1().
+
+    """
+    # init dense transition matrix stuff
+    nprimary = len(primary_to_part)
+    if set(primary_to_part) != set(range(nprimary)):
+        raise NotImplementedError
+    primary_states = range(nprimary)
+    primary_distn_dense = dict_to_numpy_array(
+            primary_distn, nodelist=primary_states)
+    Q_primary_dense = rate_matrix_to_numpy_array(
+            Q_primary, nodelist=primary_states)
+
+    # init dense transition matrix process summary lists
+    d_neg_ll_contribs_init = []
+    d_neg_ll_contribs_dwell = []
+    d_neg_ll_contribs_trans = []
+
+    # sample histories and summarize them using rao-blackwellization
+    for history_info in _sample_tmjp.gen_histories_v1(
+            T, root, Q_primary, primary_to_part,
+            leaf_to_primary_state, rate_on, rate_off,
+            primary_distn, nhistories=nhistories):
+        T_primary_aug, tol_trajectories = history_info
+
+        # use the dense transition matrix rao-blackwellization
+        ll_info = _compound_ll_expectation_helper_dense(
+                primary_to_part, rate_on, rate_off,
+                Q_primary_dense, primary_distn_dense,
+                T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        d_neg_ll_contribs_init.append(-ll_init)
+        d_neg_ll_contribs_dwell.append(-ll_dwell)
+        d_neg_ll_contribs_trans.append(-ll_trans)
+
+    d_neg_ll_contribs = (
+            d_neg_ll_contribs_init,
+            d_neg_ll_contribs_dwell,
+            d_neg_ll_contribs_trans)
+    
+    return d_neg_ll_contribs
+
+
 def _tmjp_clever_sample_helper(
         T, root, Q_primary, primary_to_part,
         leaf_to_primary_state, rate_on, rate_off,
@@ -1113,13 +1163,13 @@ def test_sample_tmjp_v1():
 
         # Get neg ll contribs using the clever sampler.
         # This calls a separate function for more isolated profiling.
-        v1_info, d_info = _tmjp_clever_sample_helper_debug(
+        d_info = _tmjp_clever_sample_helper_dense(
                 T, root, Q_primary, primary_to_part,
                 leaf_to_primary_state, rate_on, rate_off,
                 primary_distn, nsamples)
-        v1_neg_ll_contribs_init = v1_info[0]
-        v1_neg_ll_contribs_dwell = v1_info[1]
-        v1_neg_ll_contribs_trans = v1_info[2]
+        #v1_neg_ll_contribs_init = v1_info[0]
+        #v1_neg_ll_contribs_dwell = v1_info[1]
+        #v1_neg_ll_contribs_trans = v1_info[2]
         d_neg_ll_contribs_init = d_info[0]
         d_neg_ll_contribs_dwell = d_info[1]
         d_neg_ll_contribs_trans = d_info[2]
@@ -1149,8 +1199,8 @@ def test_sample_tmjp_v1():
     print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
     print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
     print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
-    print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
-    print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
+    #print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
+    #print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
     print('d neg ll init :', np.mean(d_neg_ll_contribs_init))
     print('error         :', np.std(d_neg_ll_contribs_init) / sqrt_nsamp)
     print()
@@ -1159,8 +1209,8 @@ def test_sample_tmjp_v1():
     print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
     print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
     print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
-    print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
+    #print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
+    #print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
     print('d neg ll dwell:', np.mean(d_neg_ll_contribs_dwell))
     print('error         :', np.std(d_neg_ll_contribs_dwell) / sqrt_nsamp)
     print()
@@ -1169,8 +1219,8 @@ def test_sample_tmjp_v1():
     print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
     print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
     print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
-    print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
-    print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
+    #print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
+    #print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
     print('d neg ll trans:', np.mean(d_neg_ll_contribs_trans))
     print('error         :', np.std(d_neg_ll_contribs_trans) / sqrt_nsamp)
 
