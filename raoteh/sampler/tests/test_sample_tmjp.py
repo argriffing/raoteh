@@ -711,7 +711,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         proposal_marginal_likelihood))
 
 
-def _tmjp_clever_sample_helper_dense(
+#TODO obsolete function
+def xxx_tmjp_clever_sample_helper_dense(
         T, root, Q_primary, primary_to_part,
         leaf_to_primary_state, rate_on, rate_off,
         primary_distn, nhistories):
@@ -756,14 +757,34 @@ def _tmjp_clever_sample_helper(
     The args are the same as for _sample_tmjp.gen_histories_v1().
 
     """
+    # init dense transition matrix stuff
+    nprimary = len(primary_to_part)
+    if set(primary_to_part) != set(range(nprimary)):
+        raise NotImplementedError
+    primary_states = range(nprimary)
+    primary_distn_dense = dict_to_numpy_array(
+            primary_distn, nodelist=primary_states)
+    Q_primary_dense = rate_matrix_to_numpy_array(
+            Q_primary, nodelist=primary_states)
+
+    # init non-dense transition matrix process summary lists
     neg_ll_contribs_init = []
     neg_ll_contribs_dwell = []
     neg_ll_contribs_trans = []
+
+    # init dense transition matrix process summary lists
+    d_neg_ll_contribs_init = []
+    d_neg_ll_contribs_dwell = []
+    d_neg_ll_contribs_trans = []
+
+    # sample histories and summarize them using rao-blackwellization
     for history_info in _sample_tmjp.gen_histories_v1(
             T, root, Q_primary, primary_to_part,
             leaf_to_primary_state, rate_on, rate_off,
             primary_distn, nhistories=nhistories):
         T_primary_aug, tol_trajectories = history_info
+
+        # use the non-dense transition matrix rao-blackwellization
         ll_info = _compound_ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
                 Q_primary, primary_distn, T_primary_aug, root)
@@ -771,7 +792,28 @@ def _tmjp_clever_sample_helper(
         neg_ll_contribs_init.append(-ll_init)
         neg_ll_contribs_dwell.append(-ll_dwell)
         neg_ll_contribs_trans.append(-ll_trans)
-    return neg_ll_contribs_init, neg_ll_contribs_dwell, neg_ll_contribs_trans
+
+        # use the dense transition matrix rao-blackwellization
+        ll_info = _compound_ll_expectation_helper_dense(
+                primary_to_part, rate_on, rate_off,
+                Q_primary_dense, primary_distn_dense,
+                T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        d_neg_ll_contribs_init.append(-ll_init)
+        d_neg_ll_contribs_dwell.append(-ll_dwell)
+        d_neg_ll_contribs_trans.append(-ll_trans)
+
+    neg_ll_contribs = (
+            neg_ll_contribs_init,
+            neg_ll_contribs_dwell,
+            neg_ll_contribs_trans)
+
+    d_neg_ll_contribs = (
+            d_neg_ll_contribs_init,
+            d_neg_ll_contribs_dwell,
+            d_neg_ll_contribs_trans)
+    
+    return neg_ll_contribs, d_neg_ll_contribs
 
 
 def _tmjp_dumb_sample_helper(
@@ -969,13 +1011,16 @@ def test_sample_tmjp_v1():
 
         # Get neg ll contribs using the clever sampler.
         # This calls a separate function for more isolated profiling.
-        dense_info = _tmjp_clever_sample_helper_dense(
+        v1_info, d_info = _tmjp_clever_sample_helper(
                 T, root, Q_primary, primary_to_part,
                 leaf_to_primary_state, rate_on, rate_off,
                 primary_distn, nsamples)
-        d_neg_ll_contribs_init = dense_info[0]
-        d_neg_ll_contribs_dwell = dense_info[1]
-        d_neg_ll_contribs_trans = dense_info[2]
+        v1_neg_ll_contribs_init = v1_info[0]
+        v1_neg_ll_contribs_dwell = v1_info[1]
+        v1_neg_ll_contribs_trans = v1_info[2]
+        d_neg_ll_contribs_init = d_info[0]
+        d_neg_ll_contribs_dwell = d_info[1]
+        d_neg_ll_contribs_trans = d_info[2]
 
         # Get neg ll contribs using the dumb sampler.
         # This calls a separate function for more isolated profiling.
@@ -992,16 +1037,6 @@ def test_sample_tmjp_v1():
         pm_neg_ll_contribs_init = pm_neg_ll_info[0]
         pm_neg_ll_contribs_dwell = pm_neg_ll_info[1]
         pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
-
-        # Get neg ll contribs using the clever sampler.
-        # This calls a separate function for more isolated profiling.
-        v1_info = _tmjp_clever_sample_helper(
-                T, root, Q_primary, primary_to_part,
-                leaf_to_primary_state, rate_on, rate_off,
-                primary_distn, nsamples)
-        v1_neg_ll_contribs_init = v1_info[0]
-        v1_neg_ll_contribs_dwell = v1_info[1]
-        v1_neg_ll_contribs_trans = v1_info[2]
 
     print()
     print('--- tmjp v1 test ---')
