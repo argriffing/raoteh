@@ -423,11 +423,12 @@ def get_tolerance_summary(
     expected_dwell_off = total_weight * nparts - expected_dwell_on
 
     # Return expectations.
-    return (
+    ret = (
             expected_initial_on, expected_initial_off,
             expected_dwell_on, expected_dwell_off,
             expected_nabsorptions,
             expected_ngains, expected_nlosses)
+    return ret
 
 
 def get_tolerance_ll_contribs(
