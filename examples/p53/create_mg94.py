@@ -53,11 +53,19 @@ def create_mg94(
         Sparse transition rate matrix.
     distn : dict
         Sparse codon state stationary distribution.
+    state_to_part : dict
+        State to tolerance class.
 
     """
     if (target_expected_rate, target_expected_syn_rate).count(None) > 1:
         raise ValueError('target_expected_rate and target_expected_syn_rate '
                 'are mutually exclusive')
+
+    # define state_to_part
+    state_to_part = {}
+    non_stop_residues = sorted(set(r for (s, r, c) in genetic_code))
+    residue_to_part = dict((r, i) for i, r in enumerate(non_stop_residues))
+    state_to_part = dict((s, residue_to_part[r]) for (s, r, c) in genetic_code)
 
     nt_distn = {
             'A' : A,
@@ -127,5 +135,5 @@ def create_mg94(
     cmedbutil.assert_equilibrium(Q_dense, distn_dense)
     cmedbutil.assert_detailed_balance(Q_dense, distn_dense)
 
-    return Q, distn
+    return Q, distn, state_to_part
 
