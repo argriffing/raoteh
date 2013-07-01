@@ -591,6 +591,46 @@ def test_sample_tmjp_v1():
     print('error         :', np.std(d_neg_ll_contribs_trans) / sqrt_nsamp)
 
 
+
+#TODO backport into cmedb
+def gen_paragraphs(lines):
+    para = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if para:
+                yield para
+                para = []
+        else:
+            para.append(line)
+    if para:
+        yield para
+
+
+#TODO backport into cmedb
+def read_phylip(fin):
+    """
+    Yield (taxon name, codons) pairs.
+    @param fin: file open for reading
+    """
+
+    # Get the paragraphs in the most inefficient way possible.
+    # Ignore the first line which is also the first paragraph.
+    paras = list(gen_paragraphs(fin))[1:]
+    if len(paras) != 25:
+        raise Exception('expected p53 alignment of 25 taxa')
+
+    # Each paragraph defines a p53 coding sequence of some taxon.
+    # The first line gives the taxon name.
+    # The rest of the lines are codons.
+    for para in paras:
+        taxon_name = para[0]
+        codons = ' '.join(para[1:]).split()
+        if len(codons) != 393:
+            raise Exception('expected 393 codons')
+        yield taxon_name, codons
+
+
 #TODO backport this into cmedb
 def read_newick(fin):
     """
@@ -599,6 +639,8 @@ def read_newick(fin):
     -------
     T : undirected weighted networkx tree
         Tree with edge weights.
+    root_index : integer
+        The root node.
     leaf_name_pairs : sequence
         Sequence of (node, name) pairs.
 
@@ -609,6 +651,7 @@ def read_newick(fin):
     nodes = list(t.postorder_node_iter())
     non_leaves = [n for n in nodes if n not in leaves]
     ordered_nodes = leaves + non_leaves
+    root_index = len(ordered_nodes) - 1
 
     # node index lookup
     node_id_to_index = dict((id(n), i) for i, n in enumerate(ordered_nodes))
@@ -625,7 +668,7 @@ def read_newick(fin):
     # get a list of (leaf, name) pairs for the table
     leaf_name_pairs = [(i, str(n.taxon)) for i, n in enumerate(leaves)]
 
-    return T, leaf_name_pairs
+    return T, root_index, leaf_name_pairs
 
 
 # TODO for now, this just tests the PAML likelihood
@@ -640,6 +683,7 @@ def main():
     G_mle = 0.25952
 
     # read the genetic code
+    print('reading the genetic code...')
     genetic_code = []
     with open('universal.code.txt') as fin:
         for line in fin:
@@ -660,12 +704,41 @@ def main():
             target_expected_rate=1.0)
     
     # read the tree with branch lengths estimated by paml
+    print('reading the newick tree...')
     with open('codeml.estimated.tree') as fin:
-        T, leaf_name_pairs = read_newick('codeml.estimated.tree')
+        T, root, leaf_name_pairs = read_newick(fin)
 
     # read the alignment
+    print('reading the alignment...')
+    with open('testseq') as fin:
+        name_codons_list = list(read_phylip(fin))
 
-    # compute the log likelihood
+    # compute the log likelihood, column by column
+    # using _mjp (the sparse Markov jump process module).
+    print('preparing to compute log likelihood...')
+    nstates = len(genetic_code)
+    states = range(nstates)
+    codon_to_state = dict((c, s) for s, r, c in genetic_code)
+    name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
+    names, codon_sequences = zip(*name_codons_list)
+    codon_columns = zip(*sequences)
+    total_log_likelihood = 0
+    print('computing log likelihood...')
+    for codon_column in codon_columns:
+        node_to_allowed_states = dict((node, set(states)) for node in T)
+        for name, codon in zip(names, codon_column):
+            leaf = name_to_leaf[name]
+            codon = codon.upper()
+            state = codon_to_state[codon]
+            node_to_allowed_states[leaf] = set([state])
+        likelihood = _mcy.get_likelihood(
+                T, node_to_allowed_states, root,
+                root_distn=primary_distn, Q_default=Q)
+        log_likelihood = np.log(likelihood)
+        total_log_likelihood += log_likelihood
+    
+    # print the total log likelihood
+    print('total log likelihood:', total_log_likelihood)
 
 
 if __name__ == '__main__':
