@@ -12,6 +12,7 @@ import dendropy
 from scipy import special
 
 import create_mg94
+import app_helper
 
 from raoteh.sampler import (
         _mc0_dense,
@@ -571,8 +572,7 @@ def test_sample_tmjp_v1():
 
 
 
-#TODO backport into cmedb
-def gen_paragraphs(lines):
+def xxx_gen_paragraphs(lines):
     para = []
     for line in lines:
         line = line.strip()
@@ -586,8 +586,7 @@ def gen_paragraphs(lines):
         yield para
 
 
-#TODO backport into cmedb
-def read_phylip(fin):
+def xxx_read_phylip(fin):
     """
     Yield (taxon name, codons) pairs.
     @param fin: file open for reading
@@ -610,8 +609,7 @@ def read_phylip(fin):
         yield taxon_name, codons
 
 
-#TODO backport this into cmedb
-def read_newick(fin):
+def xxx_read_newick(fin):
     """
 
     Returns
@@ -650,7 +648,7 @@ def read_newick(fin):
     return T, root_index, leaf_name_pairs
 
 
-def print_codon_distn(codon_to_state, state_to_prob):
+def xxx_print_codon_distn(codon_to_state, state_to_prob):
     evolver_nts = 'TCAG'
     for first_nt in evolver_nts:
         for third_nt in evolver_nts:
@@ -666,7 +664,21 @@ def print_codon_distn(codon_to_state, state_to_prob):
             print('\t'.join(('%1.6f' % p) for p in arr))
 
 
-# TODO for now, this just tests the PAML likelihood
+def xxx_read_genetic_code(fin):
+    genetic_code = []
+    for line in fin:
+        line = line.strip()
+        if line:
+            state, residue, codon = line.split()
+            state = int(state)
+            residue = residue.upper()
+            codon = codon.upper()
+            if residue != 'STOP':
+                triple = (state, residue, codon)
+                genetic_code.append(triple)
+    return genetic_code
+
+
 def main():
 
     # values estimated using PAML
@@ -679,18 +691,8 @@ def main():
 
     # read the genetic code
     print('reading the genetic code...')
-    genetic_code = []
     with open('universal.code.txt') as fin:
-        for line in fin:
-            line = line.strip()
-            if line:
-                state, residue, codon = line.split()
-                state = int(state)
-                residue = residue.upper()
-                codon = codon.upper()
-                if residue != 'STOP':
-                    triple = (state, residue, codon)
-                    genetic_code.append(triple)
+        genetic_code = app_helper.read_genetic_code(fin)
     codon_to_state = dict((c, s) for s, r, c in genetic_code)
 
     # check that the states are in the right order
@@ -710,13 +712,13 @@ def main():
         print(triple)
     print()
     print('codon distn:')
-    print_codon_distn(codon_to_state, primary_distn)
+    app_helper.print_codon_distn(codon_to_state, primary_distn)
     print()
     
     # read the tree with branch lengths estimated by paml
     print('reading the newick tree...')
     with open('codeml.estimated.tree') as fin:
-        T, root, leaf_name_pairs = read_newick(fin)
+        T, root, leaf_name_pairs = app_helper.read_newick(fin)
 
     # print a summary of the tree
     degree = T.degree()
@@ -729,7 +731,7 @@ def main():
     # read the alignment
     print('reading the alignment...')
     with open('testseq') as fin:
-        name_codons_list = list(read_phylip(fin))
+        name_codons_list = list(app_helper.read_phylip(fin))
 
     # compute the log likelihood, column by column
     # using _mjp (the sparse Markov jump process module).
