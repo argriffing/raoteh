@@ -4,13 +4,14 @@ Test functions related to the Markov jump process.
 """
 from __future__ import division, print_function, absolute_import
 
+from itertools import product
 import numpy as np
 import networkx as nx
 
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
-from raoteh.sampler import _density, _mjp, _mjp_dense
+from raoteh.sampler import _util, _density, _mjp, _mjp_dense
 
 from raoteh.sampler._density import (
         dict_to_numpy_array,
@@ -47,6 +48,45 @@ class TestMarkovJumpProcess(TestCase):
         desired_dense = dict_to_numpy_array(expected, nodelist=nodelist)
         actual_dense = _mjp_dense.get_total_rates(Q_dense)
         assert_allclose(actual_dense, desired_dense)
+
+    def test_likelihoods_sum_to_one(self):
+        T = nx.Graph()
+        T.add_weighted_edges_from([
+            (0, 1, 2.0),
+            (0, 2, 3.0),
+            (0, 3, 4.0),
+            ])
+        nnodes = len(T)
+        root = 0
+        nstates = 3
+        weights = {
+            0 : np.random.exponential(),
+            1 : np.random.exponential(),
+            2 : np.random.exponential(),
+            }
+        distn = _util.get_normalized_dict_distn(weights)
+        Q = nx.DiGraph()
+        for i in range(nstates):
+            for j in range(nstates):
+                if i != j:
+                    Q.add_edge(i, j, weight=np.random.exponential())
+        distn_dense = _density.dict_to_numpy_array(
+                distn, nodelist=range(nstates))
+        Q_dense = _density.rate_matrix_to_numpy_array(
+                Q, nodelist=range(nstates))
+        likelihood_sum = 0
+        for assignment in product(range(nstates), repeat=nnodes):
+            node_to_allowed_states = dict(
+                    (n, {s}) for n, s in zip(range(nnodes), assignment))
+            lk = _mjp.get_likelihood(
+                    T, node_to_allowed_states, root,
+                    root_distn=distn, Q_default=Q)
+            lk_dense = _mjp_dense.get_likelihood(
+                    T, node_to_allowed_states, root, nstates,
+                    root_distn=distn_dense, Q_default=Q_dense)
+            assert_allclose(lk, lk_dense)
+            likelihood_sum += lk
+        assert_allclose(likelihood_sum, 1)
 
     def test_get_likelihood(self):
         T = nx.Graph()
