@@ -314,8 +314,8 @@ def get_expm_augmented_tree(T, root, Q_default=None):
     return T_aug
 
 
-def get_likelihood(T, node_to_allowed_states,
-        root, root_distn=None, Q_default=None):
+def get_likelihood(T, node_to_allowed_states, root, nstates,
+        root_distn=None, Q_default=None):
     """
 
     Parameters
@@ -327,6 +327,8 @@ def get_likelihood(T, node_to_allowed_states,
         Maps each node to a set of allowed states.
     root : integer
         Root node.
+    nstates : integer
+        Number of states.
     root_distn : 2d ndarray, optional
         Distribution over states at the root.
     Q_default : 2d ndarray, optional
@@ -355,7 +357,8 @@ def get_likelihood(T, node_to_allowed_states,
     T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Return the Markov chain likelihood.
-    return _mcy_dense.get_likelihood(T_aug, root, node_to_allowed_states,
+    return _mcy_dense.get_likelihood(T_aug, root, nstates,
+            node_to_allowed_states=node_to_allowed_states,
             root_distn=root_distn, P_default=None)
 
 

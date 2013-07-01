@@ -151,8 +151,8 @@ def get_likelihood(root_pmap, root_distn=None):
 
     Parameters
     ----------
-    root_pmap : dict
-        A map from states at the root to conditional likelihoods.
+    root_pmap : 1d ndarray
+        An ndarry giving conditional subtree likelihoods at the root.
     root_distn : 2d ndarray, optional
         A finite distribution or weights over root states.
         Values should be positive but are not required to sum to 1.
@@ -176,14 +176,16 @@ def get_likelihood(root_pmap, root_distn=None):
     # cause the likelihood to be zero.
     if root_pmap is None:
         raise ValueError('root_pmap is None')
-    if not root_pmap:
+    if root_pmap.min() < 0:
+        raise ValueError('root_pmap should have non-negative entries')
+    if not root_pmap.sum():
         raise StructuralZeroProb(
                 'all root states give a subtree likelihood of zero')
 
     # Construct the set of possible root states.
     # If no root state is possible raise the exception indicating
     # that the likelihood is zero by sparsity.
-    feasible_rstates = set(root_pmap)
+    feasible_rstates = set(s for s, p in enumerate(root_pmap) if p)
     if root_distn is not None:
         feasible_rstates.intersection_update(prior_feasible_rstates)
     if not feasible_rstates:
@@ -193,9 +195,9 @@ def get_likelihood(root_pmap, root_distn=None):
 
     # Compute the likelihood.
     if root_distn is not None:
-        likelihood = sum(root_pmap[s] * root_distn[s] for s in feasible_rstates)
+        likelihood = root_distn.dot(root_pmap)
     else:
-        likelihood = sum(root_pmap.values())
+        likelihood = root_pmap.sum()
 
     # Return the likelihood.
     return likelihood

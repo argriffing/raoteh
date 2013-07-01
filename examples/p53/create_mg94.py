@@ -125,7 +125,7 @@ def create_mg94(
 
     # check nucleotide distribution
     nt_distn_dense = _density.dict_to_numpy_array(nt_distn)
-    cmedbutil.assert_stochastic_vector(nt_distn)
+    cmedbutil.assert_stochastic_vector(nt_distn_dense)
 
     # check time-reversible rate matrix invariants
     Q_dense = _density.rate_matrix_to_numpy_array(Q, nodelist=states)

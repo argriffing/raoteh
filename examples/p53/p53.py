@@ -8,10 +8,13 @@ from collections import defaultdict
 
 import numpy as np
 import networkx as nx
+import dendropy
 from scipy import special
 
+import create_mg94
 
 from raoteh.sampler import (
+        _mc0_dense,
         _mjp,
         _mjp_dense,
         _tmjp,
@@ -19,6 +22,7 @@ from raoteh.sampler import (
         _sampler,
         _sample_tmjp,
         _sample_tree,
+        _density,
         )
 
 from raoteh.sampler._util import (
@@ -273,30 +277,6 @@ def _tmjp_clever_sample_helper_debug(
         d_neg_ll_contribs_dwell.append(-d_dwell_ll)
         d_neg_ll_contribs_trans.append(-d_trans_ll)
 
-        # check the dense vs. non-dense primary process expectations
-        assert_allclose(
-                d_dwell_times,
-                dict_to_numpy_array(dwell_times, primary_states))
-        assert_equal(d_root_state, root_state)
-        assert_allclose(
-                d_transitions,
-                nx.to_numpy_matrix(transitions, primary_states).A)
-        assert_allclose(
-                d_post_root_distn,
-                dict_to_numpy_array(post_root_distn, primary_states))
-
-        # check the dense vs. non-dense primary process log likeilhoods
-        assert_allclose(d_neg_ll_info, neg_ll_info)
-
-        # check the dense vs. non-dense log likelihood contributions
-        assert_allclose(
-                (d_init_tol_ll, d_dwell_tol_ll, d_trans_tol_ll),
-                (init_tol_ll, dwell_tol_ll, trans_tol_ll))
-
-        # check the dense vs. non-dense entries to be added to the lists
-        assert_allclose(
-                (d_init_ll, d_dwell_ll, d_trans_ll),
-                (init_ll, dwell_ll, trans_ll))
 
     neg_ll_contribs = (
             neg_ll_contribs_init,
@@ -430,7 +410,6 @@ def _tmjp_clever_sample_helper(
     return neg_ll_contribs, d_neg_ll_contribs
 
 
-@decorators.slow
 def test_sample_tmjp_v1():
     # Compare summaries of samples from the product space
     # of the compound process to summaries of samples that uses
@@ -721,19 +700,24 @@ def main():
     codon_to_state = dict((c, s) for s, r, c in genetic_code)
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
     names, codon_sequences = zip(*name_codons_list)
-    codon_columns = zip(*sequences)
+    codon_columns = zip(*codon_sequences)
     total_log_likelihood = 0
+    primary_distn_dense = _density.dict_to_numpy_array(
+            primary_distn, nodelist=states)
+    Q_dense = _density.rate_matrix_to_numpy_array(
+            Q, nodelist=states)
     print('computing log likelihood...')
-    for codon_column in codon_columns:
+    for i, codon_column in enumerate(codon_columns):
+        print('column', i + 1, 'of', len(codon_columns))
         node_to_allowed_states = dict((node, set(states)) for node in T)
         for name, codon in zip(names, codon_column):
             leaf = name_to_leaf[name]
             codon = codon.upper()
             state = codon_to_state[codon]
             node_to_allowed_states[leaf] = set([state])
-        likelihood = _mcy.get_likelihood(
-                T, node_to_allowed_states, root,
-                root_distn=primary_distn, Q_default=Q)
+        likelihood = _mjp_dense.get_likelihood(
+                T, node_to_allowed_states, root, nstates,
+                root_distn=primary_distn_dense, Q_default=Q_dense)
         log_likelihood = np.log(likelihood)
         total_log_likelihood += log_likelihood
     

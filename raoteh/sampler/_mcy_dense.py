@@ -28,7 +28,7 @@ import networkx as nx
 
 import pyfelscore
 
-from raoteh.sampler import _mc0, _util
+from raoteh.sampler import _util, _mc0_dense
 
 from raoteh.sampler._density import (
         check_square_dense,
@@ -263,7 +263,7 @@ def unaccelerated_get_node_to_pmap(T, root,
     return node_to_pmap
 
 
-def get_likelihood(T, root,
+def get_likelihood(T, root, nstates,
         node_to_allowed_states=None, root_distn=None, P_default=None):
     """
     Compute a likelihood or raise an exception if the likelihood is zero.
@@ -274,6 +274,8 @@ def get_likelihood(T, root,
         A tree whose edges are annotated with transition matrices P.
     root : integer
         The root node.
+    nstates : integer
+        The number of states.
     node_to_allowed_states : dict, optional
         A map from a node to a set of allowed states.
         If the map is None then the sets of allowed states are assumed
@@ -319,9 +321,9 @@ def get_likelihood(T, root,
                         'by a node state constraint')
             return sum(root_distn[s] for s in nonzero_prob_states)
     else:
-        node_to_pmap = get_node_to_pmap(T, root,
+        node_to_pmap = get_node_to_pmap(T, root, nstates,
                 node_to_allowed_states=node_to_allowed_states,
                 P_default=P_default)
         root_pmap = node_to_pmap[root]
-        return _mc0.get_likelihood(root_pmap, root_distn=root_distn)
+        return _mc0_dense.get_likelihood(root_pmap, root_distn=root_distn)
 
