@@ -650,6 +650,22 @@ def read_newick(fin):
     return T, root_index, leaf_name_pairs
 
 
+def print_codon_distn(codon_to_state, state_to_prob):
+    evolver_nts = 'TCAG'
+    for first_nt in evolver_nts:
+        for third_nt in evolver_nts:
+            arr = []
+            for second_nt in evolver_nts:
+                codon = first_nt + second_nt + third_nt
+                if codon not in codon_to_state:
+                    p = 0.0
+                else:
+                    state = codon_to_state[codon]
+                    p = state_to_prob[state]
+                arr.append(p)
+            print('\t'.join(('%1.6f' % p) for p in arr))
+
+
 # TODO for now, this just tests the PAML likelihood
 def main():
 
@@ -672,9 +688,16 @@ def main():
                 state = int(state)
                 residue = residue.upper()
                 codon = codon.upper()
-                if codon != 'STOP':
+                if residue != 'STOP':
                     triple = (state, residue, codon)
                     genetic_code.append(triple)
+    codon_to_state = dict((c, s) for s, r, c in genetic_code)
+
+    # check that the states are in the right order
+    nstates = len(genetic_code)
+    if range(nstates) != [s for s, r, c in genetic_code]:
+        raise Exception
+    states = range(nstates)
 
     # define the primary rate matrix and distribution and tolerance classes
     Q, primary_distn, primary_to_part = create_mg94.create_mg94(
@@ -682,10 +705,26 @@ def main():
             kappa_mle, omega_mle, genetic_code,
             target_expected_rate=1.0)
     
+    print('genetic code:')
+    for triple in genetic_code:
+        print(triple)
+    print()
+    print('codon distn:')
+    print_codon_distn(codon_to_state, primary_distn)
+    print()
+    
     # read the tree with branch lengths estimated by paml
     print('reading the newick tree...')
     with open('codeml.estimated.tree') as fin:
         T, root, leaf_name_pairs = read_newick(fin)
+
+    # print a summary of the tree
+    degree = T.degree()
+    print('number of nodes:', len(T))
+    print('number of leaves:', degree.values().count(1))
+    print('number of branches:', T.size())
+    print('total branch length:', T.size(weight='weight'))
+    print()
 
     # read the alignment
     print('reading the alignment...')
@@ -695,9 +734,6 @@ def main():
     # compute the log likelihood, column by column
     # using _mjp (the sparse Markov jump process module).
     print('preparing to compute log likelihood...')
-    nstates = len(genetic_code)
-    states = range(nstates)
-    codon_to_state = dict((c, s) for s, r, c in genetic_code)
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
     names, codon_sequences = zip(*name_codons_list)
     codon_columns = zip(*codon_sequences)
@@ -708,7 +744,6 @@ def main():
             Q, nodelist=states)
     print('computing log likelihood...')
     for i, codon_column in enumerate(codon_columns):
-        print('column', i + 1, 'of', len(codon_columns))
         node_to_allowed_states = dict((node, set(states)) for node in T)
         for name, codon in zip(names, codon_column):
             leaf = name_to_leaf[name]
@@ -720,6 +755,7 @@ def main():
                 root_distn=primary_distn_dense, Q_default=Q_dense)
         log_likelihood = np.log(likelihood)
         total_log_likelihood += log_likelihood
+        print('column', i + 1, 'of', len(codon_columns), 'll', log_likelihood)
     
     # print the total log likelihood
     print('total log likelihood:', total_log_likelihood)
