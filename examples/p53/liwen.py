@@ -92,7 +92,7 @@ def main():
     
     # read the tree with branch lengths estimated by paml
     print('reading the newick tree...')
-    with open('codeml.estimated.tree') as fin:
+    with open('liwen.estimated.tree') as fin:
         T, root, leaf_name_pairs = app_helper.read_newick(fin)
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
