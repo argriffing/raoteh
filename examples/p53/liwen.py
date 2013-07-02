@@ -6,6 +6,7 @@ from __future__ import division, print_function, absolute_import
 
 from collections import defaultdict
 
+import networkx as nx
 import numpy as np
 from scipy import special
 
@@ -13,8 +14,9 @@ import create_mg94
 import app_helper
 
 from raoteh.sampler import (
-        _mjp_dense,
+        _util,
         _density,
+        _mjp_dense,
         )
 
 
@@ -76,8 +78,8 @@ def main():
 
     # define the primary rate matrix and distribution and tolerance classes
     Q, primary_distn, primary_to_part = create_mg94.create_mg94(
-            A_mle, C_mle, G_mle, T_mle,
-            kappa_mle, omega_mle, genetic_code,
+            A, C, G, T,
+            kappa, omega, genetic_code,
             target_expected_rate=1.0)
     
     print('genetic code:')
@@ -92,6 +94,10 @@ def main():
     print('reading the newick tree...')
     with open('codeml.estimated.tree') as fin:
         T, root, leaf_name_pairs = app_helper.read_newick(fin)
+    name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
+
+    # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
+    root = name_to_leaf['Has']
 
     # print a summary of the tree
     degree = T.degree()
@@ -109,13 +115,8 @@ def main():
     # compute the log likelihood, column by column
     # using _mjp_dense (the dense Markov jump process module).
     print('preparing to compute log likelihood...')
-    name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
     names, codon_sequences = zip(*name_codons_list)
     codon_columns = zip(*codon_sequences)
-    #primary_distn_dense = _density.dict_to_numpy_array(
-            #primary_distn, nodelist=states)
-    #Q_dense = _density.rate_matrix_to_numpy_array(
-            #Q, nodelist=states)
     print('computing log likelihood...')
     total_log_likelihood = 0
     for i, codon_column in enumerate(codon_columns):
@@ -126,34 +127,55 @@ def main():
                 s for s, r, c in genetic_code if r in disease_residues)
         benign_states = set(range(nstates)) - disease_states
 
+        # Define the compound process state space.
+        ncompound = 2 * nstates
+        compound_states = range(ncompound)
+
         # Initialize the column-specific compound rate matrix.
         Q_compound = nx.DiGraph()
 
         # Add block-diagonal entries of the background process.
         for sa, sb in Q.edges():
             weight = Q[sa][sb]['weight']
-            Q.add_edge(nstates + sa, nstates + sb, weight=weight)
+            Q_compound.add_edge(nstates + sa, nstates + sb, weight=weight)
 
         # Add block-diagonal entries of the reference process.
         for sa, sb in Q.edges():
             weight = Q[sa][sb]['weight']
             if sb in benign_states:
-                Q.add_edge(sa, sb, weight=weight)
+                Q_compound.add_edge(sa, sb, weight=weight)
 
         # Add off-block-diagonal entries directed from the reference
         # to the background process.
         for s in range(nstates):
-            Q.add_edge(s, nstates + s, weight=rho)
+            Q_compound.add_edge(s, nstates + s, weight=rho)
 
-        node_to_allowed_states = dict((node, set(states)) for node in T)
+        # Define the column-specific initial state distribution.
+        compound_weights = {}
+        for s in range(ncompound):
+            if (s in primary_distn) and (s in benign_states):
+                compound_weights[s] = primary_distn[s]
+        compound_distn = _util.get_normalized_dict_distn(compound_weights)
+
+        # Convert to dense representations.
+        Q_compound_dense = _density.rate_matrix_to_numpy_array(
+                Q_compound, nodelist=compound_states)
+        compound_distn_dense = _density.dict_to_numpy_array(
+                compound_distn, nodelist=compound_states)
+
+        # Define the map from node to allowed compound states.
+        node_to_allowed_states = dict((n, set(compound_states)) for n in T)
         for name, codon in zip(names, codon_column):
             leaf = name_to_leaf[name]
             codon = codon.upper()
-            state = codon_to_state[codon]
-            node_to_allowed_states[leaf] = set([state])
+            codon_state = codon_to_state[codon]
+            node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
+
+        # Get the likelihood for this column.
         likelihood = _mjp_dense.get_likelihood(
-                T, node_to_allowed_states, root, nstates,
-                root_distn=primary_distn_dense, Q_default=Q_dense)
+                T, node_to_allowed_states, root, ncompound,
+                root_distn=compound_distn_dense,
+                Q_default=Q_compound_dense)
         log_likelihood = np.log(likelihood)
         total_log_likelihood += log_likelihood
         print('column', i + 1, 'of', len(codon_columns), 'll', log_likelihood)
