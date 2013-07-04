@@ -33,6 +33,10 @@ def read_disease_data(fin):
         mres = mres.upper()
         if wres == mres:
             raise Exception('synonymous disease: ' + line)
+        if len(mcodon) != 3:
+            if not ('INS' in mcodon or 'DEL' in mcodon):
+                raise Exception('unrecognized mutant codon')
+            continue
         column_to_disease_residues[column_index].add(mres)
     return dict(column_to_disease_residues)
 
