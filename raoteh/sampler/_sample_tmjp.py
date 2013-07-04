@@ -5,6 +5,10 @@ This should use concepts related to inference of parameters
 of continuous time Bayesian networks (CTBN),
 but it will not be so general as to allow any arbitrary network.
 
+In this module,
+the disease_data variable is a list, indexed by tolerance class,
+of maps from a node to a set of allowed tolerance states.
+
 """
 from __future__ import division, print_function, absolute_import
 
@@ -54,9 +58,11 @@ def get_absorption_rate_map(Q_primary, primary_to_part):
     return absorption_rate_map
 
 
+#TODO use disease data
 def gen_histories_v1(T, root, Q_primary, primary_to_part,
         node_to_primary_state, rate_on, rate_off,
-        primary_distn, uniformization_factor=2, nhistories=None):
+        primary_distn, disease_data=None,
+        uniformization_factor=2, nhistories=None):
     """
     Use the Rao-Teh method to sample histories on trees.
 
@@ -85,6 +91,9 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
         Transition rate from tolerance state on to tolerance_state off.
     primary_distn : dict
         Map from root state to prior probability.
+    disease_data : list, optional
+        A list, indexed by tolerance class,
+        of maps from a node to a set of allowed tolerance states.
     uniformization_factor : float, optional
         A value greater than 1.
     nhistories : integer, optional
@@ -98,7 +107,7 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
             T, root,
             Q_primary, primary_distn,
             primary_to_part, rate_on, rate_off,
-            node_to_primary_state)
+            node_to_primary_state, disease_data=disease_data)
 
     # Summarize the primary process in ways that are useful for Rao-Teh.
     primary_total_rates = _mjp.get_total_rates(Q_primary)
@@ -190,7 +199,8 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
                     T, root,
                     primary_to_part,
                     P_tolerance, tolerance_distn,
-                    primary_trajectory, edge_to_event_times, tol)
+                    primary_trajectory, edge_to_event_times, tol,
+                    disease_data=disease_data)
 
             # Add the tolerance trajectory.
             new_tolerance_trajectories.append(traj)
@@ -415,11 +425,13 @@ def resample_primary_states_v1(
     return sampled_traj
 
 
+#TODO use disease data
 def resample_tolerance_states_v1(
         T, root,
         primary_to_part,
         P_tolerance, tolerance_distn,
-        primary_trajectory, edge_to_event_times, tolerance_class):
+        primary_trajectory, edge_to_event_times, tolerance_class,
+        disease_data=None):
     """
     Resample tolerance states.
 
@@ -433,6 +445,21 @@ def resample_tolerance_states_v1(
         This is the original tree.
     root : integer
         Root of the tree.
+    primary_to_part : x
+        x
+    P_tolerance : x
+        x
+    tolerance_distn : x
+        x
+    primary_trajectory : x
+        x
+    edge_to_event_times : x
+        x
+    tolerance_class : x
+        x
+    disease_data : list, optional
+        A list, indexed by tolerance class,
+        of maps from a node to a set of allowed tolerance states.
 
     Returns
     -------
@@ -444,6 +471,9 @@ def resample_tolerance_states_v1(
     resampling uniformization times.
 
     """
+    # This function only uses disease_data through disease_map.
+    disease_map = disease_data[tolerance_class]
+
     # Build a merged tree corresponding to the primary trajectory,
     # with event nodes corresponding to uniformization times
     # for the tolerance process of the tolerance class of interest.
@@ -473,6 +503,19 @@ def resample_tolerance_states_v1(
         primary_state = T_merged[na][nb]['states'][0]
         primary_tol_class = primary_to_part[primary_state]
         chunk_node_to_tol_set[chunk_node].add(primary_tol_class)
+
+    # Get the map from each chunk node to the set of tolerance states
+    # allowed by the disease data.
+    chunk_node_to_disease_restriction = dict((n, {0, 1}) for n in chunk_tree)
+    for merged_edge in nx.bfs_edges(T_merged, root):
+        na, nb = merged_edge
+        chunk_node = edge_to_chunk_node[merged_edge]
+        for n in (na, nb):
+            if n in disease_map:
+                restriction = chunk_node_to_disease_restriction[chunk_node]
+                restriction.intersection_update(disease_map[n])
+
+    #TODO use the disease restriction
 
     # For each chunk node, construct the set of allowed tolerance states.
     # This will be {1} if the primary process belongs to the
@@ -514,7 +557,7 @@ def get_feasible_history(
         T, root,
         Q_primary, primary_distn,
         primary_to_part, rate_on, rate_off,
-        node_to_primary_state):
+        node_to_primary_state, disease_data=None):
     """
     Find an arbitrary feasible history.
 
@@ -535,12 +578,15 @@ def get_feasible_history(
         Primary process state distribution.
     primary_to_part : dict
         Map from primary state to tolerance class.
-    node_to_primary_state : dict
-        A sparse map from a node to a known primary state.
     rate_on : float
         Transition rate from tolerance off -> on.
     rate_off : float
         Transition rate from tolerance on -> off.
+    node_to_primary_state : dict
+        A sparse map from a node to a known primary state.
+    disease_data : list, optional
+        A list, indexed by tolerance class,
+        of maps from a node to a set of allowed tolerance states.
 
     Returns
     -------
@@ -636,13 +682,18 @@ def get_feasible_history(
                 T, root,
                 primary_to_part,
                 P_tolerance, tolerance_distn,
-                primary_trajectory, edge_to_event_times, tolerance_class)
+                primary_trajectory, edge_to_event_times, tolerance_class,
+                disease_data=disease_data)
 
         # Add the tolerance trajectory to the list.
         tolerance_trajectories.append(tolerance_traj)
 
     # Return the feasible trajectories.
     return primary_trajectory, tolerance_trajectories
+
+
+###############################################################################
+# v2
 
 
 #TODO untested

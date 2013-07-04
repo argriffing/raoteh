@@ -1,5 +1,4 @@
 """
-Test functions that sample tolerance Markov jump trajectories on a tree.
 
 """
 from __future__ import division, print_function, absolute_import
@@ -18,13 +17,25 @@ from raoteh.sampler import (
 
 def main():
 
-    # values estimated using PAML
+    # values estimated using codeml
     kappa_mle = 3.17632
-    omega_mle = 0.21925
+    #omega_mle = 0.21925
     T_mle = 0.18883
     C_mle = 0.30126
     A_mle = 0.25039
     G_mle = 0.25952
+
+    # Use blink-on and blink-off rates that approximate omega_mle.
+    proportion_on = 0.21925
+    proportion_off = 1 - proportion_on
+    total_blink_rate = 1.0
+    rate_on = total_blink_rate * proportion_on
+    rate_off = total_blink_rate * proportion_off
+
+    # read the disease data
+    print('reading the disease data...')
+    with open('p53RRRR.disease') as fin:
+        column_to_disease_residues = app_helper.read_disease_data(fin)
 
     # read the genetic code
     print('reading the genetic code...')
@@ -39,7 +50,7 @@ def main():
     states = range(nstates)
 
     # define the primary rate matrix and distribution and tolerance classes
-    Q, primary_distn, primary_to_part = create_mg94.create_mg94(
+    Q_primary, primary_distn, primary_to_part = create_mg94.create_mg94(
             A_mle, C_mle, G_mle, T_mle,
             kappa_mle, omega_mle, genetic_code,
             target_expected_rate=1.0)
@@ -70,9 +81,8 @@ def main():
     with open('testseq') as fin:
         name_codons_list = list(app_helper.read_phylip(fin))
 
-    # compute the log likelihood, column by column
-    # using _mjp_dense (the dense Markov jump process module).
-    print('preparing to compute log likelihood...')
+    # Estimate expectations, column by column.
+    #TODO use disease constraints
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
     names, codon_sequences = zip(*name_codons_list)
     codon_columns = zip(*codon_sequences)

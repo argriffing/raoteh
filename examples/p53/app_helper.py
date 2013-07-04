@@ -13,7 +13,25 @@ __all__ = [
         'read_newick',
         'print_codon_distn',
         'read_genetic_code',
+        'read_disease_data',
         ]
+
+
+def read_disease_data(fin):
+    # NOTE nt_pos and codon_pos begin at 1 not 0
+    # nt_pos, codon_pos, exon(???), wild_codon, mut_codon, wild_res, mut_res
+    # 467 135 5 TGC TAC Cys Tyr
+    column_to_disease_residues = defaultdict(set)
+    for line in fin:
+        line = line.strip()
+        ntpos, codonpos, exon, wcodon, mcodon, wres, mres  = line.split()
+        column_index = int(codonpos) - 1
+        wres = wres.upper()
+        mres = mres.upper()
+        if wres == mres:
+            raise Exception('synonymous disease: ' + line)
+        column_to_disease_residues[column_index].add(mres)
+    return dict(column_to_disease_residues)
 
 
 def gen_paragraphs(lines):
