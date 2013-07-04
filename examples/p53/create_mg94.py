@@ -4,6 +4,8 @@ Copypasted from cmedb/create-mg94.
 This module is modified to not use sqlite3.
 
 """
+from __future__ import division, print_function, absolute_import
+
 import networkx as nx
 import numpy as np
 
@@ -53,8 +55,10 @@ def create_mg94(
         Sparse transition rate matrix.
     distn : dict
         Sparse codon state stationary distribution.
-    state_to_part : dict
-        State to tolerance class.
+    state_to_residue : sequence
+        Sequence of residues indexed by codon state.
+    residue_to_part : dict
+        Map from residue to tolerance class.
 
     """
     if (target_expected_rate, target_expected_syn_rate).count(None) > 1:
@@ -62,10 +66,10 @@ def create_mg94(
                 'are mutually exclusive')
 
     # define state_to_part
-    state_to_part = {}
-    non_stop_residues = sorted(set(r for (s, r, c) in genetic_code))
-    residue_to_part = dict((r, i) for i, r in enumerate(non_stop_residues))
-    state_to_part = dict((s, residue_to_part[r]) for (s, r, c) in genetic_code)
+    state_to_residue = dict((s, r) for s, r, c in genetic_code)
+    alphabetic_residues = sorted(set(r for s, r, c in genetic_code))
+    residue_to_part = dict((r, i) for i, r in enumerate(alphabetic_residues))
+    state_to_part = dict((s, residue_to_part[r]) for s, r, c in genetic_code)
 
     nt_distn = {
             'A' : A,
@@ -135,5 +139,5 @@ def create_mg94(
     cmedbutil.assert_equilibrium(Q_dense, distn_dense)
     cmedbutil.assert_detailed_balance(Q_dense, distn_dense)
 
-    return Q, distn, state_to_part
+    return Q, distn, state_to_residue, residue_to_part
 

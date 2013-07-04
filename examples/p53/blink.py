@@ -10,9 +10,186 @@ import create_mg94
 import app_helper
 
 from raoteh.sampler import (
+        _tmjp_dense,
+        _sample_tmjp,
         _mjp_dense,
         _density,
         )
+
+
+#TODO copypasted from tests/test_sample_tmjp.py
+#TODO this should be a log likelihood helper function in the _mjp_dense module.
+def _differential_entropy_helper_dense(
+        Q, prior_root_distn,
+        post_root_distn, post_dwell_times, post_transitions,
+        ):
+    """
+    Use posterior expectations to help compute differential entropy.
+
+    Parameters
+    ----------
+    Q : 2d ndarray
+        Rate matrix.
+    prior_root_distn : 1d ndarray
+        Prior distribution at the root.
+        If Q is a time-reversible rate matrix,
+        then the prior root distribution
+        could be the stationary distribution associated with Q.
+    post_root_distn : 1d ndarray
+        Posterior state distribution at the root.
+    post_dwell_times : 1d ndarray
+        Posterior expected dwell time for each state.
+    post_transitions : 2d ndarray
+        Posterior expected count of each transition type.
+
+    Returns
+    -------
+    diff_ent_init : float
+        Initial state distribution contribution to differential entropy.
+    diff_ent_dwell : float
+        Dwell time contribution to differential entropy.
+    diff_ent_trans : float
+        Transition contribution to differential entropy.
+
+    """
+    _density.check_square_dense(Q)
+    _density.check_square_dense(post_transitions)
+    nstates = Q.shape[0]
+
+    # Get the total rates.
+    total_rates = _mjp_dense.get_total_rates(Q)
+
+    # Initial state distribution contribution to differential entropy.
+    diff_ent_init = -special.xlogy(post_root_distn, prior_root_distn).sum()
+
+    # Dwell time contribution to differential entropy.
+    diff_ent_dwell = post_dwell_times.dot(total_rates)
+
+    # Transition contribution to differential entropy.
+    diff_ent_trans = -special.xlogy(post_transitions, Q).sum()
+
+    # Return the contributions to differential entropy.
+    return diff_ent_init, diff_ent_dwell, diff_ent_trans
+
+
+#TODO add disease data conditioning
+#TODO copypasted from tests/test_sample_tmjp.py
+#TODO this should go into the _tmjp_dense module.
+def _compound_ll_expectation_helper_dense(
+        primary_to_part, rate_on, rate_off,
+        Q_primary, primary_distn, T_primary_aug, root):
+    """
+    Get contributions to the expected log likelihood of the compound process.
+
+    The primary process trajectory is fully observed,
+    but the binary tolerance states are unobserved.
+
+    Parameters
+    ----------
+    primary_to_part : x
+        x
+    rate_on : x
+        x
+    rate_off : x
+        x
+    Q_primary : 2d ndarray
+        Primary rate matrix.
+    primary_distn : 1d ndarray
+        Primary process state distribution.
+    T_primary_aug : x
+        x
+    root : integer
+        The root node.
+
+    Returns
+    -------
+    init_ll : float
+        x
+    dwell_ll : float
+        x
+    trans_ll : float
+        x
+
+    """
+    _density.check_square_dense(Q_primary)
+    nprimary = Q_primary.shape[0]
+    if primary_distn.shape[0] != nprimary:
+        raise ValueError('inconsistency in the number of primary states')
+
+    total_tree_length = T_primary_aug.size(weight='weight')
+    primary_info = _mjp_dense.get_history_statistics(
+            T_primary_aug, nprimary, root=root)
+    dwell_times, root_state, transitions = primary_info
+    post_root_distn = np.zeros(nprimary, dtype=float)
+    post_root_distn[root_state] = 1
+
+    neg_ll_info = _differential_entropy_helper_dense(
+            Q_primary, primary_distn,
+            post_root_distn, dwell_times, transitions)
+    neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
+
+    tol_summary = _tmjp_dense.get_tolerance_summary(
+            primary_to_part, rate_on, rate_off,
+            Q_primary, T_primary_aug, root)
+
+    tol_info = _tmjp_dense.get_tolerance_ll_contribs(
+            rate_on, rate_off, total_tree_length, *tol_summary)
+    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
+
+    init_ll = -neg_init_prim_ll + init_tol_ll
+    dwell_ll = dwell_tol_ll
+    trans_ll = -neg_trans_prim_ll + trans_tol_ll
+
+    return init_ll, dwell_ll, trans_ll
+
+
+#TODO copypasted from tests/test_sample_tmjp.py
+#TODO some modification for disease data
+def _tmjp_clever_sample_helper_dense(
+        T, root, Q_primary, primary_to_part,
+        leaf_to_primary_state, rate_on, rate_off, primary_distn,
+        disease_data=None, nhistories=None):
+    """
+    The args are the same as for _sample_tmjp.gen_histories_v1().
+    """
+    # init dense transition matrix stuff
+    nprimary = len(primary_to_part)
+    if set(primary_to_part) != set(range(nprimary)):
+        raise NotImplementedError
+    primary_states = range(nprimary)
+    primary_distn_dense = _density.dict_to_numpy_array(
+            primary_distn, nodelist=primary_states)
+    Q_primary_dense = _density.rate_matrix_to_numpy_array(
+            Q_primary, nodelist=primary_states)
+
+    # init dense transition matrix process summary lists
+    d_neg_ll_contribs_init = []
+    d_neg_ll_contribs_dwell = []
+    d_neg_ll_contribs_trans = []
+
+    # sample histories and summarize them using rao-blackwellization
+    for history_info in _sample_tmjp.gen_histories_v1(
+            T, root, Q_primary, primary_to_part,
+            leaf_to_primary_state, rate_on, rate_off, primary_distn,
+            disease_data=disease_data, nhistories=nhistories):
+        T_primary_aug, tol_trajectories = history_info
+
+        # use the dense transition matrix rao-blackwellization
+        ll_info = _compound_ll_expectation_helper_dense(
+                primary_to_part, rate_on, rate_off,
+                Q_primary_dense, primary_distn_dense,
+                T_primary_aug, root)
+        ll_init, ll_dwell, ll_trans = ll_info
+        d_neg_ll_contribs_init.append(-ll_init)
+        d_neg_ll_contribs_dwell.append(-ll_dwell)
+        d_neg_ll_contribs_trans.append(-ll_trans)
+
+    d_neg_ll_contribs = (
+            d_neg_ll_contribs_init,
+            d_neg_ll_contribs_dwell,
+            d_neg_ll_contribs_trans)
+    
+    return d_neg_ll_contribs
 
 
 def main():
@@ -20,6 +197,7 @@ def main():
     # values estimated using codeml
     kappa_mle = 3.17632
     #omega_mle = 0.21925
+    omega = 1.0
     T_mle = 0.18883
     C_mle = 0.30126
     A_mle = 0.25039
@@ -50,10 +228,20 @@ def main():
     states = range(nstates)
 
     # define the primary rate matrix and distribution and tolerance classes
-    Q_primary, primary_distn, primary_to_part = create_mg94.create_mg94(
+    info = create_mg94.create_mg94(
             A_mle, C_mle, G_mle, T_mle,
-            kappa_mle, omega_mle, genetic_code,
+            kappa_mle, omega, genetic_code,
             target_expected_rate=1.0)
+    Q_primary, primary_distn, state_to_residue, residue_to_part = info
+    primary_to_part = dict(
+            (i, residue_to_part[r]) for i, r in state_to_residue.items())
+    nparts = len(set(primary_to_part.values()))
+    nprimary = len(primary_to_part)
+    if nprimary != 61:
+        print(primary_to_part)
+        raise Exception(
+                'expected 61 non-stop codons '
+                'but found ' + str(nprimary))
     
     print('genetic code:')
     for triple in genetic_code:
@@ -90,24 +278,67 @@ def main():
     primary_distn_dense = _density.dict_to_numpy_array(
             primary_distn, nodelist=states)
     Q_dense = _density.rate_matrix_to_numpy_array(
-            Q, nodelist=states)
-    print('computing log likelihood...')
+            Q_primary, nodelist=states)
+    print('computing expected log likelihoods per column...')
     for i, codon_column in enumerate(codon_columns):
-        node_to_allowed_states = dict((node, set(states)) for node in T)
+
+        # Get the column-specific human disease residues.
+        # Convert the human disease data structure
+        # into a tolerance class state allowance data structure.
+        disease_data = None
+        if i in column_to_disease_residues:
+            human_disease_residues = column_to_disease_residues[i]
+            human_disease_parts = set(
+                    residue_to_part[r] for r in human_disease_residues)
+            human_node = name_to_leaf['Has']
+            disease_data = []
+            for part in range(nparts):
+                tmap = dict((n, {0, 1}) for n in T)
+                if part in human_disease_parts:
+                    tmap[human_node] = {0}
+                else:
+                    tmap[human_node] = {1}
+                disease_data.append(tmap)
+
+        # Define the primary process (codon) allowed state sets
+        # using the codon alignment data for the codon site of interest.
+        #node_to_allowed_states = dict((node, set(states)) for node in T)
+        #for name, codon in zip(names, codon_column):
+            #leaf = name_to_leaf[name]
+            #codon = codon.upper()
+            #state = codon_to_state[codon]
+            #node_to_allowed_states[leaf] = set([state])
+
+        leaf_to_primary_state = {}
         for name, codon in zip(names, codon_column):
             leaf = name_to_leaf[name]
             codon = codon.upper()
             state = codon_to_state[codon]
-            node_to_allowed_states[leaf] = set([state])
-        likelihood = _mjp_dense.get_likelihood(
-                T, node_to_allowed_states, root, nstates,
-                root_distn=primary_distn_dense, Q_default=Q_dense)
-        log_likelihood = np.log(likelihood)
-        total_log_likelihood += log_likelihood
-        print('column', i + 1, 'of', len(codon_columns), 'll', log_likelihood)
+            leaf_to_primary_state[leaf] = state
+
+        # Use conditional Rao-Teh with Gibbs modification to sample
+        # from the distribution of fully augmented trajectories.
+        nhistories = 10
+        info = _tmjp_clever_sample_helper_dense(
+                T, root, Q_primary, primary_to_part,
+                leaf_to_primary_state, rate_on, rate_off, primary_distn,
+                disease_data=disease_data, nhistories=nhistories)
+        d_neg_ll_contribs_init = info[0]
+        d_neg_ll_contribs_dwell = info[1]
+        d_neg_ll_contribs_trans = info[2]
+        neg_log_likelihoods = [sum(contribs) for contribs in zip(*info)]
+        mean_log_likelihood = -np.mean(neg_log_likelihoods)
+
+        # Add to the total log likelihood.
+        total_log_likelihood += mean_log_likelihood
+
+        # Report the column-specific mean log likelihood contribution.
+        print(
+                'column', i + 1, 'of', len(codon_columns),
+                'll', mean_log_likelihood)
     
     # print the total log likelihood
-    print('total log likelihood:', total_log_likelihood)
+    print('total mean log likelihood:', total_log_likelihood)
 
 
 if __name__ == '__main__':

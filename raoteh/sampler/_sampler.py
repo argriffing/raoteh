@@ -586,6 +586,20 @@ def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
     It is up to the caller to remove redundant self-transitions.
 
     """
+    # Check that nodes and states are integers.
+    for node, state in node_to_state.items():
+        fail = False
+        try:
+            if int(node) != node or int(state) != state:
+                fail = True
+        except TypeError:
+            fail = True
+        if fail:
+            raise ValueError(
+                    'expected nodes and states in the node_to_state map '
+                    'to be integers but instead found node_to_state: ' + str(
+                        node_to_state))
+
     # If the root has not been specified,
     # pick a root with known state if any exist,
     # and pick an arbitrary one otherwise.

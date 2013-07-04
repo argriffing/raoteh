@@ -472,7 +472,8 @@ def resample_tolerance_states_v1(
 
     """
     # This function only uses disease_data through disease_map.
-    disease_map = disease_data[tolerance_class]
+    if disease_data is not None:
+        disease_map = disease_data[tolerance_class]
 
     # Build a merged tree corresponding to the primary trajectory,
     # with event nodes corresponding to uniformization times
@@ -506,28 +507,31 @@ def resample_tolerance_states_v1(
 
     # Get the map from each chunk node to the set of tolerance states
     # allowed by the disease data.
-    chunk_node_to_disease_restriction = dict((n, {0, 1}) for n in chunk_tree)
-    for merged_edge in nx.bfs_edges(T_merged, root):
-        na, nb = merged_edge
-        chunk_node = edge_to_chunk_node[merged_edge]
-        for n in (na, nb):
-            if n in disease_map:
-                restriction = chunk_node_to_disease_restriction[chunk_node]
-                restriction.intersection_update(disease_map[n])
-
-    #TODO use the disease restriction
+    if disease_data is not None:
+        chunk_node_to_disease_restriction = dict(
+                (n, {0, 1}) for n in chunk_tree)
+        for merged_edge in nx.bfs_edges(T_merged, root):
+            na, nb = merged_edge
+            chunk_node = edge_to_chunk_node[merged_edge]
+            for n in (na, nb):
+                if n in disease_map:
+                    restriction = chunk_node_to_disease_restriction[chunk_node]
+                    restriction.intersection_update(disease_map[n])
 
     # For each chunk node, construct the set of allowed tolerance states.
     # This will be {1} if the primary process belongs to the
     # tolerance class of interest at any point within the subtree
     # corresponding to the chunk node.
     # Otherwise this set will be {0, 1}.
+    # Unless the disease data further restricts the tolerance state.
     chunk_node_to_allowed_states = {}
     for chunk_node in chunk_tree:
+        allowed_states = {0, 1}
+        if disease_data is not None:
+            disease_restriction = chunk_node_to_disease_restriction[chunk_node]
+            allowed_states.intersection_update(disease_restriction)
         if tolerance_class in chunk_node_to_tol_set[chunk_node]:
-            allowed_states = {1}
-        else:
-            allowed_states = {0, 1}
+            allowed_states.intersection_update({1})
         chunk_node_to_allowed_states[chunk_node] = allowed_states
 
     # Use mcy-type conditional sampling to

@@ -39,10 +39,13 @@ def main():
     states = range(nstates)
 
     # define the primary rate matrix and distribution and tolerance classes
-    Q, primary_distn, primary_to_part = create_mg94.create_mg94(
+    info = create_mg94.create_mg94(
             A_mle, C_mle, G_mle, T_mle,
             kappa_mle, omega_mle, genetic_code,
             target_expected_rate=1.0)
+    Q, primary_distn, state_to_residue, residue_to_part = info
+    primary_to_part = dict(
+            (i, residue_to_part[r]) for i, r in state_to_residue.items())
     
     print('genetic code:')
     for triple in genetic_code:
