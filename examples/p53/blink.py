@@ -77,7 +77,8 @@ def _differential_entropy_helper_dense(
 #TODO this should go into the _tmjp_dense module.
 def _compound_ll_expectation_helper_dense(
         primary_to_part, rate_on, rate_off,
-        Q_primary, primary_distn, T_primary_aug, root):
+        Q_primary, primary_distn, T_primary_aug, root,
+        disease_data=None):
     """
     Get contributions to the expected log likelihood of the compound process.
 
@@ -100,6 +101,8 @@ def _compound_ll_expectation_helper_dense(
         x
     root : integer
         The root node.
+    disease_data : x
+        x
 
     Returns
     -------
@@ -130,7 +133,8 @@ def _compound_ll_expectation_helper_dense(
 
     tol_summary = _tmjp_dense.get_tolerance_summary(
             primary_to_part, rate_on, rate_off,
-            Q_primary, T_primary_aug, root)
+            Q_primary, T_primary_aug, root,
+            disease_data=disease_data)
 
     tol_info = _tmjp_dense.get_tolerance_ll_contribs(
             rate_on, rate_off, total_tree_length, *tol_summary)
@@ -178,7 +182,8 @@ def _tmjp_clever_sample_helper_dense(
         ll_info = _compound_ll_expectation_helper_dense(
                 primary_to_part, rate_on, rate_off,
                 Q_primary_dense, primary_distn_dense,
-                T_primary_aug, root)
+                T_primary_aug, root,
+                disease_data=disease_data)
         ll_init, ll_dwell, ll_trans = ll_info
         d_neg_ll_contribs_init.append(-ll_init)
         d_neg_ll_contribs_dwell.append(-ll_dwell)

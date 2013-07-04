@@ -52,10 +52,8 @@ from raoteh.sampler._density import (
 __all__ = []
 
 
-#TODO this module is under construction
 
 
-#TODO under construction
 def get_tolerance_expm_augmented_tree(T, root, Q_default=None):
     """
     Add transition probability matrices to edges.
@@ -319,9 +317,10 @@ def get_tolerance_process_log_likelihood(
     return log_likelihood
 
 
-# TODO this is mostly implemented but is not yet tested
+#TODO disease_data argument is untested
 def get_tolerance_summary(
-        primary_to_part, rate_on, rate_off, Q_primary, T_primary, root):
+        primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
+        disease_data=None):
     """
     Get tolerance process expectations conditional on a primary trajectory.
 
@@ -343,6 +342,9 @@ def get_tolerance_summary(
         x
     root : integer
         The root node.
+    disease_data : dict, optional
+        For each tolerance class,
+        a map from a node to a set of allowed tolerance states.
 
     Returns
     -------
@@ -392,14 +394,23 @@ def get_tolerance_summary(
     expected_nabsorptions = 0.0
     for tolerance_class in range(nparts):
 
-        #print('tolerance class', tolerance_class)
-
         # Get the restricted inhomogeneous Markov jump process
         # associated with the tolerance class,
         # conditional on the trajectory of the primary state.
-        T_tol, node_to_allowed_tolerances =  get_inhomogeneous_mjp(
+        T_tol, node_to_allowed_tolerances = get_inhomogeneous_mjp(
                 primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
                 tolerance_class)
+
+        # Further restrict the node_to_allowed_tolerances using disease data.
+        if disease_data is not None:
+
+            # Get the tolerance-class-specific map from a node to
+            # a set of allowed tolerance states.
+            # Then update the node_to_allowed_tolerances according
+            # to the intersection of this tolerance state set.
+            node_to_tol_set = disease_data[tolerance_class]
+            for node, tol_set in node_to_tol_set.items():
+                node_to_allowed_tolerances[node].intersection_update(tol_set)
 
         # Compute conditional expectations of dwell times
         # and transitions for this tolerance class.
@@ -503,7 +514,6 @@ def get_tolerance_ll_contribs(
     return init_ll_contrib, dwell_ll_contrib, trans_ll_contrib
 
 
-# TODO this is mostly implemented but is not yet tested
 def get_inhomogeneous_mjp(
         primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
         tolerance_class):
@@ -545,8 +555,7 @@ def get_inhomogeneous_mjp(
     # Define the set of allowed tolerances at each node.
     # These may be further constrained
     # by the sampled primary process trajectory.
-    node_to_allowed_tolerances = dict(
-            (n, {0, 1}) for n in T_primary)
+    node_to_allowed_tolerances = dict((n, {0, 1}) for n in T_primary)
 
     # Construct the tree whose edges are in correspondence
     # to the edges of the sampled primary trajectory,
