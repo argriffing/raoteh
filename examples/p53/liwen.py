@@ -1,6 +1,9 @@
 """
 Attempt to reproduce log likelihood of the background/reference model.
 
+I've been calling the two models the 'reference' and the 'background',
+but the actual terminology is 'reference' and the 'default'.
+
 """
 from __future__ import division, print_function, absolute_import
 
@@ -32,15 +35,28 @@ def main():
 
     # Jeff has estimated these parameters
     # using the background/reference switching process.
-    kappa = 3.38998
-    omega = 0.40198
-    AG = 0.50781
-    CT = 1 - AG
-    A = AG * 0.49542
-    G = AG - A
-    T = CT * 0.39194
-    C = CT - T
+    # But the estimates are fishy in the sense that the log likelihood
+    # of codeml has not been reproduced, even assuming no switching.
+    #kappa = 3.38998
+    #omega = 0.40198
+    #AG = 0.50781
+    #CT = 1 - AG
+    #A = AG * 0.49542
+    #G = AG - A
+    #T = CT * 0.39194
+    #C = CT - T
+    #tree_filename = 'liwen.estimated.tree'
     rho = 0.32771
+
+    # Instead, use the estimates that I got from codeml,
+    # for the default process.
+    kappa = 3.17632
+    omega = 0.21925
+    T = 0.18883
+    C = 0.30126
+    A = 0.25039
+    G = 0.25952
+    tree_filename = 'codeml.estimated.tree'
 
     # read the disease data
     print('reading the disease data...')
@@ -78,7 +94,7 @@ def main():
     
     # read the tree with branch lengths estimated by paml
     print('reading the newick tree...')
-    with open('liwen.estimated.tree') as fin:
+    with open(tree_filename) as fin:
         T, root, leaf_name_pairs = app_helper.read_newick(fin)
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
@@ -108,7 +124,7 @@ def main():
     for i, codon_column in enumerate(codon_columns):
 
         # define the column-specific disease states and the benign states
-        disease_residues = column_to_disease_residues.get(codon_column, set())
+        disease_residues = column_to_disease_residues.get(i, set())
         disease_states = set(
                 s for s, r, c in genetic_code if r in disease_residues)
         benign_states = set(range(nstates)) - disease_states
@@ -164,7 +180,10 @@ def main():
                 Q_default=Q_compound_dense)
         log_likelihood = np.log(likelihood)
         total_log_likelihood += log_likelihood
-        print('column', i + 1, 'of', len(codon_columns), 'll', log_likelihood)
+        print(
+                'column', i + 1, 'of', len(codon_columns),
+                'll', log_likelihood,
+                'disease residues', disease_residues)
     
     # print the total log likelihood
     print('total log likelihood:', total_log_likelihood)
