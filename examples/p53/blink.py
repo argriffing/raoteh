@@ -17,10 +17,8 @@ from raoteh.sampler import (
         )
 
 
-#TODO add disease data conditioning
-#TODO copypasted from tests/test_sample_tmjp.py
-#TODO this should go into the _tmjp_dense module.
-def _compound_ll_expectation_helper_dense(
+#TODO pillage this unused function for scrap
+def xxx_compound_ll_expectation_helper_dense(
         primary_to_part, rate_on, rate_off,
         Q_primary, primary_distn, T_primary_aug, root,
         disease_data=None):
@@ -124,7 +122,7 @@ def _tmjp_clever_sample_helper_dense(
         T_primary_aug, tol_trajectories = history_info
 
         # use the dense transition matrix rao-blackwellization
-        ll_info = _compound_ll_expectation_helper_dense(
+        ll_info = _tmjp_dense.ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
                 Q_primary_dense, primary_distn_dense,
                 T_primary_aug, root,

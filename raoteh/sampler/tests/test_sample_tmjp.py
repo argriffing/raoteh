@@ -116,75 +116,6 @@ def _compound_ll_expectation_helper(
     return init_ll, dwell_ll, trans_ll
 
 
-#TODO this should go into the _tmjp_dense module.
-def _compound_ll_expectation_helper_dense(
-        primary_to_part, rate_on, rate_off,
-        Q_primary, primary_distn, T_primary_aug, root):
-    """
-    Get contributions to the expected log likelihood of the compound process.
-
-    The primary process trajectory is fully observed,
-    but the binary tolerance states are unobserved.
-
-    Parameters
-    ----------
-    primary_to_part : x
-        x
-    rate_on : x
-        x
-    rate_off : x
-        x
-    Q_primary : 2d ndarray
-        Primary rate matrix.
-    primary_distn : 1d ndarray
-        Primary process state distribution.
-    T_primary_aug : x
-        x
-    root : integer
-        The root node.
-
-    Returns
-    -------
-    init_ll : float
-        x
-    dwell_ll : float
-        x
-    trans_ll : float
-        x
-
-    """
-    check_square_dense(Q_primary)
-    nprimary = Q_primary.shape[0]
-    if primary_distn.shape[0] != nprimary:
-        raise ValueError('inconsistency in the number of primary states')
-
-    total_tree_length = T_primary_aug.size(weight='weight')
-    primary_info = _mjp_dense.get_history_statistics(
-            T_primary_aug, nprimary, root=root)
-    dwell_times, root_state, transitions = primary_info
-    post_root_distn = np.zeros(nprimary, dtype=float)
-    post_root_distn[root_state] = 1
-
-    neg_ll_info = _mjp_dense.differential_entropy_helper(
-            Q_primary, primary_distn,
-            post_root_distn, dwell_times, transitions)
-    neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
-
-    tol_summary = _tmjp_dense.get_tolerance_summary(
-            primary_to_part, rate_on, rate_off,
-            Q_primary, T_primary_aug, root)
-
-    tol_info = _tmjp_dense.get_tolerance_ll_contribs(
-            rate_on, rate_off, total_tree_length, *tol_summary)
-    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
-
-    init_ll = -neg_init_prim_ll + init_tol_ll
-    dwell_ll = dwell_tol_ll
-    trans_ll = -neg_trans_prim_ll + trans_tol_ll
-
-    return init_ll, dwell_ll, trans_ll
-
-
 def test_get_feasible_history():
 
     # Define a base tree and root.
@@ -769,7 +700,7 @@ def _tmjp_clever_sample_helper_dense(
         T_primary_aug, tol_trajectories = history_info
 
         # use the dense transition matrix rao-blackwellization
-        ll_info = _compound_ll_expectation_helper_dense(
+        ll_info = _tmjp_dense.ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
                 Q_primary_dense, primary_distn_dense,
                 T_primary_aug, root)
@@ -833,7 +764,7 @@ def _tmjp_clever_sample_helper(
         neg_ll_contribs_trans.append(-ll_trans)
 
         # use the dense transition matrix rao-blackwellization
-        ll_info = _compound_ll_expectation_helper_dense(
+        ll_info = _tmjp_dense.ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
                 Q_primary_dense, primary_distn_dense,
                 T_primary_aug, root)

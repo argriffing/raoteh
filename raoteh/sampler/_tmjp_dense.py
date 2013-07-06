@@ -20,7 +20,7 @@ from scipy import special
 
 import pyfelscore
 
-from raoteh.sampler import _mc0_dense, _mcy_dense, _mjp_dense
+from raoteh.sampler import _density, _mc0_dense, _mcy_dense, _mjp_dense
 
 from raoteh.sampler._util import (
         StructuralZeroProb,
@@ -317,9 +317,82 @@ def get_tolerance_process_log_likelihood(
     return log_likelihood
 
 
+def ll_expectation_helper(
+        primary_to_part, rate_on, rate_off,
+        Q_primary, primary_distn, T_primary_aug, root,
+        disease_data=None):
+    """
+    Get contributions to the expected log likelihood of the compound process.
+
+    The primary process trajectory is fully observed,
+    but the binary tolerance states are unobserved.
+
+    Parameters
+    ----------
+    primary_to_part : dict
+        Maps the primary state to the tolerance class.
+    rate_on : float
+        Transition rate from tolerance state off to on.
+    rate_off : float
+        Transition rate from tolerance state on to off.
+    Q_primary : 2d ndarray
+        Primary rate matrix.
+    primary_distn : 1d ndarray
+        Primary process state distribution.
+    T_primary_aug : x
+        x
+    root : integer
+        The root node.
+    disease_data : x
+        x
+
+    Returns
+    -------
+    init_ll : float
+        x
+    dwell_ll : float
+        x
+    trans_ll : float
+        x
+
+    """
+    _density.check_square_dense(Q_primary)
+    nprimary = Q_primary.shape[0]
+    if primary_distn.shape[0] != nprimary:
+        raise ValueError('inconsistency in the number of primary states')
+
+    total_tree_length = T_primary_aug.size(weight='weight')
+    primary_info = _mjp_dense.get_history_statistics(
+            T_primary_aug, nprimary, root=root)
+    dwell_times, root_state, transitions = primary_info
+    post_root_distn = np.zeros(nprimary, dtype=float)
+    post_root_distn[root_state] = 1
+
+    neg_ll_info = _mjp_dense.differential_entropy_helper(
+            Q_primary, primary_distn,
+            post_root_distn, dwell_times, transitions)
+    neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
+
+    tol_summary = get_tolerance_summary(
+            primary_to_part, rate_on, rate_off,
+            Q_primary, T_primary_aug, root,
+            disease_data=disease_data)
+
+    tol_info = get_tolerance_ll_contribs(
+            rate_on, rate_off, total_tree_length, *tol_summary)
+    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
+
+    init_ll = -neg_init_prim_ll + init_tol_ll
+    dwell_ll = dwell_tol_ll
+    trans_ll = -neg_trans_prim_ll + trans_tol_ll
+
+    return init_ll, dwell_ll, trans_ll
+
+
 #TODO disease_data argument is untested
 def get_tolerance_summary(
-        primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
+        primary_to_part, rate_on, rate_off,
+        Q_primary, T_primary, root,
         disease_data=None):
     """
     Get tolerance process expectations conditional on a primary trajectory.
@@ -333,11 +406,11 @@ def get_tolerance_summary(
     primary_to_part : dict
         Map from the primary state to the tolerance class.
     rate_on : float
-        x
+        Transition rate from tolerance state off to on.
     rate_off : float
-        x
-    Q_primary : x
-        x
+        Transition rate from tolerance state on to off.
+    Q_primary : 2d ndarray
+        Primary rate matrix.
     T_primary : x
         x
     root : integer
@@ -470,9 +543,9 @@ def get_tolerance_ll_contribs(
     Parameters
     ----------
     rate_on : float
-        x
+        Transition rate from tolerance state off to on.
     rate_off : float
-        x
+        Transition rate from tolerance state on to off.
     total_tree_length : float
         x
     expected_initial_on : float
