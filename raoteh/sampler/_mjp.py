@@ -250,6 +250,64 @@ def get_trajectory_log_likelihood(
     return log_likelihood
 
 
+def differential_entropy_helper(
+        Q, prior_root_distn,
+        post_root_distn, post_dwell_times, post_transitions,
+        ):
+    """
+    Use posterior expectations to help compute differential entropy.
+
+    Parameters
+    ----------
+    Q : weighted directed networkx graph
+        Rate matrix.
+    prior_root_distn : dict
+        Prior distribution at the root.
+        If Q is a time-reversible rate matrix,
+        then the prior root distribution
+        could be the stationary distribution associated with Q.
+    post_root_distn : dict
+        Posterior state distribution at the root.
+    post_dwell_times : dict
+        Posterior expected dwell time for each state.
+    post_transitions : weighted directed networkx graph
+        Posterior expected count of each transition type.
+
+    Returns
+    -------
+    diff_ent_init : float
+        Initial state distribution contribution to differential entropy.
+    diff_ent_dwell : float
+        Dwell time contribution to differential entropy.
+    diff_ent_trans : float
+        Transition contribution to differential entropy.
+
+    """
+    # Get the total rates.
+    total_rates = get_total_rates(Q)
+
+    # Initial state distribution contribution to differential entropy.
+    diff_ent_init = 0.0
+    for state, prob in post_root_distn.items():
+        diff_ent_init -= special.xlogy(prob, prior_root_distn[state])
+
+    # Dwell time contribution to differential entropy.
+    diff_ent_dwell = 0.0
+    for s in set(total_rates) & set(post_dwell_times):
+        diff_ent_dwell += post_dwell_times[s] * total_rates[s]
+
+    # Transition contribution to differential entropy.
+    diff_ent_trans = 0.0
+    for sa in set(Q) & set(post_transitions):
+        for sb in set(Q[sa]) & set(post_transitions[sa]):
+            rate = Q[sa][sb]['weight']
+            ntrans_expected = post_transitions[sa][sb]['weight']
+            diff_ent_trans -= special.xlogy(ntrans_expected, rate)
+
+    # Return the contributions to differential entropy.
+    return diff_ent_init, diff_ent_dwell, diff_ent_trans
+
+
 def get_reversible_differential_entropy(Q, stationary_distn, t):
     """
     Compute differential entropy of a time-reversible Markov jump process.

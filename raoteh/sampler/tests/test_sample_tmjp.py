@@ -95,7 +95,7 @@ def _compound_ll_expectation_helper(
     dwell_times, root_state, transitions = primary_info
     post_root_distn = {root_state : 1}
 
-    neg_ll_info = _differential_entropy_helper_sparse(
+    neg_ll_info = _mjp.differential_entropy_helper(
             Q_primary, primary_distn,
             post_root_distn, dwell_times, transitions)
     neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
@@ -183,65 +183,6 @@ def _compound_ll_expectation_helper_dense(
     trans_ll = -neg_trans_prim_ll + trans_tol_ll
 
     return init_ll, dwell_ll, trans_ll
-
-
-#TODO this should be just a log likelihood helper function in the _mjp module.
-def _differential_entropy_helper_sparse(
-        Q, prior_root_distn,
-        post_root_distn, post_dwell_times, post_transitions,
-        ):
-    """
-    Use posterior expectations to help compute differential entropy.
-
-    Parameters
-    ----------
-    Q : weighted directed networkx graph
-        Rate matrix.
-    prior_root_distn : dict
-        Prior distribution at the root.
-        If Q is a time-reversible rate matrix,
-        then the prior root distribution
-        could be the stationary distribution associated with Q.
-    post_root_distn : dict
-        Posterior state distribution at the root.
-    post_dwell_times : dict
-        Posterior expected dwell time for each state.
-    post_transitions : weighted directed networkx graph
-        Posterior expected count of each transition type.
-
-    Returns
-    -------
-    diff_ent_init : float
-        Initial state distribution contribution to differential entropy.
-    diff_ent_dwell : float
-        Dwell time contribution to differential entropy.
-    diff_ent_trans : float
-        Transition contribution to differential entropy.
-
-    """
-    # Get the total rates.
-    total_rates = _mjp.get_total_rates(Q)
-
-    # Initial state distribution contribution to differential entropy.
-    diff_ent_init = 0.0
-    for state, prob in post_root_distn.items():
-        diff_ent_init -= special.xlogy(prob, prior_root_distn[state])
-
-    # Dwell time contribution to differential entropy.
-    diff_ent_dwell = 0.0
-    for s in set(total_rates) & set(post_dwell_times):
-        diff_ent_dwell += post_dwell_times[s] * total_rates[s]
-
-    # Transition contribution to differential entropy.
-    diff_ent_trans = 0.0
-    for sa in set(Q) & set(post_transitions):
-        for sb in set(Q[sa]) & set(post_transitions[sa]):
-            rate = Q[sa][sb]['weight']
-            ntrans_expected = post_transitions[sa][sb]['weight']
-            diff_ent_trans -= special.xlogy(ntrans_expected, rate)
-
-    # Return the contributions to differential entropy.
-    return diff_ent_init, diff_ent_dwell, diff_ent_trans
 
 
 def test_get_feasible_history():
@@ -366,7 +307,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     dwell_times, post_root_distn, transitions = expectation_info
 
     # Compute contributions to differential entropy.
-    diff_ent_info = _differential_entropy_helper_sparse(
+    diff_ent_info = _mjp.differential_entropy_helper(
         Q_compound, compound_distn,
         post_root_distn, dwell_times, transitions)
     diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
@@ -410,7 +351,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
 
         # Compound process log likelihoods contributions.
         post_root_distn = {root_state : 1}
-        neg_ll_info = _differential_entropy_helper_sparse(
+        neg_ll_info = _mjp.differential_entropy_helper(
                 Q_compound, compound_distn,
                 post_root_distn, dwell_times, transitions)
         neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
@@ -703,7 +644,7 @@ def _tmjp_clever_sample_helper_debug(
         dwell_times, root_state, transitions = primary_info
         post_root_distn = {root_state : 1}
 
-        neg_ll_info = _differential_entropy_helper_sparse(
+        neg_ll_info = _mjp.differential_entropy_helper(
                 Q_primary, primary_distn,
                 post_root_distn, dwell_times, transitions)
         neg_init_prim_ll = neg_ll_info[0]
@@ -1102,7 +1043,7 @@ def test_sample_tmjp_v1():
         dwell_times, post_root_distn, transitions = expectation_info
 
         # Compute contributions to differential entropy.
-        diff_ent_info = _differential_entropy_helper_sparse(
+        diff_ent_info = _mjp.differential_entropy_helper(
             Q_compound, compound_distn,
             post_root_distn, dwell_times, transitions)
         diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
