@@ -22,6 +22,10 @@ from raoteh.sampler import (
         _mjp_dense,
         )
 
+from raoteh.sampler._util import (
+        StructuralZeroProb,
+        )
+
 
 def main():
 
@@ -75,7 +79,8 @@ def main():
         raise Exception
     states = range(nstates)
 
-    # define the primary rate matrix and distribution and tolerance classes
+    # Define the default process codon rate matrix
+    # and distribution and tolerance classes.
     info = create_mg94.create_mg94(
             A, C, G, T,
             kappa, omega, genetic_code,
@@ -83,6 +88,12 @@ def main():
     Q, primary_distn, state_to_residue, residue_to_part = info
     primary_to_part = dict(
             (i, residue_to_part[r]) for i, r in state_to_residue.items())
+
+    # Define the dense default process codon rate matrix and distribution.
+    Q_dense = _density.rate_matrix_to_numpy_array(
+            Q, nodelist=states)
+    primary_distn_dense = _density.dict_to_numpy_array(
+            primary_distn, nodelist=states)
     
     print('genetic code:')
     for triple in genetic_code:
@@ -114,20 +125,52 @@ def main():
     with open('testseq') as fin:
         name_codons_list = list(app_helper.read_phylip(fin))
 
+    #TODO For each column, compute the log likelihood for both the
+    #TODO default and the reference models.
+    #TODO The reference model will give a log likelihood of -inf
+    #TODO when an amino acid that causes disease in humans
+    #TODO appears in the alignment.
+
     # compute the log likelihood, column by column
     # using _mjp_dense (the dense Markov jump process module).
     print('preparing to compute log likelihood...')
     names, codon_sequences = zip(*name_codons_list)
     codon_columns = zip(*codon_sequences)
     print('computing log likelihood...')
-    total_log_likelihood = 0
+    total_ll_default = 0
+    total_ll_reference = 0
+    total_ll_compound = 0
     for i, codon_column in enumerate(codon_columns):
 
-        # define the column-specific disease states and the benign states
+        # Define the column-specific disease states and the benign states.
         disease_residues = column_to_disease_residues.get(i, set())
         disease_states = set(
                 s for s, r, c in genetic_code if r in disease_residues)
         benign_states = set(range(nstates)) - disease_states
+
+        # Define the reference process.
+
+        # Define the reference process rate matrix.
+        Q_reference = nx.DiGraph()
+        for sa, sb in Q.edges():
+            weight = Q[sa][sb]['weight']
+            if sb in benign_states:
+                Q_reference.add_edge(sa, sb, weight=weight)
+
+        # Define the column-specific initial state distribution.
+        reference_weights = {}
+        for s in range(nstates):
+            if (s in primary_distn) and (s in benign_states):
+                reference_weights[s] = primary_distn[s]
+        reference_distn = _util.get_normalized_dict_distn(reference_weights)
+
+        # Convert to dense representations of the reference process.
+        Q_reference_dense = _density.rate_matrix_to_numpy_array(
+                Q_reference, nodelist=states)
+        reference_distn_dense = _density.dict_to_numpy_array(
+                reference_distn, nodelist=states)
+
+        # Define the compound process.
 
         # Define the compound process state space.
         ncompound = 2 * nstates
@@ -135,13 +178,15 @@ def main():
 
         # Initialize the column-specific compound rate matrix.
         Q_compound = nx.DiGraph()
-
-        # Add block-diagonal entries of the background process.
+        
+        # Add block-diagonal entries of the default process component
+        # of the compound process.
         for sa, sb in Q.edges():
             weight = Q[sa][sb]['weight']
             Q_compound.add_edge(nstates + sa, nstates + sb, weight=weight)
 
-        # Add block-diagonal entries of the reference process.
+        # Add block-diagonal entries of the reference process component
+        # of the compound process.
         for sa, sb in Q.edges():
             weight = Q[sa][sb]['weight']
             if sb in benign_states:
@@ -165,6 +210,8 @@ def main():
         compound_distn_dense = _density.dict_to_numpy_array(
                 compound_distn, nodelist=compound_states)
 
+        # End compound process definition.
+
         # Define the map from node to allowed compound states.
         node_to_allowed_states = dict((n, set(compound_states)) for n in T)
         for name, codon in zip(names, codon_column):
@@ -173,20 +220,51 @@ def main():
             codon_state = codon_to_state[codon]
             node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
 
-        # Get the likelihood for this column.
-        likelihood = _mjp_dense.get_likelihood(
-                T, node_to_allowed_states, root, ncompound,
-                root_distn=compound_distn_dense,
-                Q_default=Q_compound_dense)
-        log_likelihood = np.log(likelihood)
-        total_log_likelihood += log_likelihood
+        # Get the log likelihood for the reference process.
+        try:
+            likelihood = _mjp_dense.get_likelihood(
+                    T, node_to_allowed_states, root, nstates,
+                    root_distn=reference_distn_dense,
+                    Q_default=Q_reference_dense)
+            ll_reference = np.log(likelihood)
+        except StructuralZeroProb as e:
+            ll_reference = -np.inf
+
+        # Get the log likelihood for the default process.
+        try:
+            likelihood = _mjp_dense.get_likelihood(
+                    T, node_to_allowed_states, root, nstates,
+                    root_distn=primary_distn_dense,
+                    Q_default=Q_dense)
+            ll_default = np.log(likelihood)
+        except StructuralZeroProb as e:
+            ll_default = -np.inf
+
+        # Get the log likelihood for the compound process.
+        try:
+            likelihood = _mjp_dense.get_likelihood(
+                    T, node_to_allowed_states, root, ncompound,
+                    root_distn=compound_distn_dense,
+                    Q_default=Q_compound_dense)
+            ll_compound = np.log(likelihood)
+        except StructuralZeroProb as e:
+            ll_compound = -np.inf
+
+        total_ll_reference += ll_reference
+        total_ll_default += ll_default
+        total_ll_compound += ll_compound
+
         print(
                 'column', i + 1, 'of', len(codon_columns),
-                'll', log_likelihood,
-                'disease residues', disease_residues)
+                'll_reference:', ll_reference,
+                'll_default:', ll_default,
+                'll_compound:', ll_compound,
+                'disease_residues:', disease_residues)
     
-    # print the total log likelihood
-    print('total log likelihood:', total_log_likelihood)
+    # print the total log likelihoods
+    print('total reference log likelihood:', total_ll_reference)
+    print('total default log likelihood:', total_ll_default)
+    print('total compound log likelihood:', total_ll_compound)
 
 
 if __name__ == '__main__':
