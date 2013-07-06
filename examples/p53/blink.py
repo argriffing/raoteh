@@ -17,61 +17,6 @@ from raoteh.sampler import (
         )
 
 
-#TODO copypasted from tests/test_sample_tmjp.py
-#TODO this should be a log likelihood helper function in the _mjp_dense module.
-def _differential_entropy_helper_dense(
-        Q, prior_root_distn,
-        post_root_distn, post_dwell_times, post_transitions,
-        ):
-    """
-    Use posterior expectations to help compute differential entropy.
-
-    Parameters
-    ----------
-    Q : 2d ndarray
-        Rate matrix.
-    prior_root_distn : 1d ndarray
-        Prior distribution at the root.
-        If Q is a time-reversible rate matrix,
-        then the prior root distribution
-        could be the stationary distribution associated with Q.
-    post_root_distn : 1d ndarray
-        Posterior state distribution at the root.
-    post_dwell_times : 1d ndarray
-        Posterior expected dwell time for each state.
-    post_transitions : 2d ndarray
-        Posterior expected count of each transition type.
-
-    Returns
-    -------
-    diff_ent_init : float
-        Initial state distribution contribution to differential entropy.
-    diff_ent_dwell : float
-        Dwell time contribution to differential entropy.
-    diff_ent_trans : float
-        Transition contribution to differential entropy.
-
-    """
-    _density.check_square_dense(Q)
-    _density.check_square_dense(post_transitions)
-    nstates = Q.shape[0]
-
-    # Get the total rates.
-    total_rates = _mjp_dense.get_total_rates(Q)
-
-    # Initial state distribution contribution to differential entropy.
-    diff_ent_init = -special.xlogy(post_root_distn, prior_root_distn).sum()
-
-    # Dwell time contribution to differential entropy.
-    diff_ent_dwell = post_dwell_times.dot(total_rates)
-
-    # Transition contribution to differential entropy.
-    diff_ent_trans = -special.xlogy(post_transitions, Q).sum()
-
-    # Return the contributions to differential entropy.
-    return diff_ent_init, diff_ent_dwell, diff_ent_trans
-
-
 #TODO add disease data conditioning
 #TODO copypasted from tests/test_sample_tmjp.py
 #TODO this should go into the _tmjp_dense module.
@@ -126,7 +71,7 @@ def _compound_ll_expectation_helper_dense(
     post_root_distn = np.zeros(nprimary, dtype=float)
     post_root_distn[root_state] = 1
 
-    neg_ll_info = _differential_entropy_helper_dense(
+    neg_ll_info = _mjp_dense.differential_entropy_helper(
             Q_primary, primary_distn,
             post_root_distn, dwell_times, transitions)
     neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info

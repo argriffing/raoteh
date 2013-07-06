@@ -15,7 +15,7 @@ import scipy.linalg
 import scipy.stats
 from scipy import special
 
-from raoteh.sampler import _mc0_dense, _mcy_dense
+from raoteh.sampler import _density, _mc0_dense, _mcy_dense
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb,
@@ -247,6 +247,59 @@ def get_trajectory_log_likelihood(
     # Return the sum of the log likelihood contributions.
     log_likelihood = init_ll + dwell_ll + trans_ll
     return log_likelihood
+
+
+def differential_entropy_helper(
+        Q, prior_root_distn,
+        post_root_distn, post_dwell_times, post_transitions,
+        ):
+    """
+    Use posterior expectations to help compute differential entropy.
+
+    Parameters
+    ----------
+    Q : 2d ndarray
+        Rate matrix.
+    prior_root_distn : 1d ndarray
+        Prior distribution at the root.
+        If Q is a time-reversible rate matrix,
+        then the prior root distribution
+        could be the stationary distribution associated with Q.
+    post_root_distn : 1d ndarray
+        Posterior state distribution at the root.
+    post_dwell_times : 1d ndarray
+        Posterior expected dwell time for each state.
+    post_transitions : 2d ndarray
+        Posterior expected count of each transition type.
+
+    Returns
+    -------
+    diff_ent_init : float
+        Initial state distribution contribution to differential entropy.
+    diff_ent_dwell : float
+        Dwell time contribution to differential entropy.
+    diff_ent_trans : float
+        Transition contribution to differential entropy.
+
+    """
+    _density.check_square_dense(Q)
+    _density.check_square_dense(post_transitions)
+    nstates = Q.shape[0]
+
+    # Get the total rates.
+    total_rates = get_total_rates(Q)
+
+    # Initial state distribution contribution to differential entropy.
+    diff_ent_init = -special.xlogy(post_root_distn, prior_root_distn).sum()
+
+    # Dwell time contribution to differential entropy.
+    diff_ent_dwell = post_dwell_times.dot(total_rates)
+
+    # Transition contribution to differential entropy.
+    diff_ent_trans = -special.xlogy(post_transitions, Q).sum()
+
+    # Return the contributions to differential entropy.
+    return diff_ent_init, diff_ent_dwell, diff_ent_trans
 
 
 def get_reversible_differential_entropy(Q, stationary_distn, t):
