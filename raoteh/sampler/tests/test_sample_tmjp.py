@@ -160,6 +160,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # These are computed in two ways.
     # The first way is by exponential integration using expm_frechet.
     # The second way is by Rao-Teh sampling.
+    # Importance sampling and Metropolis-Hastings sampling are also used.
 
     # Define the tolerance process rates.
     rate_on = 0.5
@@ -882,6 +883,86 @@ def _tmjp_dumb_sample_helper(
     return neg_ll_info, pm_neg_ll_info
 
 
+def get_simulated_data_for_testing(
+        Q_primary, primary_distn, compound_distn,
+        primary_to_part, compound_to_primary, compound_to_tolerance,
+        sample_disease_data=False,
+        ):
+    """
+    """
+    if sample_disease_data:
+        raise NotImplementedError
+
+    # Unpack some info.
+    nprimary = len(primary_to_part)
+    nparts = len(set(primary_to_part.values()))
+
+    # Sample a non-tiny random tree without branch lengths.
+    maxnodes = 5
+    T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
+    root = 0
+
+    # Check for the requested number of nodes.
+    nnodes = len(T)
+    assert_equal(nnodes, maxnodes)
+
+    # Add some random branch lengths onto the edges of the tree.
+    for na, nb in nx.bfs_edges(T, root):
+        scale = 0.6
+        T[na][nb]['weight'] = np.random.exponential(scale=scale)
+
+    # Get the total tree length.
+    total_tree_length = T.size(weight='weight')
+
+    # Sample a single unconditional history on the tree
+    # using some arbitrary process.
+    # The purpose is really to sample the states at the leaves.
+    T_forward_sample = _sampler.get_forward_sample(
+            T, Q_primary, root, primary_distn)
+
+    # Get the sampled leaf states from the forward sample.
+    leaf_to_primary_state = {}
+    for node in T_forward_sample:
+        if len(T_forward_sample[node]) == 1:
+            nb = get_first_element(T_forward_sample[node])
+            edge = T_forward_sample[node][nb]
+            primary_state = edge['state']
+            leaf_to_primary_state[node] = primary_state
+
+    # Get the simulated disease data.
+    reference_leaf = get_first_element(leaf_to_primary_state)
+    reference_disease_parts = set()
+    if sample_disease_data:
+        for part in range(nparts):
+            if random.choice((0, 1)):
+                reference_disease_parts.add(part)
+
+    # TODO account for disease restrictions
+
+    # Get the state restrictions
+    # associated with the sampled leaf states.
+    node_to_allowed_compound_states = {}
+    node_to_allowed_primary_states = {}
+    for node in T:
+        if node in leaf_to_primary_state:
+            primary_state = leaf_to_primary_state[node]
+            allowed_primary = {primary_state}
+            allowed_compound = set()
+            for comp, prim in enumerate(compound_to_primary):
+                if prim == primary_state:
+                    allowed_compound.add(comp)
+        else:
+            allowed_primary = set(primary_distn)
+            allowed_compound = set(compound_distn)
+        node_to_allowed_primary_states[node] = allowed_primary
+        node_to_allowed_compound_states[node] = allowed_compound
+
+    ret = (T, root, leaf_to_primary_state,
+            node_to_allowed_primary_states, node_to_allowed_compound_states,
+            reference_leaf, reference_disease_parts)
+    return ret
+
+
 @decorators.slow
 def test_sample_tmjp_v1():
     # Compare summaries of samples from the product space
@@ -911,102 +992,269 @@ def test_sample_tmjp_v1():
     nsamples = 1000
     sqrt_nsamp = np.sqrt(nsamples)
 
-    nrepeats = 1
-    for repeat_index in range(nrepeats):
+    # Simulate some data for testing.
+    info = get_simulated_data_for_testing(
+            Q_primary, primary_distn, compound_distn, compound_to_primary,
+            sample_disease_data=False)
+    (T, root, leaf_to_primary_state,
+            node_to_allowed_primary_states, node_to_allowed_compound_states,
+            node_to_tmap) = info
 
-        # Sample a non-tiny random tree without branch lengths.
-        maxnodes = 5
-        T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
-        root = 0
+    """
+    # Sample a non-tiny random tree without branch lengths.
+    maxnodes = 5
+    T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
+    root = 0
 
-        # Check for the requested number of nodes.
-        nnodes = len(T)
-        assert_equal(nnodes, maxnodes)
+    # Check for the requested number of nodes.
+    nnodes = len(T)
+    assert_equal(nnodes, maxnodes)
 
-        # Add some random branch lengths onto the edges of the tree.
-        for na, nb in nx.bfs_edges(T, root):
-            scale = 0.6
-            T[na][nb]['weight'] = np.random.exponential(scale=scale)
+    # Add some random branch lengths onto the edges of the tree.
+    for na, nb in nx.bfs_edges(T, root):
+        scale = 0.6
+        T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
-        # Get the total tree length.
-        total_tree_length = T.size(weight='weight')
+    # Get the total tree length.
+    total_tree_length = T.size(weight='weight')
 
-        # Sample a single unconditional history on the tree
-        # using some arbitrary process.
-        # The purpose is really to sample the states at the leaves.
-        T_forward_sample = _sampler.get_forward_sample(
-                T, Q_primary, root, primary_distn)
+    # Sample a single unconditional history on the tree
+    # using some arbitrary process.
+    # The purpose is really to sample the states at the leaves.
+    T_forward_sample = _sampler.get_forward_sample(
+            T, Q_primary, root, primary_distn)
 
-        # Get the sampled leaf states from the forward sample.
-        leaf_to_primary_state = {}
-        for node in T_forward_sample:
-            if len(T_forward_sample[node]) == 1:
-                nb = get_first_element(T_forward_sample[node])
-                edge = T_forward_sample[node][nb]
-                primary_state = edge['state']
-                leaf_to_primary_state[node] = primary_state
+    # Get the sampled leaf states from the forward sample.
+    leaf_to_primary_state = {}
+    for node in T_forward_sample:
+        if len(T_forward_sample[node]) == 1:
+            nb = get_first_element(T_forward_sample[node])
+            edge = T_forward_sample[node][nb]
+            primary_state = edge['state']
+            leaf_to_primary_state[node] = primary_state
 
-        # Get the state restrictions
-        # associated with the sampled leaf states.
-        node_to_allowed_compound_states = {}
-        node_to_allowed_primary_states = {}
-        for node in T:
-            if node in leaf_to_primary_state:
-                primary_state = leaf_to_primary_state[node]
-                allowed_primary = {primary_state}
-                allowed_compound = set()
-                for comp, prim in enumerate(compound_to_primary):
-                    if prim == primary_state:
-                        allowed_compound.add(comp)
-            else:
-                allowed_primary = set(primary_distn)
-                allowed_compound = set(compound_distn)
-            node_to_allowed_primary_states[node] = allowed_primary
-            node_to_allowed_compound_states[node] = allowed_compound
+    # Get the state restrictions
+    # associated with the sampled leaf states.
+    node_to_allowed_compound_states = {}
+    node_to_allowed_primary_states = {}
+    for node in T:
+        if node in leaf_to_primary_state:
+            primary_state = leaf_to_primary_state[node]
+            allowed_primary = {primary_state}
+            allowed_compound = set()
+            for comp, prim in enumerate(compound_to_primary):
+                if prim == primary_state:
+                    allowed_compound.add(comp)
+        else:
+            allowed_primary = set(primary_distn)
+            allowed_compound = set(compound_distn)
+        node_to_allowed_primary_states[node] = allowed_primary
+        node_to_allowed_compound_states[node] = allowed_compound
+    """
 
-        # Compute the conditional expected log likelihood explicitly
-        # using some Markov jump process functions.
+    # Compute the conditional expected log likelihood explicitly
+    # using some Markov jump process functions.
 
-        # Get some posterior expectations.
-        expectation_info = get_expected_history_statistics(
-                T, node_to_allowed_compound_states,
-                root, root_distn=compound_distn, Q_default=Q_compound)
-        dwell_times, post_root_distn, transitions = expectation_info
+    # Get some posterior expectations.
+    expectation_info = get_expected_history_statistics(
+            T, node_to_allowed_compound_states,
+            root, root_distn=compound_distn, Q_default=Q_compound)
+    dwell_times, post_root_distn, transitions = expectation_info
 
-        # Compute contributions to differential entropy.
-        diff_ent_info = _mjp.differential_entropy_helper(
+    # Compute contributions to differential entropy.
+    diff_ent_info = _mjp.differential_entropy_helper(
+        Q_compound, compound_distn,
+        post_root_distn, dwell_times, transitions)
+    diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
+
+    # Get neg ll contribs using the clever sampler.
+    # This calls a separate function for more isolated profiling.
+    d_info = _tmjp_clever_sample_helper_dense(
+            T, root, Q_primary, primary_to_part,
+            leaf_to_primary_state, rate_on, rate_off,
+            primary_distn, nsamples)
+    #v1_neg_ll_contribs_init = v1_info[0]
+    #v1_neg_ll_contribs_dwell = v1_info[1]
+    #v1_neg_ll_contribs_trans = v1_info[2]
+    d_neg_ll_contribs_init = d_info[0]
+    d_neg_ll_contribs_dwell = d_info[1]
+    d_neg_ll_contribs_trans = d_info[2]
+
+    # Get neg ll contribs using the dumb sampler.
+    # This calls a separate function for more isolated profiling.
+    neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
+            T, primary_to_part, compound_to_primary,
             Q_compound, compound_distn,
-            post_root_distn, dwell_times, transitions)
-        diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
+            Q_primary, primary_distn,
+            node_to_allowed_compound_states,
+            root, rate_on, rate_off,
+            nsamples)
+    neg_ll_contribs_init = neg_ll_info[0]
+    neg_ll_contribs_dwell = neg_ll_info[1]
+    neg_ll_contribs_trans = neg_ll_info[2]
+    pm_neg_ll_contribs_init = pm_neg_ll_info[0]
+    pm_neg_ll_contribs_dwell = pm_neg_ll_info[1]
+    pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
 
-        # Get neg ll contribs using the clever sampler.
-        # This calls a separate function for more isolated profiling.
-        d_info = _tmjp_clever_sample_helper_dense(
-                T, root, Q_primary, primary_to_part,
-                leaf_to_primary_state, rate_on, rate_off,
-                primary_distn, nsamples)
-        #v1_neg_ll_contribs_init = v1_info[0]
-        #v1_neg_ll_contribs_dwell = v1_info[1]
-        #v1_neg_ll_contribs_trans = v1_info[2]
-        d_neg_ll_contribs_init = d_info[0]
-        d_neg_ll_contribs_dwell = d_info[1]
-        d_neg_ll_contribs_trans = d_info[2]
+    print()
+    print('--- tmjp v1 test ---')
+    print('nsamples:', nsamples)
+    print()
+    print('diff ent init :', diff_ent_init)
+    print('neg ll init   :', np.mean(neg_ll_contribs_init))
+    print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
+    print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
+    print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
+    #print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
+    #print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
+    print('d neg ll init :', np.mean(d_neg_ll_contribs_init))
+    print('error         :', np.std(d_neg_ll_contribs_init) / sqrt_nsamp)
+    print()
+    print('diff ent dwell:', diff_ent_dwell)
+    print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
+    print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
+    print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
+    print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
+    #print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
+    #print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
+    print('d neg ll dwell:', np.mean(d_neg_ll_contribs_dwell))
+    print('error         :', np.std(d_neg_ll_contribs_dwell) / sqrt_nsamp)
+    print()
+    print('diff ent trans:', diff_ent_trans)
+    print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
+    print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
+    print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
+    print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
+    #print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
+    #print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
+    print('d neg ll trans:', np.mean(d_neg_ll_contribs_trans))
+    print('error         :', np.std(d_neg_ll_contribs_trans) / sqrt_nsamp)
 
-        # Get neg ll contribs using the dumb sampler.
-        # This calls a separate function for more isolated profiling.
-        neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
-                T, primary_to_part, compound_to_primary,
-                Q_compound, compound_distn,
-                Q_primary, primary_distn,
-                node_to_allowed_compound_states,
-                root, rate_on, rate_off,
-                nsamples)
-        neg_ll_contribs_init = neg_ll_info[0]
-        neg_ll_contribs_dwell = neg_ll_info[1]
-        neg_ll_contribs_trans = neg_ll_info[2]
-        pm_neg_ll_contribs_init = pm_neg_ll_info[0]
-        pm_neg_ll_contribs_dwell = pm_neg_ll_info[1]
-        pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
+
+#TODO this is mostly copypasted from the non-disease-data test
+@decorators.slow
+def test_sample_tmjp_v1_disease():
+    # Compare summaries of samples from the product space
+    # of the compound process to summaries of samples that uses
+    # gibbs sampling enabled by conditional independence
+    # of some components of the compound process.
+    # Disease data is used.
+
+    # Define the tolerance process rates.
+    rate_on = 0.5
+    rate_off = 1.5
+
+    # Define some other properties of the process,
+    # in a way that is not object-oriented.
+    info = _tmjp.get_example_tolerance_process_info(rate_on, rate_off)
+    (primary_distn, Q_primary, primary_to_part,
+            compound_to_primary, compound_to_tolerances, compound_distn,
+            Q_compound) = info
+
+    # Summarize properties of the process.
+    nprimary = len(primary_distn)
+    nparts = len(set(primary_to_part.values()))
+    compound_total_rates = _mjp.get_total_rates(Q_compound)
+    primary_total_rates = _mjp.get_total_rates(Q_primary)
+    tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
+
+    # Define the number of samples.
+    nsamples = 1000
+    sqrt_nsamp = np.sqrt(nsamples)
+
+    # Sample a non-tiny random tree without branch lengths.
+    maxnodes = 5
+    T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
+    root = 0
+
+    # Check for the requested number of nodes.
+    nnodes = len(T)
+    assert_equal(nnodes, maxnodes)
+
+    # Add some random branch lengths onto the edges of the tree.
+    for na, nb in nx.bfs_edges(T, root):
+        scale = 0.6
+        T[na][nb]['weight'] = np.random.exponential(scale=scale)
+
+    # Get the total tree length.
+    total_tree_length = T.size(weight='weight')
+
+    # Sample a single unconditional history on the tree
+    # using some arbitrary process.
+    # The purpose is really to sample the states at the leaves.
+    T_forward_sample = _sampler.get_forward_sample(
+            T, Q_primary, root, primary_distn)
+
+    # Get the sampled leaf states from the forward sample.
+    leaf_to_primary_state = {}
+    for node in T_forward_sample:
+        if len(T_forward_sample[node]) == 1:
+            nb = get_first_element(T_forward_sample[node])
+            edge = T_forward_sample[node][nb]
+            primary_state = edge['state']
+            leaf_to_primary_state[node] = primary_state
+
+    # Get the state restrictions
+    # associated with the sampled leaf states.
+    node_to_allowed_compound_states = {}
+    node_to_allowed_primary_states = {}
+    for node in T:
+        if node in leaf_to_primary_state:
+            primary_state = leaf_to_primary_state[node]
+            allowed_primary = {primary_state}
+            allowed_compound = set()
+            for comp, prim in enumerate(compound_to_primary):
+                if prim == primary_state:
+                    allowed_compound.add(comp)
+        else:
+            allowed_primary = set(primary_distn)
+            allowed_compound = set(compound_distn)
+        node_to_allowed_primary_states[node] = allowed_primary
+        node_to_allowed_compound_states[node] = allowed_compound
+
+    # Compute the conditional expected log likelihood explicitly
+    # using some Markov jump process functions.
+
+    # Get some posterior expectations.
+    expectation_info = get_expected_history_statistics(
+            T, node_to_allowed_compound_states,
+            root, root_distn=compound_distn, Q_default=Q_compound)
+    dwell_times, post_root_distn, transitions = expectation_info
+
+    # Compute contributions to differential entropy.
+    diff_ent_info = _mjp.differential_entropy_helper(
+        Q_compound, compound_distn,
+        post_root_distn, dwell_times, transitions)
+    diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
+
+    # Get neg ll contribs using the clever sampler.
+    # This calls a separate function for more isolated profiling.
+    d_info = _tmjp_clever_sample_helper_dense(
+            T, root, Q_primary, primary_to_part,
+            leaf_to_primary_state, rate_on, rate_off,
+            primary_distn, nsamples)
+    #v1_neg_ll_contribs_init = v1_info[0]
+    #v1_neg_ll_contribs_dwell = v1_info[1]
+    #v1_neg_ll_contribs_trans = v1_info[2]
+    d_neg_ll_contribs_init = d_info[0]
+    d_neg_ll_contribs_dwell = d_info[1]
+    d_neg_ll_contribs_trans = d_info[2]
+
+    # Get neg ll contribs using the dumb sampler.
+    # This calls a separate function for more isolated profiling.
+    neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
+            T, primary_to_part, compound_to_primary,
+            Q_compound, compound_distn,
+            Q_primary, primary_distn,
+            node_to_allowed_compound_states,
+            root, rate_on, rate_off,
+            nsamples)
+    neg_ll_contribs_init = neg_ll_info[0]
+    neg_ll_contribs_dwell = neg_ll_info[1]
+    neg_ll_contribs_trans = neg_ll_info[2]
+    pm_neg_ll_contribs_init = pm_neg_ll_info[0]
+    pm_neg_ll_contribs_dwell = pm_neg_ll_info[1]
+    pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
 
     print()
     print('--- tmjp v1 test ---')
