@@ -1,10 +1,15 @@
 """
 Test functions that sample tolerance Markov jump trajectories on a tree.
 
+In this module,
+the disease_data variable is a list, indexed by tolerance class,
+of maps from a node to a set of allowed tolerance states.
+
 """
 from __future__ import division, print_function, absolute_import
 
 from collections import defaultdict
+import random
 
 import numpy as np
 import networkx as nx
@@ -591,12 +596,36 @@ def _tmjp_clever_sample_helper_debug(
 
 def _tmjp_clever_sample_helper_dense(
         T, root, Q_primary, primary_to_part,
-        leaf_to_primary_state, rate_on, rate_off,
-        primary_distn, nhistories):
+        leaf_to_primary_state, rate_on, rate_off, primary_distn,
+        disease_data=None, nhistories=None):
     """
     A helper function for speed profiling.
 
     The args are the same as for _sample_tmjp.gen_histories_v1().
+
+    Parameters
+    ----------
+    T : x
+        x
+    root : x
+        x
+    Q_primary : x
+        x
+    primary_to_part : x
+        x
+    leaf_to_primary_state : x
+        x
+    rate_on : x
+        x
+    rate_off : x
+        x
+    primary_distn : x
+        x
+    disease_data : sequence, optional
+        For each tolerance class,
+        map each node to a set of allowed tolerance states.
+    nhistories : integer, optional
+        Sample this many histories.
 
     """
     # init dense transition matrix stuff
@@ -610,6 +639,9 @@ def _tmjp_clever_sample_helper_dense(
             Q_primary, nodelist=primary_states)
 
     # init dense transition matrix process summary lists
+    v1_neg_ll_contribs_init = []
+    v1_neg_ll_contribs_dwell = []
+    v1_neg_ll_contribs_trans = []
     d_neg_ll_contribs_init = []
     d_neg_ll_contribs_dwell = []
     d_neg_ll_contribs_trans = []
@@ -617,11 +649,38 @@ def _tmjp_clever_sample_helper_dense(
     # sample histories and summarize them using rao-blackwellization
     for history_info in _sample_tmjp.gen_histories_v1(
             T, root, Q_primary, primary_to_part,
-            leaf_to_primary_state, rate_on, rate_off,
-            primary_distn, nhistories=nhistories):
+            leaf_to_primary_state, rate_on, rate_off, primary_distn,
+            disease_data=disease_data, nhistories=nhistories):
         T_primary_aug, tol_trajectories = history_info
 
-        # use the dense transition matrix rao-blackwellization
+        # Reconstitute the compound process trajectory,
+        # so that we can compute non-Rao-Blackwellized log likelihoods.
+        #T_compound = add_trajectories(
+                #T_primary_aug, root, trajectories, edge_to_event_times=None):
+
+        #TODO Write a function to merge the primary trajectory
+        #TODO and all of the tolerance trajectories
+        #TODO into a compound trajectory.
+        #TODO This will be similar to the function
+        #TODO _graph_transform.add_trajectories().
+
+        #info = _mjp.get_history_statistics(T_aug, root=root)
+        #dwell_times, root_state, transitions = info
+
+        #post_root_distn = {root_state : 1}
+        #neg_ll_info = _mjp.differential_entropy_helper(
+                #Q_compound, compound_distn,
+                #post_root_distn, dwell_times, transitions)
+        #neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
+        neg_ll_init, neg_ll_dwell, neg_ll_trans = (0, 0, 0)
+        v1_neg_ll_contribs_init.append(neg_ll_init)
+        v1_neg_ll_contribs_dwell.append(neg_ll_dwell)
+        v1_neg_ll_contribs_trans.append(neg_ll_trans)
+
+
+        #TODO use disease data in Rao-Blackwellization
+
+        # Use the dense transition matrix Rao-Blackwellization.
         ll_info = _tmjp_dense.ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
                 Q_primary_dense, primary_distn_dense,
@@ -631,12 +690,17 @@ def _tmjp_clever_sample_helper_dense(
         d_neg_ll_contribs_dwell.append(-ll_dwell)
         d_neg_ll_contribs_trans.append(-ll_trans)
 
+    v1_neg_ll_contribs = (
+            v1_neg_ll_contribs_init,
+            v1_neg_ll_contribs_dwell,
+            v1_neg_ll_contribs_trans)
+
     d_neg_ll_contribs = (
             d_neg_ll_contribs_init,
             d_neg_ll_contribs_dwell,
             d_neg_ll_contribs_trans)
     
-    return d_neg_ll_contribs
+    return v1_neg_ll_contribs, d_neg_ll_contribs
 
 
 def _tmjp_clever_sample_helper(
@@ -802,12 +866,10 @@ def get_simulated_data_for_testing(
         ):
     """
     """
-    if sample_disease_data:
-        raise NotImplementedError
-
     # Unpack some info.
     nprimary = len(primary_to_part)
     nparts = len(set(primary_to_part.values()))
+    ncompound = int(np.ldexp(nprimary, nparts))
 
     # Sample a non-tiny random tree without branch lengths.
     maxnodes = 5
@@ -845,22 +907,45 @@ def get_simulated_data_for_testing(
     reference_leaf = get_first_element(leaf_to_primary_state)
     reference_disease_parts = set()
     if sample_disease_data:
-        for part in range(nparts):
-            if random.choice((0, 1)):
-                reference_disease_parts.add(part)
 
-    # TODO account for disease restrictions
+        # Get the primary state and its associated tolerance class
+        # for the reference leaf.
+        ref_primary_state = leaf_to_primary_state[reference_leaf]
+        ref_part = primary_to_part[ref_primary_state]
+
+        # Construct a tolerance state vector.
+        # Require the tolerance of the observed primary state to be 1.
+        # Get the sampled disease part set from the tolerance vector.
+        tols = [random.choice((0, 1)) for p in range(nparts)]
+        tols[ref_part] = 1
+        reference_disease_parts = set(p for p, v in enumerate(tols) if not v)
 
     # Get the state restrictions
     # associated with the sampled leaf states.
     node_to_allowed_compound_states = {}
     node_to_allowed_primary_states = {}
     for node in T:
-        if node in leaf_to_primary_state:
+        if sample_disease_data and (node == reference_leaf):
             primary_state = leaf_to_primary_state[node]
             allowed_primary = {primary_state}
             allowed_compound = set()
-            for comp, prim in enumerate(compound_to_primary):
+            for comp in range(ncompound):
+                prim = compound_to_primary[comp]
+                # if the primary state is not the observed state then skip
+                if prim != primary_state:
+                    continue
+                tols = compound_to_tolerance[comp]
+                tol_set = set(p for p, v in enumerate(tols) if v)
+                # if a tolerance class marked as disease is tolerated then skip
+                if tol_set & reference_disease_parts:
+                    continue
+                allowed_compound.add(comp)
+        elif node in leaf_to_primary_state:
+            primary_state = leaf_to_primary_state[node]
+            allowed_primary = {primary_state}
+            allowed_compound = set()
+            for comp in range(ncompound):
+                prim = compound_to_primary[comp]
                 if prim == primary_state:
                     allowed_compound.add(comp)
         else:
@@ -930,7 +1015,7 @@ def test_sample_tmjp_v1():
 
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
-    d_info = _tmjp_clever_sample_helper_dense(
+    v1_info, d_info = _tmjp_clever_sample_helper_dense(
             T, root, Q_primary, primary_to_part,
             leaf_to_primary_state, rate_on, rate_off,
             primary_distn, nsamples)
@@ -1047,15 +1132,43 @@ def test_sample_tmjp_v1_disease():
         post_root_distn, dwell_times, transitions)
     diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
 
+    # Construct the disease data from the reference leaf and disease parts.
+    disease_data = []
+    for part in range(nparts):
+        tmap = dict((n, {0, 1}) for n in T)
+
+        # The tolerance state at a leaf is known for the tolerance class
+        # that corresponds to the primary state observed at the leaf.
+        for node in T:
+            if node in leaf_to_primary_state:
+                leaf_prim = leaf_to_primary_state[node]
+                leaf_part = primary_to_part[leaf_prim]
+                if leaf_part == part:
+                    tmap[node].intersection_update({1})
+
+        # Tolerance classes with observed disease status
+        # are not tolerated at the reference leaf.
+        if part in reference_disease_parts:
+            tmap[reference_leaf].intersection_update({0})
+        else:
+            tmap[reference_leaf].intersection_update({1})
+
+        disease_data.append(tmap)
+
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
-    d_info = _tmjp_clever_sample_helper_dense(
+    v1_info, d_info = _tmjp_clever_sample_helper_dense(
             T, root, Q_primary, primary_to_part,
-            leaf_to_primary_state, rate_on, rate_off,
-            primary_distn, nsamples)
+            leaf_to_primary_state, rate_on, rate_off, primary_distn,
+            disease_data=disease_data, nhistories=nsamples)
+    v1_neg_ll_contribs_init = v1_info[0]
+    v1_neg_ll_contribs_dwell = v1_info[1]
+    v1_neg_ll_contribs_trans = v1_info[2]
     d_neg_ll_contribs_init = d_info[0]
     d_neg_ll_contribs_dwell = d_info[1]
     d_neg_ll_contribs_trans = d_info[2]
+
+    #TODO condition on disease at the reference leaf
 
     # Get neg ll contribs using the dumb sampler.
     # This calls a separate function for more isolated profiling.
@@ -1075,15 +1188,24 @@ def test_sample_tmjp_v1_disease():
 
     print()
     print('--- tmjp v1 test with simulated disease data ---')
-    print('nsamples:', nsamples)
+    print()
+    print('All samplers use Rao-Teh sampling.')
+    print('neg: directly from compound distribution no rao blackwellization')
+    print('pm:  directly from compound distribution with rao blackwellization')
+    print('v1:  Gibbs no rao blackwellization')
+    print('d:   Gibbs with rao blackwellization')
+    print()
+    print('number of sampled histories:', nsamples)
+    print('sampled reference leaf disease tolerance classes:')
+    print(reference_disease_parts)
     print()
     print('diff ent init :', diff_ent_init)
     print('neg ll init   :', np.mean(neg_ll_contribs_init))
     print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
     print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
     print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
-    #print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
-    #print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
+    print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
+    print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
     print('d neg ll init :', np.mean(d_neg_ll_contribs_init))
     print('error         :', np.std(d_neg_ll_contribs_init) / sqrt_nsamp)
     print()
@@ -1092,8 +1214,8 @@ def test_sample_tmjp_v1_disease():
     print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
     print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
     print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
-    #print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
-    #print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
+    print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
+    print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
     print('d neg ll dwell:', np.mean(d_neg_ll_contribs_dwell))
     print('error         :', np.std(d_neg_ll_contribs_dwell) / sqrt_nsamp)
     print()
@@ -1102,8 +1224,8 @@ def test_sample_tmjp_v1_disease():
     print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
     print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
     print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
-    #print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
-    #print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
+    print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
+    print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
     print('d neg ll trans:', np.mean(d_neg_ll_contribs_trans))
     print('error         :', np.std(d_neg_ll_contribs_trans) / sqrt_nsamp)
 
