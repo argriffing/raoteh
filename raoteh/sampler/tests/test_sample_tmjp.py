@@ -21,6 +21,7 @@ from numpy.testing import (run_module_suite, TestCase,
 
 
 from raoteh.sampler import (
+        _graph_transform,
         _mjp,
         _mjp_dense,
         _tmjp,
@@ -638,6 +639,22 @@ def _tmjp_clever_sample_helper_dense(
     Q_primary_dense = rate_matrix_to_numpy_array(
             Q_primary, nodelist=primary_states)
 
+    # Get some info about the compound process,
+    # which we will use for the non-Rao-Blackwellized log likelihoods.
+    ctm = _tmjp.CompoundToleranceModel(
+            Q_primary, primary_distn, primary_to_part,
+            rate_on, rate_off)
+    ctm.init_compound()
+
+    # Construct a map from (tuple(tolerance_states), primary_state) to a
+    # compound state.
+    compound_reduction_map = {}
+    for compound_state in range(ctm.ncompound):
+        primary_state = ctm.compound_to_primary[compound_state]
+        tolerance_states = ctm.compound_to_tolerances[compound_state]
+        expanded_compound_state = (tuple(tolerance_states), primary_state)
+        compound_reduction_map[expanded_compound_state] = compound_state
+
     # init dense transition matrix process summary lists
     v1_neg_ll_contribs_init = []
     v1_neg_ll_contribs_dwell = []
@@ -655,24 +672,30 @@ def _tmjp_clever_sample_helper_dense(
 
         # Reconstitute the compound process trajectory,
         # so that we can compute non-Rao-Blackwellized log likelihoods.
-        #T_compound = add_trajectories(
-                #T_primary_aug, root, trajectories, edge_to_event_times=None):
+        all_trajectories = tol_trajectories + [T_primary_aug]
+        T_merged, dummy_events = _graph_transform.add_trajectories(
+                T_primary_aug, root, all_trajectories,
+                edge_to_event_times=None)
 
-        #TODO Write a function to merge the primary trajectory
-        #TODO and all of the tolerance trajectories
-        #TODO into a compound trajectory.
-        #TODO This will be similar to the function
-        #TODO _graph_transform.add_trajectories().
+        # Construct the compound trajectory from the merged trajectories.
+        T_compound = nx.Graph()
+        for na, nb in nx.bfs_edges(T_merged, root):
+            edge_obj = T_merged[na][nb]
+            weight = edge_obj['weight']
+            primary_state = edge_obj['states'][-1]
+            tol_states = edge_obj['states'][:-1]
+            expanded_compound_state = (tuple(tol_states), primary_state)
+            compound_state = compound_reduction_map[expanded_compound_state]
+            T_compound.add_edge(na, nb, state=compound_state, weight=weight)
 
-        #info = _mjp.get_history_statistics(T_aug, root=root)
-        #dwell_times, root_state, transitions = info
+        info = _mjp.get_history_statistics(T_compound, root=root)
+        dwell_times, root_state, transitions = info
 
-        #post_root_distn = {root_state : 1}
-        #neg_ll_info = _mjp.differential_entropy_helper(
-                #Q_compound, compound_distn,
-                #post_root_distn, dwell_times, transitions)
-        #neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
-        neg_ll_init, neg_ll_dwell, neg_ll_trans = (0, 0, 0)
+        post_root_distn = {root_state : 1}
+        neg_ll_info = _mjp.differential_entropy_helper(
+                ctm.Q_compound, ctm.compound_distn,
+                post_root_distn, dwell_times, transitions)
+        neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
         v1_neg_ll_contribs_init.append(neg_ll_init)
         v1_neg_ll_contribs_dwell.append(neg_ll_dwell)
         v1_neg_ll_contribs_trans.append(neg_ll_trans)

@@ -69,7 +69,7 @@ class CompoundToleranceModel(object):
         # through an explicit function call.
         self.nprimary = len(self.primary_to_part)
         self.nparts = len(set(self.primary_to_part.values()))
-        self.ncompound = np.ldexp(self.nprimary, self.nparts)
+        self.ncompound = int(np.ldexp(self.nprimary, self.nparts))
         self.tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
         # Mark some attributes as un-initialized.

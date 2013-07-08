@@ -551,9 +551,18 @@ def add_trajectories(T, root, trajectories, edge_to_event_times=None):
         traj_specific_nodes = set(traj) - set(T)
         traj_skeleton = remove_selected_degree_two_nodes(
                 traj, root, traj_specific_nodes)
-        if set(T_bfs_edges) != set(nx.bfs_edges(traj_skeleton, root)):
-            raise ValueError('expected the trajectory to follow '
-                    'the basic shape of the base tree')
+        base_tree_edges = set(T_bfs_edges)
+        traj_tree_edges = set(nx.bfs_edges(traj_skeleton, root))
+        extra_base_tree_edges = base_tree_edges - traj_tree_edges
+        extra_traj_tree_edges = traj_tree_edges - base_tree_edges
+        if extra_base_tree_edges or extra_traj_tree_edges:
+            msg = ('expected the trajectory '
+                    'to follow the basic shape of the base tree; ')
+            if extra_base_tree_edges:
+                msg += 'extra base tree edges: %s ' % extra_base_tree_edges
+            if extra_traj_tree_edges:
+                msg += 'extra traj tree edges: %s ' % extra_traj_tree_edges
+            raise ValueError(msg)
 
     # Check that the trajectories have the correct total edge weight.
     total_base_edge_weight = T.size(weight='weight')
