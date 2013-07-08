@@ -994,63 +994,12 @@ def test_sample_tmjp_v1():
 
     # Simulate some data for testing.
     info = get_simulated_data_for_testing(
-            Q_primary, primary_distn, compound_distn, compound_to_primary,
+            Q_primary, primary_distn, compound_distn,
+            primary_to_part, compound_to_primary, compound_to_tolerances,
             sample_disease_data=False)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
-            node_to_tmap) = info
-
-    """
-    # Sample a non-tiny random tree without branch lengths.
-    maxnodes = 5
-    T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
-    root = 0
-
-    # Check for the requested number of nodes.
-    nnodes = len(T)
-    assert_equal(nnodes, maxnodes)
-
-    # Add some random branch lengths onto the edges of the tree.
-    for na, nb in nx.bfs_edges(T, root):
-        scale = 0.6
-        T[na][nb]['weight'] = np.random.exponential(scale=scale)
-
-    # Get the total tree length.
-    total_tree_length = T.size(weight='weight')
-
-    # Sample a single unconditional history on the tree
-    # using some arbitrary process.
-    # The purpose is really to sample the states at the leaves.
-    T_forward_sample = _sampler.get_forward_sample(
-            T, Q_primary, root, primary_distn)
-
-    # Get the sampled leaf states from the forward sample.
-    leaf_to_primary_state = {}
-    for node in T_forward_sample:
-        if len(T_forward_sample[node]) == 1:
-            nb = get_first_element(T_forward_sample[node])
-            edge = T_forward_sample[node][nb]
-            primary_state = edge['state']
-            leaf_to_primary_state[node] = primary_state
-
-    # Get the state restrictions
-    # associated with the sampled leaf states.
-    node_to_allowed_compound_states = {}
-    node_to_allowed_primary_states = {}
-    for node in T:
-        if node in leaf_to_primary_state:
-            primary_state = leaf_to_primary_state[node]
-            allowed_primary = {primary_state}
-            allowed_compound = set()
-            for comp, prim in enumerate(compound_to_primary):
-                if prim == primary_state:
-                    allowed_compound.add(comp)
-        else:
-            allowed_primary = set(primary_distn)
-            allowed_compound = set(compound_distn)
-        node_to_allowed_primary_states[node] = allowed_primary
-        node_to_allowed_compound_states[node] = allowed_compound
-    """
+            reference_leaf, reference_disease_parts) = info
 
     # Compute the conditional expected log likelihood explicitly
     # using some Markov jump process functions.
@@ -1162,55 +1111,14 @@ def test_sample_tmjp_v1_disease():
     nsamples = 1000
     sqrt_nsamp = np.sqrt(nsamples)
 
-    # Sample a non-tiny random tree without branch lengths.
-    maxnodes = 5
-    T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
-    root = 0
-
-    # Check for the requested number of nodes.
-    nnodes = len(T)
-    assert_equal(nnodes, maxnodes)
-
-    # Add some random branch lengths onto the edges of the tree.
-    for na, nb in nx.bfs_edges(T, root):
-        scale = 0.6
-        T[na][nb]['weight'] = np.random.exponential(scale=scale)
-
-    # Get the total tree length.
-    total_tree_length = T.size(weight='weight')
-
-    # Sample a single unconditional history on the tree
-    # using some arbitrary process.
-    # The purpose is really to sample the states at the leaves.
-    T_forward_sample = _sampler.get_forward_sample(
-            T, Q_primary, root, primary_distn)
-
-    # Get the sampled leaf states from the forward sample.
-    leaf_to_primary_state = {}
-    for node in T_forward_sample:
-        if len(T_forward_sample[node]) == 1:
-            nb = get_first_element(T_forward_sample[node])
-            edge = T_forward_sample[node][nb]
-            primary_state = edge['state']
-            leaf_to_primary_state[node] = primary_state
-
-    # Get the state restrictions
-    # associated with the sampled leaf states.
-    node_to_allowed_compound_states = {}
-    node_to_allowed_primary_states = {}
-    for node in T:
-        if node in leaf_to_primary_state:
-            primary_state = leaf_to_primary_state[node]
-            allowed_primary = {primary_state}
-            allowed_compound = set()
-            for comp, prim in enumerate(compound_to_primary):
-                if prim == primary_state:
-                    allowed_compound.add(comp)
-        else:
-            allowed_primary = set(primary_distn)
-            allowed_compound = set(compound_distn)
-        node_to_allowed_primary_states[node] = allowed_primary
-        node_to_allowed_compound_states[node] = allowed_compound
+    # Simulate some data for testing.
+    info = get_simulated_data_for_testing(
+            Q_primary, primary_distn, compound_distn,
+            primary_to_part, compound_to_primary, compound_to_tolerances,
+            sample_disease_data=True)
+    (T, root, leaf_to_primary_state,
+            node_to_allowed_primary_states, node_to_allowed_compound_states,
+            reference_leaf, reference_disease_parts) = info
 
     # Compute the conditional expected log likelihood explicitly
     # using some Markov jump process functions.
@@ -1233,9 +1141,6 @@ def test_sample_tmjp_v1_disease():
             T, root, Q_primary, primary_to_part,
             leaf_to_primary_state, rate_on, rate_off,
             primary_distn, nsamples)
-    #v1_neg_ll_contribs_init = v1_info[0]
-    #v1_neg_ll_contribs_dwell = v1_info[1]
-    #v1_neg_ll_contribs_trans = v1_info[2]
     d_neg_ll_contribs_init = d_info[0]
     d_neg_ll_contribs_dwell = d_info[1]
     d_neg_ll_contribs_trans = d_info[2]
@@ -1257,7 +1162,7 @@ def test_sample_tmjp_v1_disease():
     pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
 
     print()
-    print('--- tmjp v1 test ---')
+    print('--- tmjp v1 test with simulated disease data ---')
     print('nsamples:', nsamples)
     print()
     print('diff ent init :', diff_ent_init)

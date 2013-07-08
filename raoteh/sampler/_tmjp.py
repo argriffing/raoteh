@@ -72,7 +72,9 @@ class CompoundToleranceModel(object):
         self.ncompound = np.ldexp(self.nprimary, self.nparts)
         self.tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
-        # Initialize attributes related to the compound distribution.
+        # Mark some attributes as un-initialized.
+        # These attributes are related to the compound distribution,
+        # and may be initialized later using init_compound().
         self.Q_compound = None
         self.compound_distn = None
         self.compound_to_primary = None
@@ -119,7 +121,7 @@ class CompoundToleranceModel(object):
         # The loop is unrolled to better isolate errors.
         if not np.allclose(sum(self.primary_distn.values()), 1):
             raise Exception('internal error')
-        if not np.allclose(sum(tolerance_distn.values()), 1):
+        if not np.allclose(sum(self.tolerance_distn.values()), 1):
             raise Exception('internal error')
         if not np.allclose(sum(self.compound_distn.values()), 1):
             raise Exception('internal error')
@@ -849,95 +851,12 @@ def get_example_tolerance_process_info(
             4 : 2,
             5 : 2}
 
-    # Define a compound state space.
-    compound_to_primary = []
-    compound_to_tolerances = []
-    for primary, tolerances in itertools.product(
-            range(nprimary),
-            itertools.product((0, 1), repeat=nparts)):
-        compound_to_primary.append(primary)
-        compound_to_tolerances.append(tolerances)
+    ctm = CompoundToleranceModel(
+            Q, primary_distn, primary_to_part,
+            tolerance_rate_on, tolerance_rate_off)
+    ctm.init_compound()
 
-    # Define the sparse distribution over compound states.
-    compound_distn = {}
-    for i, (primary, tolerances) in enumerate(
-            zip(compound_to_primary, compound_to_tolerances)):
-        part = primary_to_part[primary]
-        if tolerances[part] == 1:
-            p_primary = primary_distn[primary]
-            p_tolerances = 1.0
-            for tolerance_class, tolerance_state in enumerate(tolerances):
-                if tolerance_class != part:
-                    p_tolerances *= tolerance_distn[tolerance_state]
-            compound_distn[i] = p_primary * p_tolerances
-
-    # Check the number of entries in the compound state distribution.
-    if len(compound_distn) != nprimary * (1 << (nparts - 1)):
-        raise Exception('internal error')
-
-    # Check that the distributions have the correct normalization.
-    # The loop is unrolled to better isolate errors.
-    if not np.allclose(sum(primary_distn.values()), 1):
-        raise Exception('internal error')
-    if not np.allclose(sum(tolerance_distn.values()), 1):
-        raise Exception('internal error')
-    if not np.allclose(sum(compound_distn.values()), 1):
-        raise Exception('internal error')
-
-    # Define the compound transition rate matrix.
-    # Use compound_distn to avoid formal states with zero probability.
-    # This is slow, but we do not need to be fast.
-    Q_compound = nx.DiGraph()
-    for i in compound_distn:
-        for j in compound_distn:
-            if i == j:
-                continue
-            i_prim = compound_to_primary[i]
-            j_prim = compound_to_primary[j]
-            i_tols = compound_to_tolerances[i]
-            j_tols = compound_to_tolerances[j]
-            tol_pairs = list(enumerate(zip(i_tols, j_tols)))
-            tol_diffs = [(k, x, y) for k, (x, y) in tol_pairs if x != y]
-            tol_hdist = len(tol_diffs)
-
-            # Look for a tolerance state change.
-            # Do not allow simultaneous primary and tolerance changes.
-            # Do not allow more than one simultaneous tolerance change.
-            # Do not allow changes to the primary tolerance class.
-            if tol_hdist > 0:
-                if i_prim != j_prim:
-                    continue
-                if tol_hdist > 1:
-                    continue
-                part, i_tol, j_tol = tol_diffs[0]
-                if part == primary_to_part[i_prim]:
-                    continue
-
-                # Add the transition rate.
-                if j_tol:
-                    weight = tolerance_rate_on
-                else:
-                    weight = tolerance_rate_off
-                Q_compound.add_edge(i, j, weight=weight)
-
-            # Look for a primary state change.
-            # Do not allow simultaneous primary and tolerance changes.
-            # Do not allow a change to a non-tolerated primary class.
-            # Do not allow transitions that have zero rate
-            # in the primary process.
-            if i_prim != j_prim:
-                if tol_hdist > 0:
-                    continue
-                if not i_tols[primary_to_part[j_prim]]:
-                    continue
-                if not Q.has_edge(i_prim, j_prim):
-                    continue
-                
-                # Add the primary state transition rate.
-                weight = Q[i_prim][j_prim]['weight']
-                Q_compound.add_edge(i, j, weight=weight)
-
-    return (primary_distn, Q, primary_to_part,
-            compound_to_primary, compound_to_tolerances, compound_distn,
-            Q_compound)
+    return (ctm.primary_distn, ctm.Q_primary, ctm.primary_to_part,
+            ctm.compound_to_primary, ctm.compound_to_tolerances,
+            ctm.compound_distn, ctm.Q_compound)
 
