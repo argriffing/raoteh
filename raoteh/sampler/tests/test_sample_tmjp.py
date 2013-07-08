@@ -39,11 +39,6 @@ from raoteh.sampler._graph_transform import(
         remove_redundant_nodes,
         )
 
-from raoteh.sampler._mjp import (
-        get_history_statistics,
-        get_expected_history_statistics,
-        )
-
 from raoteh.sampler._tmjp import (
         get_tolerance_process_log_likelihood,
         get_tolerance_summary,
@@ -91,7 +86,7 @@ def _compound_ll_expectation_helper(
 
     """
     total_tree_length = T_primary_aug.size(weight='weight')
-    primary_info = get_history_statistics(T_primary_aug, root=root)
+    primary_info = _mjp.get_history_statistics(T_primary_aug, root=root)
     dwell_times, root_state, transitions = primary_info
     post_root_distn = {root_state : 1}
 
@@ -180,47 +175,14 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     primary_total_rates = _mjp.get_total_rates(Q_primary)
     tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
 
-    # Sample a non-tiny random tree without branch lengths.
-    T = _sample_tree.get_random_agglom_tree(maxnodes=5)
-    root = 0
-
-    # Add some random branch lengths onto the edges of the tree.
-    for na, nb in nx.bfs_edges(T, root):
-        scale = 2.6
-        T[na][nb]['weight'] = np.random.exponential(scale=scale)
-
-    # Sample a single unconditional history on the tree
-    # using some arbitrary process.
-    # The purpose is really to sample the states at the leaves.
-    T_forward_sample = _sampler.get_forward_sample(
-            T, Q_primary, root, primary_distn)
-
-    # Get the sampled leaf states from the forward sample.
-    leaf_to_primary_state = {}
-    for node in T_forward_sample:
-        if len(T_forward_sample[node]) == 1:
-            nb = get_first_element(T_forward_sample[node])
-            edge = T_forward_sample[node][nb]
-            primary_state = edge['state']
-            leaf_to_primary_state[node] = primary_state
-
-    # Get the state restrictions
-    # associated with the sampled leaf states.
-    node_to_allowed_compound_states = {}
-    node_to_allowed_primary_states = {}
-    for node in T:
-        if node in leaf_to_primary_state:
-            primary_state = leaf_to_primary_state[node]
-            allowed_primary = {primary_state}
-            allowed_compound = set()
-            for comp, prim in enumerate(compound_to_primary):
-                if prim == primary_state:
-                    allowed_compound.add(comp)
-        else:
-            allowed_primary = set(primary_distn)
-            allowed_compound = set(compound_distn)
-        node_to_allowed_primary_states[node] = allowed_primary
-        node_to_allowed_compound_states[node] = allowed_compound
+    # Simulate some data for testing.
+    info = get_simulated_data_for_testing(
+            Q_primary, primary_distn, compound_distn,
+            primary_to_part, compound_to_primary, compound_to_tolerances,
+            sample_disease_data=False)
+    (T, root, leaf_to_primary_state,
+            node_to_allowed_primary_states, node_to_allowed_compound_states,
+            reference_leaf, reference_disease_parts) = info
 
     # Compute the marginal likelihood of the leaf distribution
     # of the forward sample, according to the compound process.
@@ -233,7 +195,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # using some Markov jump process functions.
 
     # Get some posterior expectations.
-    expectation_info = get_expected_history_statistics(
+    expectation_info = _mjp.get_expected_history_statistics(
             T, node_to_allowed_compound_states,
             root, root_distn=compound_distn, Q_default=Q_compound)
     dwell_times, post_root_distn, transitions = expectation_info
@@ -276,12 +238,12 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
             uniformization_factor=2, nhistories=nsamples):
 
         # Get some stats of the histories.
-        info = get_history_statistics(T_aug, root=root)
+        info = _mjp.get_history_statistics(T_aug, root=root)
         dwell_times, root_state, transitions = info
 
         sampled_root_distn[root_state] += 1.0 / nsamples
 
-        # Compound process log likelihoods contributions.
+        # Compound process log likelihood contributions.
         post_root_distn = {root_state : 1}
         neg_ll_info = _mjp.differential_entropy_helper(
                 Q_compound, compound_distn,
@@ -345,68 +307,27 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
             uniformization_factor=2, nhistories=nsamples):
 
         # Compute primary process statistics.
-        # These will be used for two purposes.
+        info = _mjp.get_history_statistics(T_primary_aug, root=root)
+        dwell_times, root_state, transitions = info
+
+        # The primary process statistics will be used for two purposes.
         # One of the purposes is as the denominator of the
         # importance sampling ratio.
         # The second purpose is to compute contributions
         # to the neg log likelihood estimate.
-        info = get_history_statistics(T_primary_aug, root=root)
-        dwell_times, root_state, transitions = info
+        post_root_distn = {root_state : 1}
 
-
-        # Proposal primary process summary.
-
-        # contribution of root state to log likelihood
-        proposal_init_ll = np.log(primary_distn[root_state])
-
-        # contribution of dwell times
-        ll = 0.0
-        for state, dwell in dwell_times.items():
-            ll -= dwell * proposal_total_rates[state]
-        proposal_dwell_ll = ll
-
-        # contribution of transitions
-        ll = 0.0
-        for sa, sb in transitions.edges():
-            ntransitions = transitions[sa][sb]['weight']
-            rate = Q_proposal[sa][sb]['weight']
-            ll += special.xlogy(ntransitions, rate)
-        proposal_trans_ll = ll
-
-        # Get the proposal log likelihood
-        # by summing the log likelihood contributions.
-        proposal_ll = sum((
-            proposal_init_ll,
-            proposal_dwell_ll,
-            proposal_trans_ll))
-
+        # Proposal primary process log likelihood.
+        neg_ll_info = _mjp.differential_entropy_helper(
+                Q_proposal, primary_distn,
+                post_root_distn, dwell_times, transitions)
+        proposal_ll = -sum(neg_ll_info)
 
         # Non-proposal primary process summary.
-
-        # contribution of root state to log likelihood
-        primary_init_ll = np.log(primary_distn[root_state])
-
-        # contribution of dwell times
-        ll = 0.0
-        for state, dwell in dwell_times.items():
-            ll -= dwell * primary_total_rates[state]
-        primary_dwell_ll = ll
-
-        # contribution of transitions
-        ll = 0.0
-        for sa, sb in transitions.edges():
-            ntransitions = transitions[sa][sb]['weight']
-            rate = Q_primary[sa][sb]['weight']
-            ll += special.xlogy(ntransitions, rate)
-        primary_trans_ll = ll
-
-        # Get the primary log likelihood
-        # by summing the log likelihood contributions.
-        primary_ll = sum((
-            primary_init_ll,
-            primary_dwell_ll,
-            primary_trans_ll))
-
+        neg_ll_info = _mjp.differential_entropy_helper(
+                Q_primary, primary_distn,
+                post_root_distn, dwell_times, transitions)
+        primary_ll = -sum(neg_ll_info)
 
         # Compute the importance sampling ratio.
         # This requires computing the primary proposal likelihood,
@@ -572,7 +493,7 @@ def _tmjp_clever_sample_helper_debug(
 
         # non-dense log likelihood contribution
 
-        primary_info = get_history_statistics(T_primary_aug, root=root)
+        primary_info = _mjp.get_history_statistics(T_primary_aug, root=root)
         dwell_times, root_state, transitions = primary_info
         post_root_distn = {root_state : 1}
 
@@ -795,10 +716,9 @@ def _tmjp_dumb_sample_helper(
         root, rate_on, rate_off,
         nsamples):
     """
-    """
-    # Precompute some stuff.
-    compound_total_rates = _mjp.get_total_rates(Q_compound)
+    This sampler is dumb insofar as it uses the compound process directly.
 
+    """
     # Do some Rao-Teh conditional samples,
     # and get the negative expected log likelihood.
     #
@@ -826,26 +746,18 @@ def _tmjp_dumb_sample_helper(
             uniformization_factor=2, nhistories=nsamples):
 
         # Get some stats of the histories.
-        info = get_history_statistics(T_aug, root=root)
+        info = _mjp.get_history_statistics(T_aug, root=root)
         dwell_times, root_state, transitions = info
 
-        # log likelihood contribution of initial state
-        ll = np.log(compound_distn[root_state])
-        neg_ll_contribs_init.append(-ll)
-
-        # log likelihood contribution of dwell times
-        ll = 0.0
-        for state, dwell in dwell_times.items():
-            ll -= dwell * compound_total_rates[state]
-        neg_ll_contribs_dwell.append(-ll)
-
-        # log likelihood contribution of transitions
-        ll = 0.0
-        for sa, sb in transitions.edges():
-            ntransitions = transitions[sa][sb]['weight']
-            rate = Q_compound[sa][sb]['weight']
-            ll += special.xlogy(ntransitions, rate)
-        neg_ll_contribs_trans.append(-ll)
+        # Summarize non-Rao-Blackwellized log likelihood contributions.
+        post_root_distn = {root_state : 1}
+        neg_ll_info = _mjp.differential_entropy_helper(
+                Q_compound, compound_distn,
+                post_root_distn, dwell_times, transitions)
+        neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
+        neg_ll_contribs_init.append(neg_ll_init)
+        neg_ll_contribs_dwell.append(neg_ll_dwell)
+        neg_ll_contribs_trans.append(neg_ll_trans)
 
         # Get a tree annotated with only the primary process,
         # after having thrown away the sampled tolerance
@@ -1005,7 +917,7 @@ def test_sample_tmjp_v1():
     # using some Markov jump process functions.
 
     # Get some posterior expectations.
-    expectation_info = get_expected_history_statistics(
+    expectation_info = _mjp.get_expected_history_statistics(
             T, node_to_allowed_compound_states,
             root, root_distn=compound_distn, Q_default=Q_compound)
     dwell_times, post_root_distn, transitions = expectation_info
@@ -1124,7 +1036,7 @@ def test_sample_tmjp_v1_disease():
     # using some Markov jump process functions.
 
     # Get some posterior expectations.
-    expectation_info = get_expected_history_statistics(
+    expectation_info = _mjp.get_expected_history_statistics(
             T, node_to_allowed_compound_states,
             root, root_distn=compound_distn, Q_default=Q_compound)
     dwell_times, post_root_distn, transitions = expectation_info

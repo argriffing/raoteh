@@ -735,6 +735,10 @@ def get_primary_proposal_rate_matrix(
     The approximation becomes exact in the limit as the
     tolerance process rates go to infinity.
 
+    Note that the stationary distribution of the proposal process
+    is the same as the marginal stationary distribution of the
+    primary component of the compound process.
+
     Parameters
     ----------
     Q_primary : directed weighted networkx graph
