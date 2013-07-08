@@ -55,9 +55,7 @@ from raoteh.sampler._tmjp import (
 
 
 #TODO this should go into the _tmjp module.
-def _compound_ll_expectation_helper(
-        primary_to_part, rate_on, rate_off,
-        Q_primary, primary_distn, T_primary_aug, root):
+def _compound_ll_expectation_helper(ctm, T_primary_aug, root):
     """
     Get contributions to the expected log likelihood of the compound process.
 
@@ -66,16 +64,8 @@ def _compound_ll_expectation_helper(
 
     Parameters
     ----------
-    primary_to_part : x
-        x
-    rate_on : x
-        x
-    rate_off : x
-        x
-    Q_primary : x
-        x
-    primary_distn : x
-        x
+    ctm : CompoundToleranceModel
+        Information about the evolutionary process.
     T_primary_aug : x
         x
     root : integer
@@ -97,17 +87,17 @@ def _compound_ll_expectation_helper(
     post_root_distn = {root_state : 1}
 
     neg_ll_info = _mjp.differential_entropy_helper(
-            Q_primary, primary_distn,
+            ctm.Q_primary, ctm.primary_distn,
             post_root_distn, dwell_times, transitions)
     neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
 
     # This function call is the speed bottleneck for this function.
     tol_summary = get_tolerance_summary(
-            primary_to_part, rate_on, rate_off,
-            Q_primary, T_primary_aug, root)
+            ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
+            ctm.Q_primary, T_primary_aug, root)
 
     tol_info = _tmjp.get_tolerance_ll_contribs(
-            rate_on, rate_off, total_tree_length, *tol_summary)
+            ctm.rate_on, ctm.rate_off, total_tree_length, *tol_summary)
     init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
 
     init_ll = -neg_init_prim_ll + init_tol_ll
@@ -674,7 +664,7 @@ def _tmjp_clever_sample_helper_dense(
         # so that we can compute non-Rao-Blackwellized log likelihoods.
         all_trajectories = tol_trajectories + [T_primary_aug]
         T_merged, dummy_events = _graph_transform.add_trajectories(
-                T_primary_aug, root, all_trajectories,
+                T, root, all_trajectories,
                 edge_to_event_times=None)
 
         # Construct the compound trajectory from the merged trajectories.
@@ -796,6 +786,7 @@ def _tmjp_clever_sample_helper(
 
 
 def _tmjp_dumb_sample_helper(
+        ctm,
         T, primary_to_part, compound_to_primary,
         Q_compound, compound_distn,
         Q_primary, primary_distn,
@@ -864,9 +855,7 @@ def _tmjp_dumb_sample_helper(
         extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
         T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
 
-        ll_info = _compound_ll_expectation_helper(
-                primary_to_part, rate_on, rate_off,
-                Q_primary, primary_distn, T_primary_aug, root)
+        ll_info = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
         init_ll, dwell_ll, trans_ll = ll_info
         pm_neg_ll_contribs_init.append(-init_ll)
         pm_neg_ll_contribs_dwell.append(-dwell_ll)
@@ -994,12 +983,16 @@ def test_sample_tmjp_v1():
     rate_on = 0.5
     rate_off = 1.5
 
+    #TODO the ctm should be returned directly
     # Define some other properties of the process,
     # in a way that is not object-oriented.
     info = _tmjp.get_example_tolerance_process_info(rate_on, rate_off)
     (primary_distn, Q_primary, primary_to_part,
             compound_to_primary, compound_to_tolerances, compound_distn,
             Q_compound) = info
+    ctm = _tmjp.CompoundToleranceModel(
+            Q_primary, primary_distn, primary_to_part,
+            rate_on, rate_off)
 
     # Summarize properties of the process.
     nprimary = len(primary_distn)
@@ -1041,7 +1034,7 @@ def test_sample_tmjp_v1():
     v1_info, d_info = _tmjp_clever_sample_helper_dense(
             T, root, Q_primary, primary_to_part,
             leaf_to_primary_state, rate_on, rate_off,
-            primary_distn, nsamples)
+            primary_distn, nhistories=nsamples)
     #v1_neg_ll_contribs_init = v1_info[0]
     #v1_neg_ll_contribs_dwell = v1_info[1]
     #v1_neg_ll_contribs_trans = v1_info[2]
@@ -1052,6 +1045,7 @@ def test_sample_tmjp_v1():
     # Get neg ll contribs using the dumb sampler.
     # This calls a separate function for more isolated profiling.
     neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
+            ctm,
             T, primary_to_part, compound_to_primary,
             Q_compound, compound_distn,
             Q_primary, primary_distn,
@@ -1192,10 +1186,12 @@ def test_sample_tmjp_v1_disease():
     d_neg_ll_contribs_trans = d_info[2]
 
     #TODO condition on disease at the reference leaf
+    ctm = None
 
     # Get neg ll contribs using the dumb sampler.
     # This calls a separate function for more isolated profiling.
     neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
+            ctm,
             T, primary_to_part, compound_to_primary,
             Q_compound, compound_distn,
             Q_primary, primary_distn,
