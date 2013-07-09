@@ -781,21 +781,18 @@ def _tmjp_dumb_sample_helper(
         neg_ll_contribs_dwell.append(neg_ll_dwell)
         neg_ll_contribs_trans.append(neg_ll_trans)
 
-        # Get a tree annotated with only the primary process,
-        # after having thrown away the sampled tolerance
-        # process data.
-
-        # First copy the unbiased compound state trajectory tree.
-        # Then convert the state annotation from compound state
-        # to primary state.
-        # Then use graph transformations to detect and remove
+        # Get the primary state augmentation
+        # from the compound state augmentation.
+        # This uses graph transformations to detect and remove
         # degree-2 vertices whose adjacent states are identical.
-        T_primary_aug = T_aug.copy()
-        for na, nb in nx.bfs_edges(T_primary_aug, root):
-            edge = T_primary_aug[na][nb]
-            compound_state = edge['state']
+        # Only nodes not present in the original tree are removed.
+        T_primary_aug = nx.Graph()
+        for na, nb in nx.bfs_edges(T_aug, root):
+            compound_edge_obj = T_aug[na][nb]
+            weight = compound_edge_obj['weight']
+            compound_state = compound_edge_obj['state']
             primary_state = ctm.compound_to_primary[compound_state]
-            edge['state'] = primary_state
+            T_primary_aug.add_edge(na, nb, weight=weight, state=primary_state)
         extras = get_redundant_degree_two_nodes(T_primary_aug) - set(T)
         T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
 
@@ -1036,7 +1033,7 @@ def test_sample_tmjp_v1_disease():
     ctm = _tmjp.get_example_tolerance_process_info()
 
     # Define the number of samples.
-    nsamples = 1000
+    nsamples = 10000
 
     # Simulate some data for testing.
     info = get_simulated_data_for_testing(ctm, sample_disease_data=True)
