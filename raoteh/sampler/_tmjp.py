@@ -16,7 +16,7 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _util, _mc0, _mcy, _mjp
+from raoteh.sampler import _util, _mc0, _mcy, _mjp, _tmjp_util
 
 from raoteh.sampler._util import (
         StructuralZeroProb,
@@ -178,6 +178,109 @@ class CompoundToleranceModel(object):
                     # Add the primary state transition rate.
                     weight = self.Q_primary[i_prim][j_prim]['weight']
                     self.Q_compound.add_edge(i, j, weight=weight)
+
+
+def differential_entropy_helper(
+        ctm, post_root_distn, post_dwell_times, post_transitions):
+    """
+    More sophisticated than _mjp.differential_entropy_helper().
+
+    The primary process is assumed to be time-reversible,
+    and the prior distribution at the root is assumed to be
+    the stationary distribution of the compound process.
+
+    Parameters
+    ----------
+    ctm : instance of CompoundToleranceModel
+        Compound tolerance model.
+    post_root_distn : dict
+        Compound process posterior state distribution at the root.
+    post_dwell_times : dict
+        Compound process posterior expected dwell time for each state.
+    post_transitions : weighted directed networkx graph
+        Compound process posterior expected count of each transition type.
+
+    Returns
+    -------
+    cnll : instance of CompoundNegLL
+        Negative log likelihood of the trajectory, additively separated.
+
+    """
+    # Get the non-separated differential entropy components for comparison.
+    # The dwell time component will be used directly,
+    # without further separation.
+    info = _mjp.differential_entropy_helper(
+            ctm.Q_compound, ctm.compound_distn,
+            post_root_distn, post_dwell_times, post_transitions)
+    diff_ent_init, diff_ent_dwell, diff_ent_trans = info
+
+    # Contribution of the initial primary state.
+    diff_ent_init_prim = 0.0
+    for compound_state, post_prob in post_root_distn.items():
+        primary_state = ctm.compound_to_primary[compound_state]
+        prior_prob = ctm.primary_distn[primary_state]
+        diff_ent_init_prim -= special.xlogy(post_prob, prior_prob)
+
+    # Contribution of the initial tolerance states.
+    # This is careful about incompatibility between primary state
+    # and tolerance states; it gives an infinity negative log likelihood
+    # to the case where the tolerance class of the primary state
+    # is untolerated.
+    diff_ent_init_tol = 0.0
+    for compound_state, post_prob in post_root_distn.items():
+        primary_state = ctm.compound_to_primary[compound_state]
+        primary_part = ctm.primary_to_part[primary_state]
+        tol_states = ctm.compound_to_tolerances[compound_state]
+        if not tol_states[primary_part]:
+            diff_ent_init_tol = np.inf
+        tol_count = sum(1 for tol_state in tol_states if tol_state)
+        untol_count = sum(1 for tol_state in tol_states if not tol_state)
+        if tol_count:
+            if 1 in ctm.tolerance_distn:
+                prior_prob = ctm.tolerance_distn[1]
+                diff_ent_init_tol -= special.xlogy(
+                        post_prob * (tol_count-1), prior_prob)
+            else:
+                diff_ent_init_tol = np.inf
+        if untol_count:
+            if 0 in ctm.tolerance_distn:
+                prior_prob = ctm.tolerance_distn[0]
+                diff_ent_init_tol -= special.xlogy(
+                        post_prob * untol_count, prior_prob)
+            else:
+                diff_ent_init_tol = np.inf
+
+    # Check the initial state contribution to the differential entropy
+    if not np.allclose(
+            diff_ent_init_prim + diff_ent_init_tol,
+            diff_ent_init):
+        raise Exception('internal error')
+
+    # Transition contribution to differential entropy.
+    diff_ent_trans_prim = 0.0
+    diff_ent_trans_tol = 0.0
+    for sa in set(ctm.Q_compound) & set(post_transitions):
+        for sb in set(ctm.Q_compound[sa]) & set(post_transitions[sa]):
+            rate = ctm.Q_compound[sa][sb]['weight']
+            ntrans_expected = post_transitions[sa][sb]['weight']
+            sa_primary = ctm.compound_to_primary[sa]
+            sb_primary = ctm.compound_to_primary[sb]
+            if sa_primary != sb_primary:
+                diff_ent_trans_prim -= special.xlogy(ntrans_expected, rate)
+            else:
+                diff_ent_trans_tol -= special.xlogy(ntrans_expected, rate)
+
+    # Check the transition contribution to the differential entropy
+    if not np.allclose(
+            diff_ent_trans_prim + diff_ent_trans_tol,
+            diff_ent_trans):
+        raise Exception('internal error')
+
+    # Aggregate and return the contributions to the differential entropy.
+    cnll = _tmjp_util.CompoundNegLL(
+            diff_ent_init_prim, diff_ent_init_tol, diff_ent_dwell,
+            diff_ent_trans_prim, diff_ent_trans_tol)
+    return cnll
 
 
 def get_tolerance_rate_matrix(rate_off, rate_on):
@@ -863,13 +966,6 @@ def get_example_tolerance_process_info(
             Q, primary_distn, primary_to_part,
             tolerance_rate_on, tolerance_rate_off)
     ctm.init_compound()
-
-    #TODO delete this
-    """
-    return (ctm.primary_distn, ctm.Q_primary, ctm.primary_to_part,
-            ctm.compound_to_primary, ctm.compound_to_tolerances,
-            ctm.compound_distn, ctm.Q_compound)
-    """
 
     return ctm
 
