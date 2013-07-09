@@ -857,18 +857,9 @@ def _tmjp_dumb_sample_helper(
     return neg_ll_info, pm_neg_ll_info
 
 
-def get_simulated_data_for_testing(
-        Q_primary, primary_distn, compound_distn,
-        primary_to_part, compound_to_primary, compound_to_tolerance,
-        sample_disease_data=False,
-        ):
+def get_simulated_data_for_testing(ctm, sample_disease_data=False):
     """
     """
-    # Unpack some info.
-    nprimary = len(primary_to_part)
-    nparts = len(set(primary_to_part.values()))
-    ncompound = int(np.ldexp(nprimary, nparts))
-
     # Sample a non-tiny random tree without branch lengths.
     maxnodes = 5
     T = _sample_tree.get_random_agglom_tree(maxnodes=maxnodes)
@@ -890,7 +881,7 @@ def get_simulated_data_for_testing(
     # using some arbitrary process.
     # The purpose is really to sample the states at the leaves.
     T_forward_sample = _sampler.get_forward_sample(
-            T, Q_primary, root, primary_distn)
+            T, ctm.Q_primary, root, ctm.primary_distn)
 
     # Get the sampled leaf states from the forward sample.
     leaf_to_primary_state = {}
@@ -914,7 +905,7 @@ def get_simulated_data_for_testing(
         # Construct a tolerance state vector.
         # Require the tolerance of the observed primary state to be 1.
         # Get the sampled disease part set from the tolerance vector.
-        tols = [random.choice((0, 1)) for p in range(nparts)]
+        tols = [random.choice((0, 1)) for p in range(ctm.nparts)]
         tols[ref_part] = 1
         reference_disease_parts = set(p for p, v in enumerate(tols) if not v)
 
@@ -927,12 +918,12 @@ def get_simulated_data_for_testing(
             primary_state = leaf_to_primary_state[node]
             allowed_primary = {primary_state}
             allowed_compound = set()
-            for comp in range(ncompound):
-                prim = compound_to_primary[comp]
+            for comp in range(ctm.ncompound):
+                prim = ctm.compound_to_primary[comp]
                 # if the primary state is not the observed state then skip
                 if prim != primary_state:
                     continue
-                tols = compound_to_tolerance[comp]
+                tols = ctm.compound_to_tolerance[comp]
                 tol_set = set(p for p, v in enumerate(tols) if v)
                 # if a tolerance class marked as disease is tolerated then skip
                 if tol_set & reference_disease_parts:
@@ -942,13 +933,13 @@ def get_simulated_data_for_testing(
             primary_state = leaf_to_primary_state[node]
             allowed_primary = {primary_state}
             allowed_compound = set()
-            for comp in range(ncompound):
-                prim = compound_to_primary[comp]
+            for comp in range(ctm.ncompound):
+                prim = ctm.compound_to_primary[comp]
                 if prim == primary_state:
                     allowed_compound.add(comp)
         else:
-            allowed_primary = set(primary_distn)
-            allowed_compound = set(compound_distn)
+            allowed_primary = set(ctm.primary_distn)
+            allowed_compound = set(ctm.compound_distn)
         node_to_allowed_primary_states[node] = allowed_primary
         node_to_allowed_compound_states[node] = allowed_compound
 
@@ -982,11 +973,7 @@ def test_sample_tmjp_v1():
     sqrt_nsamp = np.sqrt(nsamples)
 
     # Simulate some data for testing.
-    info = get_simulated_data_for_testing(
-            ctm.Q_primary, ctm.primary_distn, ctm.compound_distn,
-            ctm.primary_to_part, ctm.compound_to_primary,
-            ctm.compound_to_tolerances,
-            sample_disease_data=False)
+    info = get_simulated_data_for_testing(ctm, sample_disease_data=False)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
             reference_leaf, reference_disease_parts) = info
@@ -1104,10 +1091,7 @@ def test_sample_tmjp_v1_disease():
     sqrt_nsamp = np.sqrt(nsamples)
 
     # Simulate some data for testing.
-    info = get_simulated_data_for_testing(
-            Q_primary, primary_distn, compound_distn,
-            primary_to_part, compound_to_primary, compound_to_tolerances,
-            sample_disease_data=True)
+    info = get_simulated_data_for_testing(ctm, sample_disease_data=True)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
             reference_leaf, reference_disease_parts) = info
