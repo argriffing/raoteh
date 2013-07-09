@@ -67,8 +67,8 @@ class CompoundToleranceModel(object):
         # Summaries that are slow or complicated to compute or which may use
         # too much memory are computed on demand
         # through an explicit function call.
-        self.nprimary = len(self.primary_to_part)
-        self.nparts = len(set(self.primary_to_part.values()))
+        self.nprimary = len(primary_to_part)
+        self.nparts = len(set(primary_to_part.values()))
         self.ncompound = int(np.ldexp(self.nprimary, self.nparts))
         self.tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
@@ -441,8 +441,7 @@ def get_absorption_integral(T, node_to_allowed_states,
     return absorption_expectation
 
 
-def get_tolerance_summary(
-        primary_to_part, rate_on, rate_off, Q_primary, T_primary, root):
+def get_tolerance_summary(ctm, T_primary, root, disease_data=None):
     """
     Get tolerance process expectations conditional on a primary trajectory.
 
@@ -452,18 +451,14 @@ def get_tolerance_summary(
 
     Parameters
     ----------
-    primary_to_part : dict
-        Map from the primary state to the tolerance class.
-    rate_on : float
-        x
-    rate_off : float
-        x
-    Q_primary : x
+    ctm : x
         x
     T_primary : x
         x
     root : integer
         The root node.
+    disease_data : x, optional
+        x
 
     Returns
     -------
@@ -492,8 +487,6 @@ def get_tolerance_summary(
     """
     # Summarize the tolerance process.
     total_weight = T_primary.size(weight='weight')
-    nparts = len(set(primary_to_part.values()))
-    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
     # Compute conditional expectations of statistics
     # of the tolerance process.
@@ -504,20 +497,42 @@ def get_tolerance_summary(
     expected_dwell_on = 0.0
     expected_initial_on = 0.0
     expected_nabsorptions = 0.0
-    for tolerance_class in range(nparts):
+    for tolerance_class in range(ctm.nparts):
 
         # Get the restricted inhomogeneous Markov jump process
         # associated with the tolerance class,
         # conditional on the trajectory of the primary state.
         T_tol, node_to_allowed_tolerances =  get_inhomogeneous_mjp(
-                primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
-                tolerance_class)
+                ctm.primary_to_part, ctm.rate_on, ctm.rate_off, ctm.Q_primary,
+                T_primary, root, tolerance_class)
+
+        # Check that T_primary and T_tol have the same node set
+        # and total branch length.
+        T_primary_nodes = set(T_primary)
+        T_tol_nodes = set(T_tol)
+        bad = T_primary_nodes - T_tol_nodes
+        if bad:
+            raise Exception('internal error: excess primary nodes %s' % bad)
+        bad = T_tol_nodes - T_primary_nodes
+        if bad:
+            raise Exception('internal error: excess tol nodes %s' % bad)
+        T_tol_size = T_tol.size(weight='weight')
+        if not np.allclose(T_tol_size, total_weight):
+            raise Exception('internal error: total branch length '
+                    'discrepancy: %s %s' % (T_tol_size, total_weight))
+
+        # Update the allowed tolerances using the disease data if available.
+        if disease_data is not None:
+            node_to_dis_tols = disease_data[tolerance_class]
+            for n, disease_tolerances in node_to_dis_tols.items():
+                allowed_tolerances = node_to_allowed_tolerances[n]
+                allowed_tolerances.intersection_update(disease_tolerances)
 
         # Compute conditional expectations of dwell times
         # and transitions for this tolerance class.
         expectation_info = get_expected_history_statistics(
                 T_tol, node_to_allowed_tolerances,
-                root, root_distn=tolerance_distn)
+                root, root_distn=ctm.tolerance_distn)
         dwell_times, post_root_distn, transitions = expectation_info
 
         # Get the dwell time log likelihood contribution.
@@ -542,11 +557,11 @@ def get_tolerance_summary(
         # would have been expected to occur.
         expected_nabsorptions += get_absorption_integral(
                 T_tol, node_to_allowed_tolerances,
-                root, root_distn=tolerance_distn)
+                root, root_distn=ctm.tolerance_distn)
 
     # Summarize expectations.
-    expected_initial_off = nparts - expected_initial_on
-    expected_dwell_off = total_weight * nparts - expected_dwell_on
+    expected_initial_off = ctm.nparts - expected_initial_on
+    expected_dwell_off = total_weight * ctm.nparts - expected_dwell_on
 
     # Return expectations.
     ret = (
