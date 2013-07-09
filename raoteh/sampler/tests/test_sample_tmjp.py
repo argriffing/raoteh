@@ -539,7 +539,6 @@ def _tmjp_clever_sample_helper_debug(
     return neg_ll_contribs, d_neg_ll_contribs
 
 
-#TODO disease-data conditioning in rao-blackwellization is not implemented
 def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
         disease_data=None, nhistories=None):
     """
@@ -714,7 +713,6 @@ def _tmjp_clever_sample_helper(
     return neg_ll_contribs, d_neg_ll_contribs
 
 
-#TODO disease-data conditioning in rao-blackwellization is not implemented
 def _tmjp_dumb_sample_helper(
         ctm, T, node_to_allowed_compound_states, root,
         disease_data=None, nhistories=None):
@@ -803,7 +801,7 @@ def get_simulated_data_for_testing(ctm, sample_disease_data=False):
 
     # Add some random branch lengths onto the edges of the tree.
     for na, nb in nx.bfs_edges(T, root):
-        scale = 0.6
+        scale = 2.6
         T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
     # Get the total tree length.
@@ -911,10 +909,8 @@ def test_sample_tmjp_v1():
     dwell_times, post_root_distn, transitions = expectation_info
 
     # Compute contributions to differential entropy.
-    diff_ent_info = _mjp.differential_entropy_helper(
-        ctm.Q_compound, ctm.compound_distn,
-        post_root_distn, dwell_times, transitions)
-    diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
+    diff_ent_cnll = _tmjp.differential_entropy_helper(
+            ctm, post_root_distn, dwell_times, transitions)
 
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
@@ -959,7 +955,9 @@ def test_sample_tmjp_v1():
     print('--- tmjp v1 test ---')
     print('nsamples:', nsamples)
     print()
-    print('diff ent init :', val_exact(diff_ent_init))
+    print('diff ent init :', val_exact(diff_ent_cnll.init))
+    print('    prim      :', val_exact(diff_ent_cnll.init_prim))
+    print('    tol       :', val_exact(diff_ent_cnll.init_tol))
     print('neg ll init   :', val_err(neg_ll_contribs_init))
     print('    prim      :', val_err(init_prim))
     print('    tol       :', val_err(init_tol))
@@ -973,13 +971,15 @@ def test_sample_tmjp_v1():
     print('    prim      :', val_err(d_init_prim))
     print('    tol       :', val_err(d_init_tol))
     print()
-    print('diff ent dwell:', val_exact(diff_ent_dwell))
+    print('diff ent dwell:', val_exact(diff_ent_cnll.dwell))
     print('neg ll dwell  :', val_err(neg_ll_contribs_dwell))
     print('pm neg ll dwel:', val_err(pm_neg_ll_contribs_dwell))
     print('v1 neg ll dwel:', val_err(v1_neg_ll_contribs_dwell))
     print('d neg ll dwell:', val_err(d_neg_ll_contribs_dwell))
     print()
-    print('diff ent trans:', val_exact(diff_ent_trans))
+    print('diff ent trans:', val_exact(diff_ent_cnll.trans))
+    print('    prim      :', val_exact(diff_ent_cnll.trans_prim))
+    print('    tol       :', val_exact(diff_ent_cnll.trans_tol))
     print('neg ll trans  :', val_err(neg_ll_contribs_trans))
     print('    prim      :', val_err(trans_prim))
     print('    tol       :', val_err(trans_tol))
@@ -1040,10 +1040,8 @@ def test_sample_tmjp_v1_disease():
     dwell_times, post_root_distn, transitions = expectation_info
 
     # Compute contributions to differential entropy.
-    diff_ent_info = _mjp.differential_entropy_helper(
-        ctm.Q_compound, ctm.compound_distn,
-        post_root_distn, dwell_times, transitions)
-    diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
+    diff_ent_cnll = _tmjp.differential_entropy_helper(
+            ctm, post_root_distn, dwell_times, transitions)
 
     # Construct the disease data from the reference leaf and disease parts.
     disease_data = []
@@ -1121,7 +1119,9 @@ def test_sample_tmjp_v1_disease():
     print('sampled reference leaf disease tolerance classes:')
     print(reference_disease_parts)
     print()
-    print('diff ent init :', val_exact(diff_ent_init))
+    print('diff ent init :', val_exact(diff_ent_cnll.init))
+    print('    prim      :', val_exact(diff_ent_cnll.init_prim))
+    print('    tol       :', val_exact(diff_ent_cnll.init_tol))
     print('neg ll init   :', val_err(neg_ll_contribs_init))
     print('    prim      :', val_err(init_prim))
     print('    tol       :', val_err(init_tol))
@@ -1135,13 +1135,15 @@ def test_sample_tmjp_v1_disease():
     print('    prim      :', val_err(d_init_prim))
     print('    tol       :', val_err(d_init_tol))
     print()
-    print('diff ent dwell:', val_exact(diff_ent_dwell))
+    print('diff ent dwell:', val_exact(diff_ent_cnll.dwell))
     print('neg ll dwell  :', val_err(neg_ll_contribs_dwell))
     print('pm neg ll dwel:', val_err(pm_neg_ll_contribs_dwell))
     print('v1 neg ll dwel:', val_err(v1_neg_ll_contribs_dwell))
     print('d neg ll dwell:', val_err(d_neg_ll_contribs_dwell))
     print()
-    print('diff ent trans:', val_exact(diff_ent_trans))
+    print('diff ent trans:', val_exact(diff_ent_cnll.trans))
+    print('    prim      :', val_exact(diff_ent_cnll.trans_prim))
+    print('    tol       :', val_exact(diff_ent_cnll.trans_tol))
     print('neg ll trans  :', val_err(neg_ll_contribs_trans))
     print('    prim      :', val_err(trans_prim))
     print('    tol       :', val_err(trans_tol))
