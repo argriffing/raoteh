@@ -122,20 +122,14 @@ def test_get_feasible_history():
     # Get the compound tolerance process toy model.
     ctm = _tmjp.get_example_tolerance_process_info()
 
-    # Summarize the compound process.
-    nparts = len(set(primary_to_part.values()))
-
     # Get a feasible history.
     # This includes the primary trajectory and the tolerance trajectories.
     feasible_history = _sample_tmjp.get_feasible_history(
-            T, root,
-            ctm.Q_primary, ctm.primary_distn,
-            ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
-            node_to_primary_state)
+            ctm, T, root, node_to_primary_state)
     primary_trajectory, tolerance_trajectories = feasible_history
 
     # Assert that the number of tolerance trajectories is correct.
-    assert_equal(len(tolerance_trajectories), nparts)
+    assert_equal(len(tolerance_trajectories), ctm.nparts)
 
 
 @decorators.slow
@@ -580,13 +574,9 @@ def _tmjp_clever_sample_helper_debug(
 
 def _tmjp_clever_sample_helper_dense(
         ctm, T, root, leaf_to_primary_state,
-        #T, root, Q_primary, primary_to_part,
-        #leaf_to_primary_state, rate_on, rate_off, primary_distn,
         disease_data=None, nhistories=None):
     """
     A helper function for speed profiling.
-
-    The args are the same as for _sample_tmjp.gen_histories_v1().
 
     Parameters
     ----------
@@ -641,8 +631,7 @@ def _tmjp_clever_sample_helper_dense(
 
     # sample histories and summarize them using rao-blackwellization
     for history_info in _sample_tmjp.gen_histories_v1(
-            T, root, ctm.Q_primary, ctm.primary_to_part,
-            leaf_to_primary_state, ctm.rate_on, ctm.rate_off, ctm.primary_distn,
+            ctm, T, root, leaf_to_primary_state,
             disease_data=disease_data, nhistories=nhistories):
         T_primary_aug, tol_trajectories = history_info
 
@@ -702,14 +691,15 @@ def _tmjp_clever_sample_helper_dense(
     return v1_neg_ll_contribs, d_neg_ll_contribs
 
 
+#TODO this function is bit-rotted
 def _tmjp_clever_sample_helper(
         T, root, Q_primary, primary_to_part,
         leaf_to_primary_state, rate_on, rate_off,
         primary_distn, nhistories):
     """
-    A helper function for speed profiling.
+    A helper function for speed profiling sparse vs. dense.
 
-    The args are the same as for _sample_tmjp.gen_histories_v1().
+    It checks only rao-blackwellized estimates.
 
     """
     # init dense transition matrix stuff

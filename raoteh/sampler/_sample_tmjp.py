@@ -58,11 +58,8 @@ def get_absorption_rate_map(Q_primary, primary_to_part):
     return absorption_rate_map
 
 
-#TODO use disease data
-def gen_histories_v1(T, root, Q_primary, primary_to_part,
-        node_to_primary_state, rate_on, rate_off,
-        primary_distn, disease_data=None,
-        uniformization_factor=2, nhistories=None):
+def gen_histories_v1(ctm, T, root, node_to_primary_state,
+        disease_data=None, uniformization_factor=2, nhistories=None):
     """
     Use the Rao-Teh method to sample histories on trees.
 
@@ -73,24 +70,16 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
 
     Parameters
     ----------
+    ctm : x
+        model info
     T : weighted undirected acyclic networkx graph
         Weighted tree.
     root : integer
         Root of the tree.
-    Q_primary : directed weighted networkx graph
-        A matrix of transition rates among states in the primary process.
-    primary_to_part : dict
-        A map from a primary state to its tolerance class.
     node_to_primary_state : dict
         A map from a node to a primary process state observation.
         If a node is missing from this map,
         then the observation is treated as missing.
-    rate_on : float
-        Transition rate from tolerance state off to tolerance_state on.
-    rate_off : float
-        Transition rate from tolerance state on to tolerance_state off.
-    primary_distn : dict
-        Map from root state to prior probability.
     disease_data : list, optional
         A list, indexed by tolerance class,
         of maps from a node to a set of allowed tolerance states.
@@ -104,24 +93,20 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
     # Get initial jointly feasible trajectories
     # for the components of the compound process.
     primary_trajectory, tolerance_trajectories = get_feasible_history(
-            T, root,
-            Q_primary, primary_distn,
-            primary_to_part, rate_on, rate_off,
-            node_to_primary_state, disease_data=disease_data)
+            ctm, T, root, node_to_primary_state,
+            disease_data=disease_data)
 
     # Summarize the primary process in ways that are useful for Rao-Teh.
-    primary_total_rates = _mjp.get_total_rates(Q_primary)
+    primary_total_rates = _mjp.get_total_rates(ctm.Q_primary)
     primary_max_total_rate = max(primary_total_rates.values())
     primary_omega = uniformization_factor * primary_max_total_rate
     primary_poisson_rates = dict(
             (a, primary_omega - q) for a, q in primary_total_rates.items())
     P_primary = get_uniformized_transition_matrix(
-            Q_primary, omega=primary_omega)
+            ctm.Q_primary, omega=primary_omega)
 
     # Summarize the compound process.
-    nparts = len(set(primary_to_part.values()))
-    tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
-    Q_tolerance = _tmjp.get_tolerance_rate_matrix(rate_off, rate_on)
+    Q_tolerance = _tmjp.get_tolerance_rate_matrix(ctm.rate_off, ctm.rate_on)
 
     # Summarize the tolerance process in ways that are useful for Rao-Teh.
     tolerance_total_rates = _mjp.get_total_rates(Q_tolerance)
@@ -166,8 +151,8 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
         # Resample primary states given the base tree and tolerances.
         primary_trajectory = resample_primary_states_v1(
                 T, root,
-                primary_to_part,
-                P_primary, primary_distn,
+                ctm.primary_to_part,
+                P_primary, ctm.primary_distn,
                 node_to_primary_state,
                 tolerance_trajectories, edge_to_event_times)
 
@@ -197,8 +182,8 @@ def gen_histories_v1(T, root, Q_primary, primary_to_part,
             # Resample the tolerance states.
             traj = resample_tolerance_states_v1(
                     T, root,
-                    primary_to_part,
-                    P_tolerance, tolerance_distn,
+                    ctm.primary_to_part,
+                    P_tolerance, ctm.tolerance_distn,
                     primary_trajectory, edge_to_event_times, tol,
                     disease_data=disease_data)
 
@@ -557,35 +542,19 @@ def resample_tolerance_states_v1(
     return tolerance_traj
 
 
-def get_feasible_history(
-        T, root,
-        Q_primary, primary_distn,
-        primary_to_part, rate_on, rate_off,
-        node_to_primary_state, disease_data=None):
+def get_feasible_history(ctm, T, root, node_to_primary_state,
+        disease_data=None):
     """
     Find an arbitrary feasible history.
 
-    The first group of args defines the underlying rooted phylogenetic tree.
-    The second group relates purely to the primary process.
-    The third group relates to the rest of the compound tolerance process.
-    The final group consists of observation data.
-
     Parameters
     ----------
+    ctm : x
+        x
     T : weighted undirected acyclic networkx graph
         This is the original tree.
     root : integer, optional
         Root of the tree.
-    Q_primary : weighted directed networkx graph
-        Primary process rate matrix.
-    primary_distn : dict
-        Primary process state distribution.
-    primary_to_part : dict
-        Map from primary state to tolerance class.
-    rate_on : float
-        Transition rate from tolerance off -> on.
-    rate_off : float
-        Transition rate from tolerance on -> off.
     node_to_primary_state : dict
         A sparse map from a node to a known primary state.
     disease_data : list, optional
@@ -609,19 +578,15 @@ def get_feasible_history(
     The primary process is assumed to be time-reversible.
 
     """
-    # Get the number of tolerance classes.
-    nparts = len(set(primary_to_part.values()))
-
     # Get the tolerance state distribution, rate matrix,
     # and uniformized tolerance transition probability matrix.
-    tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
-    Q_tolerance = _tmjp.get_tolerance_rate_matrix(rate_off, rate_on)
+    Q_tolerance = _tmjp.get_tolerance_rate_matrix(ctm.rate_off, ctm.rate_on)
     P_tolerance = get_uniformized_transition_matrix(Q_tolerance)
 
     # Get a primary process proposal rate matrix
     # that approximates the primary component of the compound process.
     Q_proposal = _tmjp.get_primary_proposal_rate_matrix(
-            Q_primary, primary_to_part, tolerance_distn)
+            ctm.Q_primary, ctm.primary_to_part, ctm.tolerance_distn)
 
     # Get the uniformized transition probability matrix
     # corresponding to the primary proposal transition rate matrix.
@@ -630,7 +595,7 @@ def get_feasible_history(
     # Sample the primary process trajectory using this proposal.
     primary_trajectory = _sampler.get_feasible_history(
             T, P_proposal, node_to_primary_state,
-            root=root, root_distn=primary_distn)
+            root=root, root_distn=ctm.primary_distn)
 
     # Remove redundant nodes in the primary process trajectory
     # so that it can be more efficiently used as a background
@@ -648,7 +613,7 @@ def get_feasible_history(
 
     # Initialize the list of tolerance process trajectories.
     tolerance_trajectories = []
-    for tolerance_class in range(nparts):
+    for tolerance_class in range(ctm.nparts):
 
         # Define tolerance process uniformization event times,
         # so that an assignment of tolerance states will be possible.
@@ -684,8 +649,8 @@ def get_feasible_history(
         # by sampling the tolerance states given the uniformized timings.
         tolerance_traj = resample_tolerance_states_v1(
                 T, root,
-                primary_to_part,
-                P_tolerance, tolerance_distn,
+                ctm.primary_to_part,
+                P_tolerance, ctm.tolerance_distn,
                 primary_trajectory, edge_to_event_times, tolerance_class,
                 disease_data=disease_data)
 
