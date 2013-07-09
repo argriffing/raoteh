@@ -924,7 +924,6 @@ def test_sample_tmjp_v1():
 
     # Define the number of samples per repeat.
     nsamples = 1000
-    sqrt_nsamp = np.sqrt(nsamples)
 
     # Simulate some data for testing.
     info = get_simulated_data_for_testing(ctm, sample_disease_data=False)
@@ -1038,7 +1037,6 @@ def test_sample_tmjp_v1_disease():
 
     # Define the number of samples.
     nsamples = 1000
-    sqrt_nsamp = np.sqrt(nsamples)
 
     # Simulate some data for testing.
     info = get_simulated_data_for_testing(ctm, sample_disease_data=True)
@@ -1095,6 +1093,10 @@ def test_sample_tmjp_v1_disease():
     d_neg_ll_contribs_init = [x.init for x in d_cnlls]
     d_neg_ll_contribs_dwell = [x.dwell for x in d_cnlls]
     d_neg_ll_contribs_trans = [x.trans for x in d_cnlls]
+    d_init_prim = [x.init_prim for x in d_cnlls]
+    d_init_tol = [x.init_tol for x in d_cnlls]
+    d_trans_prim = [x.trans_prim for x in d_cnlls]
+    d_trans_tol = [x.trans_tol for x in d_cnlls]
 
     # Get neg ll contribs using the dumb sampler.
     # This calls a separate function for more isolated profiling.
@@ -1107,6 +1109,10 @@ def test_sample_tmjp_v1_disease():
     pm_neg_ll_contribs_init = [x.init for x in pm_cnlls]
     pm_neg_ll_contribs_dwell = [x.dwell for x in pm_cnlls]
     pm_neg_ll_contribs_trans = [x.trans for x in pm_cnlls]
+    pm_init_prim = [x.init_prim for x in pm_cnlls]
+    pm_init_tol = [x.init_tol for x in pm_cnlls]
+    pm_trans_prim = [x.trans_prim for x in pm_cnlls]
+    pm_trans_tol = [x.trans_tol for x in pm_cnlls]
 
     print()
     print('--- tmjp v1 test with simulated disease data ---')
@@ -1121,35 +1127,31 @@ def test_sample_tmjp_v1_disease():
     print('sampled reference leaf disease tolerance classes:')
     print(reference_disease_parts)
     print()
-    print('diff ent init :', diff_ent_init)
-    print('neg ll init   :', np.mean(neg_ll_contribs_init))
-    print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
-    print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
-    print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
-    print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
-    print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
-    print('d neg ll init :', np.mean(d_neg_ll_contribs_init))
-    print('error         :', np.std(d_neg_ll_contribs_init) / sqrt_nsamp)
+    print('diff ent init :', val_exact(diff_ent_init))
+    print('neg ll init   :', val_err(neg_ll_contribs_init))
+    print('pm neg ll init:', val_err(pm_neg_ll_contribs_init))
+    print('    prim      :', val_err(pm_init_prim))
+    print('    tol       :', val_err(pm_init_tol))
+    print('v1 neg ll init:', val_err(v1_neg_ll_contribs_init))
+    print('d neg ll init :', val_err(d_neg_ll_contribs_init))
+    print('    prim      :', val_err(d_init_prim))
+    print('    tol       :', val_err(d_init_tol))
     print()
-    print('diff ent dwell:', diff_ent_dwell)
-    print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
-    print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
-    print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
-    print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('d neg ll dwell:', np.mean(d_neg_ll_contribs_dwell))
-    print('error         :', np.std(d_neg_ll_contribs_dwell) / sqrt_nsamp)
+    print('diff ent dwell:', val_exact(diff_ent_dwell))
+    print('neg ll dwell  :', val_err(neg_ll_contribs_dwell))
+    print('pm neg ll dwel:', val_err(pm_neg_ll_contribs_dwell))
+    print('v1 neg ll dwel:', val_err(v1_neg_ll_contribs_dwell))
+    print('d neg ll dwell:', val_err(d_neg_ll_contribs_dwell))
     print()
-    print('diff ent trans:', diff_ent_trans)
-    print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
-    print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
-    print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
-    print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
-    print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
-    print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
-    print('d neg ll trans:', np.mean(d_neg_ll_contribs_trans))
-    print('error         :', np.std(d_neg_ll_contribs_trans) / sqrt_nsamp)
+    print('diff ent trans:', val_exact(diff_ent_trans))
+    print('neg ll trans  :', val_err(neg_ll_contribs_trans))
+    print('pm neg ll tran:', val_err(pm_neg_ll_contribs_trans))
+    print('    prim      :', val_err(pm_trans_prim))
+    print('    tol       :', val_err(pm_trans_tol))
+    print('v1 neg ll tran:', val_err(v1_neg_ll_contribs_trans))
+    print('d neg ll trans:', val_err(d_neg_ll_contribs_trans))
+    print('    prim      :', val_err(d_trans_prim))
+    print('    tol       :', val_err(d_trans_tol))
 
 
 
