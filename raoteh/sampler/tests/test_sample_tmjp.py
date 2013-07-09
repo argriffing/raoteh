@@ -140,29 +140,12 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # The second way is by Rao-Teh sampling.
     # Importance sampling and Metropolis-Hastings sampling are also used.
 
-    # Define the tolerance process rates.
-    rate_on = 0.5
-    rate_off = 1.5
-
     # Define some other properties of the process,
     # in a way that is not object-oriented.
-    info = _tmjp.get_example_tolerance_process_info(rate_on, rate_off)
-    (primary_distn, Q_primary, primary_to_part,
-            compound_to_primary, compound_to_tolerances, compound_distn,
-            Q_compound) = info
-
-    # Summarize properties of the process.
-    nprimary = len(primary_distn)
-    nparts = len(set(primary_to_part.values()))
-    compound_total_rates = _mjp.get_total_rates(Q_compound)
-    primary_total_rates = _mjp.get_total_rates(Q_primary)
-    tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
+    ctm = _tmjp.get_example_tolerance_process_info()
 
     # Simulate some data for testing.
-    info = get_simulated_data_for_testing(
-            Q_primary, primary_distn, compound_distn,
-            primary_to_part, compound_to_primary, compound_to_tolerances,
-            sample_disease_data=False)
+    info = get_simulated_data_for_testing(ctm, sample_disease_data=False)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
             reference_leaf, reference_disease_parts) = info
@@ -171,21 +154,21 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # of the forward sample, according to the compound process.
     target_marginal_likelihood = _mjp.get_likelihood(
             T, node_to_allowed_compound_states,
-            root, root_distn=compound_distn,
-            Q_default=Q_compound)
+            root, root_distn=ctm.compound_distn,
+            Q_default=ctm.Q_compound)
 
     # Compute the conditional expected log likelihood explicitly
     # using some Markov jump process functions.
 
     # Get some posterior expectations.
     expectation_info = _mjp.get_expected_history_statistics(
-            T, node_to_allowed_compound_states,
-            root, root_distn=compound_distn, Q_default=Q_compound)
+            T, node_to_allowed_compound_states, root, 
+            root_distn=ctm.compound_distn, Q_default=ctm.Q_compound)
     dwell_times, post_root_distn, transitions = expectation_info
 
     # Compute contributions to differential entropy.
     diff_ent_info = _mjp.differential_entropy_helper(
-        Q_compound, compound_distn,
+        ctm.Q_compound, ctm.compound_distn,
         post_root_distn, dwell_times, transitions)
     diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
 
@@ -216,8 +199,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     pm_neg_ll_contribs_trans = []
     #
     for T_aug in _sampler.gen_restricted_histories(
-            T, Q_compound, node_to_allowed_compound_states,
-            root=root, root_distn=compound_distn,
+            T, ctm.Q_compound, node_to_allowed_compound_states,
+            root=root, root_distn=ctm.compound_distn,
             uniformization_factor=2, nhistories=nsamples):
 
         # Get some stats of the histories.
@@ -229,7 +212,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         # Compound process log likelihood contributions.
         post_root_distn = {root_state : 1}
         neg_ll_info = _mjp.differential_entropy_helper(
-                Q_compound, compound_distn,
+                ctm.Q_compound, ctm.compound_distn,
                 post_root_distn, dwell_times, transitions)
         neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
         neg_ll_contribs_init.append(neg_ll_init)
@@ -249,14 +232,12 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         for na, nb in nx.bfs_edges(T_primary_aug, root):
             edge = T_primary_aug[na][nb]
             compound_state = edge['state']
-            primary_state = compound_to_primary[compound_state]
+            primary_state = ctm.compound_to_primary[compound_state]
             edge['state'] = primary_state
         extras = get_redundant_degree_two_nodes(T_primary_aug) - {root}
         T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
 
-        ll_info = _compound_ll_expectation_helper(
-                primary_to_part, rate_on, rate_off,
-                Q_primary, primary_distn, T_primary_aug, root)
+        ll_info = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
         ll_init, ll_dwell, ll_trans = ll_info
         pm_neg_ll_contribs_init.append(-ll_init)
         pm_neg_ll_contribs_dwell.append(-ll_dwell)
@@ -264,7 +245,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
 
     # Define a rate matrix for a primary process proposal distribution.
     Q_proposal = get_primary_proposal_rate_matrix(
-            Q_primary, primary_to_part, tolerance_distn)
+            ctm.Q_primary, ctm.primary_to_part, ctm.tolerance_distn)
 
     # Summarize the primary proposal rates.
     proposal_total_rates = _mjp.get_total_rates(Q_proposal)
@@ -273,7 +254,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # to the proposal distribution.
     proposal_marginal_likelihood = _mjp.get_likelihood(
             T, node_to_allowed_primary_states,
-            root, root_distn=primary_distn,
+            root, root_distn=ctm.primary_distn,
             Q_default=Q_proposal)
 
     # Get Rao-Teh samples of primary process trajectories
@@ -286,7 +267,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     importance_weights = []
     for T_primary_aug in _sampler.gen_histories(
             T, Q_proposal, leaf_to_primary_state,
-            root=root, root_distn=primary_distn,
+            root=root, root_distn=ctm.primary_distn,
             uniformization_factor=2, nhistories=nsamples):
 
         # Compute primary process statistics.
@@ -302,15 +283,9 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
 
         # Proposal primary process log likelihood.
         neg_ll_info = _mjp.differential_entropy_helper(
-                Q_proposal, primary_distn,
+                Q_proposal, ctm.primary_distn,
                 post_root_distn, dwell_times, transitions)
         proposal_ll = -sum(neg_ll_info)
-
-        # Non-proposal primary process summary.
-        neg_ll_info = _mjp.differential_entropy_helper(
-                Q_primary, primary_distn,
-                post_root_distn, dwell_times, transitions)
-        primary_ll = -sum(neg_ll_info)
 
         # Compute the importance sampling ratio.
         # This requires computing the primary proposal likelihood,
@@ -323,16 +298,13 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         # If we begin to include disease data into the analysis,
         # the tolerance histories will become more constrained.
         tolerance_ll = get_tolerance_process_log_likelihood(
-                Q_primary, primary_to_part, T_primary_aug,
-                rate_off, rate_on, primary_distn, root)
+                ctm, T_primary_aug, root)
         importance_weight = np.exp(tolerance_ll - proposal_ll)
 
         # Append the importance weight to the list.
         importance_weights.append(importance_weight)
 
-        ll_info = _compound_ll_expectation_helper(
-                primary_to_part, rate_on, rate_off,
-                Q_primary, primary_distn, T_primary_aug, root)
+        ll_info = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
         ll_init, ll_dwell, ll_trans = ll_info
         imp_neg_ll_contribs_init.append(-ll_init)
         imp_neg_ll_contribs_dwell.append(-ll_dwell)
@@ -358,16 +330,14 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     nrejected = 0
 
     # Define the callback.
-    def target_log_likelihood_callback(T_aug):
-        return get_tolerance_process_log_likelihood(
-                Q_primary, primary_to_part, T_aug,
-                rate_off, rate_on, primary_distn, root)
+    def target_log_likelihood_callback(T_aug_in):
+        return get_tolerance_process_log_likelihood(ctm, T_aug_in, root)
 
     # Sample the histories.
     for T_primary_aug, accept_flag in _sampler.gen_mh_histories(
             T, Q_proposal, node_to_allowed_primary_states,
             target_log_likelihood_callback,
-            root, root_distn=primary_distn,
+            root, root_distn=ctm.primary_distn,
             uniformization_factor=2, nhistories=nsamples):
 
         if accept_flag:
@@ -375,9 +345,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         else:
             nrejected += 1
 
-        ll_info = _compound_ll_expectation_helper(
-                primary_to_part, rate_on, rate_off,
-                Q_primary, primary_distn, T_primary_aug, root)
+        ll_info = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
         ll_init, ll_dwell, ll_trans = ll_info
         met_neg_ll_contribs_init.append(-ll_init)
         met_neg_ll_contribs_dwell.append(-ll_dwell)

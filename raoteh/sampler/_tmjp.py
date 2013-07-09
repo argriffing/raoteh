@@ -234,9 +234,7 @@ def get_tolerance_distn(rate_off, rate_on):
     return tolerance_distn
 
 
-def get_tolerance_process_log_likelihood(
-        Q_primary, primary_to_part, T_primary,
-        rate_off, rate_on, primary_root_distn, root):
+def get_tolerance_process_log_likelihood(ctm, T_primary, root):
     """
 
     The direct contribution of the primary process is through its
@@ -245,19 +243,11 @@ def get_tolerance_process_log_likelihood(
 
     Parameters
     ----------
-    Q_primary : networkx graph
-        Primary process state transition rate matrix.
-    primary_to_part : dict
-        Maps the primary state to the tolerance class.
+    ctm : instance of CompoundToleranceModel
+        Compound tolerance model.
     T_primary : networkx tree
         Primary process history,
         with edges annotated with primary state and with weights.
-    rate_off : float
-        Transition rate from tolerance state 1 to tolerance state 0.
-    rate_on : float
-        Transition rate from tolerance state 0 to tolerance state 1.
-    primary_root_distn : dict
-        A prior distribution over the primary process root states.
     root : integer
         A node that does not represent a primary state transition.
 
@@ -281,8 +271,7 @@ def get_tolerance_process_log_likelihood(
     if root not in T_primary:
         raise ValueError('the specified root is not a node in the tree')
 
-    # Define the distribution over tolerance states.
-    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+    primary_root_distn = ctm.primary_distn
 
     # Get the root state and the transitions of the primary process.
     info = get_history_root_state_and_transitions(T_primary, root=root)
@@ -293,15 +282,15 @@ def get_tolerance_process_log_likelihood(
 
     # Add the log likelihood contribution of the primary thread.
     log_likelihood += np.log(primary_root_distn[primary_root_state])
-    for sa in set(primary_transitions) & set(Q_primary):
-        for sb in set(primary_transitions[sa]) & set(Q_primary[sa]):
+    for sa in set(primary_transitions) & set(ctm.Q_primary):
+        for sb in set(primary_transitions[sa]) & set(ctm.Q_primary[sa]):
             ntransitions = primary_transitions[sa][sb]['weight']
-            rate = Q_primary[sa][sb]['weight']
+            rate = ctm.Q_primary[sa][sb]['weight']
             log_likelihood += scipy.special.xlogy(ntransitions, rate)
 
     # Add the log likelihood contribution of the process
     # associated with each tolerance class.
-    tolerance_classes = set(primary_to_part.values())
+    tolerance_classes = set(ctm.primary_to_part.values())
     for tolerance_class in tolerance_classes:
 
         # If the tolerance class of the primary state of the root
@@ -310,15 +299,15 @@ def get_tolerance_process_log_likelihood(
         # prior distribution.
         # Otherwise, the root tolerance state prior distribution is
         # given by the equilibrium tolerance state distribution.
-        if primary_to_part[primary_root_state] == tolerance_class:
+        if ctm.primary_to_part[primary_root_state] == tolerance_class:
             root_tolerance_prior = {1 : 1}
         else:
-            root_tolerance_prior = tolerance_distn
+            root_tolerance_prior = ctm.tolerance_distn
 
         # Construct the piecewise homogeneous Markov jump process.
         T_tol, node_to_allowed_tolerances = get_inhomogeneous_mjp(
-                primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
-                tolerance_class)
+                ctm.primary_to_part, ctm.rate_on, ctm.rate_off, ctm.Q_primary,
+                T_primary, root, tolerance_class)
 
         # Get the likelihood from the augmented tree and the root distribution.
         likelihood = _mjp.get_likelihood(

@@ -70,8 +70,8 @@ def gen_histories_v1(ctm, T, root, node_to_primary_state,
 
     Parameters
     ----------
-    ctm : x
-        model info
+    ctm : instance of CompoundToleranceModel
+        Model defining the compound Markov process.
     T : weighted undirected acyclic networkx graph
         Weighted tree.
     root : integer
@@ -549,8 +549,8 @@ def get_feasible_history(ctm, T, root, node_to_primary_state,
 
     Parameters
     ----------
-    ctm : x
-        x
+    ctm : instance of CompoundToleranceModel
+        Model defining the compound Markov process.
     T : weighted undirected acyclic networkx graph
         This is the original tree.
     root : integer, optional
