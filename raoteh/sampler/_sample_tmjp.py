@@ -38,26 +38,6 @@ __all__ = []
 
 
 
-#TODO is this even used
-def get_absorption_rate_map(Q_primary, primary_to_part):
-    """
-    Summarize the primary process.
-
-    For each primary process state and each tolerance class,
-    compute the sum of rates from the primary state
-    into primary states of that tolerance class.
-    """
-    absorption_rate_map = {}
-    for prim_sa, tol_prim_sa in primary_to_part.items():
-        absorption_rates = defaultdict(float)
-        for prim_sb in Q_primary[prim_sa]:
-            tol_prim_sb = primary_to_part[prim_sb]
-            rate = Q_primary[prim_sa][prim_sb]['weight']
-            absorption_rates[tol_prim_sb] += rate
-        absorption_rate_map[prim_sa] = dict(absorption_rates)
-    return absorption_rate_map
-
-
 def gen_histories_v1(ctm, T, root, node_to_primary_state,
         disease_data=None, uniformization_factor=2, nhistories=None):
     """
@@ -193,41 +173,6 @@ def gen_histories_v1(ctm, T, root, node_to_primary_state,
         # Update the list of tolerance trajectories.
         # Note that these have redundant nodes which should be removed.
         tolerance_trajectories = new_tolerance_trajectories
-
-
-#TODO this function is wrong,
-#TODO because the poisson samples for uniformization
-#TODO depend on the rate out of the current state.
-def sample_edge_to_event_times(T, root, event_rate):
-    """
-
-    Parameters
-    ----------
-    T : weighted undirected acyclic networkx graph
-        This is the original tree.
-    root : integer
-        Root of the tree.
-    event_rate : float
-        The poisson rate of new events on edges.
-
-    Returns
-    -------
-    edge_to_event_times : dict
-        Sparse map from edge to collection of event times.
-        The edge is an ordered pair of nodes in T,
-        where the ordering is away from the root.
-
-    """
-    edge_to_event_times = {}
-    for edge in nx.bfs_edges(T, root):
-        na, nb = edge
-        weight = T[na][nb]['weight']
-        ntimes_expectation = event_rate * weight
-        ntimes = np.random.sample(ntimes_expectation)
-        if ntimes:
-            event_times = set(np.random.uniform(weight, size=ntimes))
-            edge_to_event_times[edge] = event_times
-    return edge_to_event_times
 
 
 def resample_primary_states_v1(
@@ -410,7 +355,6 @@ def resample_primary_states_v1(
     return sampled_traj
 
 
-#TODO use disease data
 def resample_tolerance_states_v1(
         T, root,
         primary_to_part,
