@@ -20,7 +20,13 @@ from scipy import special
 
 import pyfelscore
 
-from raoteh.sampler import _density, _mc0_dense, _mcy_dense, _mjp_dense
+from raoteh.sampler import (
+        _density,
+        _mc0_dense,
+        _mcy_dense,
+        _mjp_dense,
+        _tmjp_util,
+        )
 
 from raoteh.sampler._util import (
         StructuralZeroProb,
@@ -348,11 +354,7 @@ def ll_expectation_helper(
 
     Returns
     -------
-    init_ll : float
-        x
-    dwell_ll : float
-        x
-    trans_ll : float
+    cnll : instance of ComopundNegLL
         x
 
     """
@@ -382,11 +384,15 @@ def ll_expectation_helper(
             rate_on, rate_off, total_tree_length, *tol_summary)
     init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
 
+    #TODO these three lines are unused
     init_ll = -neg_init_prim_ll + init_tol_ll
     dwell_ll = dwell_tol_ll
     trans_ll = -neg_trans_prim_ll + trans_tol_ll
 
-    return init_ll, dwell_ll, trans_ll
+    cnll = _tmjp_util.CompoundNegLL(
+            neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,
+            neg_trans_prim_ll, -trans_tol_ll)
+    return cnll
 
 
 #TODO disease_data argument is untested

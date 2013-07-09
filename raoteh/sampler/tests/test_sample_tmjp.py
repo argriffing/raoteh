@@ -26,6 +26,7 @@ from raoteh.sampler import (
         _mjp_dense,
         _tmjp,
         _tmjp_dense,
+        _tmjp_util,
         _sampler,
         _sample_tmjp,
         _sample_tree,
@@ -76,11 +77,7 @@ def _compound_ll_expectation_helper(ctm, T_primary_aug, root,
 
     Returns
     -------
-    init_ll : float
-        x
-    dwell_ll : float
-        x
-    trans_ll : float
+    cnll : CompoundNegLL
         x
 
     """
@@ -102,11 +99,10 @@ def _compound_ll_expectation_helper(ctm, T_primary_aug, root,
             ctm.rate_on, ctm.rate_off, total_tree_length, *tol_summary)
     init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
 
-    init_ll = -neg_init_prim_ll + init_tol_ll
-    dwell_ll = dwell_tol_ll
-    trans_ll = -neg_trans_prim_ll + trans_tol_ll
-
-    return init_ll, dwell_ll, trans_ll
+    cnll = _tmjp_util.CompoundNegLL(
+            neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,
+            neg_trans_prim_ll, -trans_tol_ll)
+    return cnll
 
 
 def test_get_feasible_history():
@@ -588,9 +584,8 @@ def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
     v1_neg_ll_contribs_init = []
     v1_neg_ll_contribs_dwell = []
     v1_neg_ll_contribs_trans = []
-    d_neg_ll_contribs_init = []
-    d_neg_ll_contribs_dwell = []
-    d_neg_ll_contribs_trans = []
+
+    d_cnlls = []
 
     # sample histories and summarize them using rao-blackwellization
     for history_info in _sample_tmjp.gen_histories_v1(
@@ -647,27 +642,19 @@ def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
         v1_neg_ll_contribs_trans.append(v1_neg_ll_trans)
 
         # Use the dense transition matrix Rao-Blackwellization.
-        ll_info = _tmjp_dense.ll_expectation_helper(
+        d_cnll = _tmjp_dense.ll_expectation_helper(
                 ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
                 Q_primary_dense, primary_distn_dense,
                 T_primary_aug, root,
                 disease_data=disease_data)
-        ll_init, ll_dwell, ll_trans = ll_info
-        d_neg_ll_contribs_init.append(-ll_init)
-        d_neg_ll_contribs_dwell.append(-ll_dwell)
-        d_neg_ll_contribs_trans.append(-ll_trans)
+        d_cnlls.append(d_cnll)
 
     v1_neg_ll_contribs = (
             v1_neg_ll_contribs_init,
             v1_neg_ll_contribs_dwell,
             v1_neg_ll_contribs_trans)
 
-    d_neg_ll_contribs = (
-            d_neg_ll_contribs_init,
-            d_neg_ll_contribs_dwell,
-            d_neg_ll_contribs_trans)
-    
-    return v1_neg_ll_contribs, d_neg_ll_contribs
+    return v1_neg_ll_contribs, d_cnlls
 
 
 #TODO this function is bit-rotted
@@ -765,9 +752,7 @@ def _tmjp_dumb_sample_helper(
     # by integrating over the possible tolerance trajectories.
     # This allows us to test this integration without worrying that
     # the primary process history samples are biased.
-    pm_neg_ll_contribs_init = []
-    pm_neg_ll_contribs_dwell = []
-    pm_neg_ll_contribs_trans = []
+    pm_cnlls = []
     #
     for T_aug in _sampler.gen_restricted_histories(
             T, ctm.Q_compound, node_to_allowed_compound_states,
@@ -822,24 +807,16 @@ def _tmjp_dumb_sample_helper(
             print(list(nx.bfs_edges(T_primary_aug, root)))
             raise Exception('internal error: T_primary_aug missing %s' % bad)
 
-        ll_info = _compound_ll_expectation_helper(
+        pm_cnll = _compound_ll_expectation_helper(
                 ctm, T_primary_aug, root, disease_data=disease_data)
-        init_ll, dwell_ll, trans_ll = ll_info
-        pm_neg_ll_contribs_init.append(-init_ll)
-        pm_neg_ll_contribs_dwell.append(-dwell_ll)
-        pm_neg_ll_contribs_trans.append(-trans_ll)
+        pm_cnlls.append(pm_cnll)
 
     neg_ll_info = (
             neg_ll_contribs_init,
             neg_ll_contribs_dwell,
             neg_ll_contribs_trans)
 
-    pm_neg_ll_info = (
-            pm_neg_ll_contribs_init,
-            pm_neg_ll_contribs_dwell,
-            pm_neg_ll_contribs_trans)
-
-    return neg_ll_info, pm_neg_ll_info
+    return neg_ll_info, pm_cnlls
 
 
 def get_simulated_data_for_testing(ctm, sample_disease_data=False):
@@ -972,60 +949,79 @@ def test_sample_tmjp_v1():
 
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
-    v1_info, d_info = _tmjp_clever_sample_helper_dense(
+    v1_info, d_cnlls = _tmjp_clever_sample_helper_dense(
             ctm, T, root, leaf_to_primary_state, nhistories=nsamples)
     v1_neg_ll_contribs_init = v1_info[0]
     v1_neg_ll_contribs_dwell = v1_info[1]
     v1_neg_ll_contribs_trans = v1_info[2]
-    d_neg_ll_contribs_init = d_info[0]
-    d_neg_ll_contribs_dwell = d_info[1]
-    d_neg_ll_contribs_trans = d_info[2]
+    d_neg_ll_contribs_init = [x.init for x in d_cnlls]
+    d_neg_ll_contribs_dwell = [x.dwell for x in d_cnlls]
+    d_neg_ll_contribs_trans = [x.trans for x in d_cnlls]
+    d_init_prim = [x.init_prim for x in d_cnlls]
+    d_init_tol = [x.init_tol for x in d_cnlls]
+    d_trans_prim = [x.trans_prim for x in d_cnlls]
+    d_trans_tol = [x.trans_tol for x in d_cnlls]
 
     # Get neg ll contribs using the dumb sampler.
     # This calls a separate function for more isolated profiling.
-    neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
+    neg_ll_info, pm_cnlls = _tmjp_dumb_sample_helper(
             ctm, T, node_to_allowed_compound_states, root,
-            nhistories=nsamples)
+            disease_data=None, nhistories=nsamples)
     neg_ll_contribs_init = neg_ll_info[0]
     neg_ll_contribs_dwell = neg_ll_info[1]
     neg_ll_contribs_trans = neg_ll_info[2]
-    pm_neg_ll_contribs_init = pm_neg_ll_info[0]
-    pm_neg_ll_contribs_dwell = pm_neg_ll_info[1]
-    pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
+    pm_neg_ll_contribs_init = [x.init for x in pm_cnlls]
+    pm_neg_ll_contribs_dwell = [x.dwell for x in pm_cnlls]
+    pm_neg_ll_contribs_trans = [x.trans for x in pm_cnlls]
+    pm_init_prim = [x.init_prim for x in pm_cnlls]
+    pm_init_tol = [x.init_tol for x in pm_cnlls]
+    pm_trans_prim = [x.trans_prim for x in pm_cnlls]
+    pm_trans_tol = [x.trans_tol for x in pm_cnlls]
 
     print()
     print('--- tmjp v1 test ---')
     print('nsamples:', nsamples)
     print()
-    print('diff ent init :', diff_ent_init)
-    print('neg ll init   :', np.mean(neg_ll_contribs_init))
-    print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
-    print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
-    print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
-    print('v1 neg ll init:', np.mean(v1_neg_ll_contribs_init))
-    print('error         :', np.std(v1_neg_ll_contribs_init) / sqrt_nsamp)
-    print('d neg ll init :', np.mean(d_neg_ll_contribs_init))
-    print('error         :', np.std(d_neg_ll_contribs_init) / sqrt_nsamp)
+    print('diff ent init :', val_exact(diff_ent_init))
+    print('neg ll init   :', val_err(neg_ll_contribs_init))
+    print('pm neg ll init:', val_err(pm_neg_ll_contribs_init))
+    print('    prim      :', val_err(pm_init_prim))
+    print('    tol       :', val_err(pm_init_tol))
+    print('v1 neg ll init:', val_err(v1_neg_ll_contribs_init))
+    print('d neg ll init :', val_err(d_neg_ll_contribs_init))
+    print('    prim      :', val_err(d_init_prim))
+    print('    tol       :', val_err(d_init_tol))
     print()
-    print('diff ent dwell:', diff_ent_dwell)
-    print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
-    print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
-    print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('v1 neg ll dwel:', np.mean(v1_neg_ll_contribs_dwell))
-    print('error         :', np.std(v1_neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('d neg ll dwell:', np.mean(d_neg_ll_contribs_dwell))
-    print('error         :', np.std(d_neg_ll_contribs_dwell) / sqrt_nsamp)
+    print('diff ent dwell:', val_exact(diff_ent_dwell))
+    print('neg ll dwell  :', val_err(neg_ll_contribs_dwell))
+    print('pm neg ll dwel:', val_err(pm_neg_ll_contribs_dwell))
+    print('v1 neg ll dwel:', val_err(v1_neg_ll_contribs_dwell))
+    print('d neg ll dwell:', val_err(d_neg_ll_contribs_dwell))
     print()
-    print('diff ent trans:', diff_ent_trans)
-    print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
-    print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
-    print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
-    print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
-    print('v1 neg ll tran:', np.mean(v1_neg_ll_contribs_trans))
-    print('error         :', np.std(v1_neg_ll_contribs_trans) / sqrt_nsamp)
-    print('d neg ll trans:', np.mean(d_neg_ll_contribs_trans))
-    print('error         :', np.std(d_neg_ll_contribs_trans) / sqrt_nsamp)
+    print('diff ent trans:', val_exact(diff_ent_trans))
+    print('neg ll trans  :', val_err(neg_ll_contribs_trans))
+    print('pm neg ll tran:', val_err(pm_neg_ll_contribs_trans))
+    print('    prim      :', val_err(pm_trans_prim))
+    print('    tol       :', val_err(pm_trans_tol))
+    print('v1 neg ll tran:', val_err(v1_neg_ll_contribs_trans))
+    print('d neg ll trans:', val_err(d_neg_ll_contribs_trans))
+    print('    prim      :', val_err(d_trans_prim))
+    print('    tol       :', val_err(d_trans_tol))
+
+
+def val_exact(v):
+    # helper function for printing
+    s = '{:8.5f}'.format(v)
+    return s
+
+
+def val_err(values):
+    # helper function for printing
+    sqrt_nsamples = np.sqrt(len(values))
+    mu = np.mean(values)
+    sigma = np.std(values)
+    s = '{:8.5f} +/- {:8.5f}'.format(mu, sigma / sqrt_nsamples)
+    return s
 
 
 @decorators.slow
@@ -1090,27 +1086,27 @@ def test_sample_tmjp_v1_disease():
 
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
-    v1_info, d_info = _tmjp_clever_sample_helper_dense(
+    v1_info, d_cnlls = _tmjp_clever_sample_helper_dense(
             ctm, T, root, leaf_to_primary_state,
             disease_data=disease_data, nhistories=nsamples)
     v1_neg_ll_contribs_init = v1_info[0]
     v1_neg_ll_contribs_dwell = v1_info[1]
     v1_neg_ll_contribs_trans = v1_info[2]
-    d_neg_ll_contribs_init = d_info[0]
-    d_neg_ll_contribs_dwell = d_info[1]
-    d_neg_ll_contribs_trans = d_info[2]
+    d_neg_ll_contribs_init = [x.init for x in d_cnlls]
+    d_neg_ll_contribs_dwell = [x.dwell for x in d_cnlls]
+    d_neg_ll_contribs_trans = [x.trans for x in d_cnlls]
 
     # Get neg ll contribs using the dumb sampler.
     # This calls a separate function for more isolated profiling.
-    neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
+    neg_ll_info, pm_cnlls = _tmjp_dumb_sample_helper(
             ctm, T, node_to_allowed_compound_states, root,
             disease_data=disease_data, nhistories=nsamples)
     neg_ll_contribs_init = neg_ll_info[0]
     neg_ll_contribs_dwell = neg_ll_info[1]
     neg_ll_contribs_trans = neg_ll_info[2]
-    pm_neg_ll_contribs_init = pm_neg_ll_info[0]
-    pm_neg_ll_contribs_dwell = pm_neg_ll_info[1]
-    pm_neg_ll_contribs_trans = pm_neg_ll_info[2]
+    pm_neg_ll_contribs_init = [x.init for x in pm_cnlls]
+    pm_neg_ll_contribs_dwell = [x.dwell for x in pm_cnlls]
+    pm_neg_ll_contribs_trans = [x.trans for x in pm_cnlls]
 
     print()
     print('--- tmjp v1 test with simulated disease data ---')
