@@ -119,15 +119,8 @@ def test_get_feasible_history():
     # Define observed primary states at the leaves.
     node_to_primary_state = {1:0, 2:2, 3:4}
 
-    # Define the tolerance transition rates.
-    rate_on = 0.5
-    rate_off = 1.5
-
     # Get the compound tolerance process toy model.
-    info = _tmjp.get_example_tolerance_process_info(rate_on, rate_off)
-    (primary_distn, Q_primary, primary_to_part,
-            compound_to_primary, compound_to_tolerances, compound_distn,
-            Q_compound) = info
+    ctm = _tmjp.get_example_tolerance_process_info()
 
     # Summarize the compound process.
     nparts = len(set(primary_to_part.values()))
@@ -136,8 +129,8 @@ def test_get_feasible_history():
     # This includes the primary trajectory and the tolerance trajectories.
     feasible_history = _sample_tmjp.get_feasible_history(
             T, root,
-            Q_primary, primary_distn,
-            primary_to_part, rate_on, rate_off,
+            ctm.Q_primary, ctm.primary_distn,
+            ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
             node_to_primary_state)
     primary_trajectory, tolerance_trajectories = feasible_history
 
@@ -586,8 +579,9 @@ def _tmjp_clever_sample_helper_debug(
 
 
 def _tmjp_clever_sample_helper_dense(
-        T, root, Q_primary, primary_to_part,
-        leaf_to_primary_state, rate_on, rate_off, primary_distn,
+        ctm, T, root, leaf_to_primary_state,
+        #T, root, Q_primary, primary_to_part,
+        #leaf_to_primary_state, rate_on, rate_off, primary_distn,
         disease_data=None, nhistories=None):
     """
     A helper function for speed profiling.
@@ -620,21 +614,13 @@ def _tmjp_clever_sample_helper_dense(
 
     """
     # init dense transition matrix stuff
-    nprimary = len(primary_to_part)
-    if set(primary_to_part) != set(range(nprimary)):
+    if set(ctm.primary_to_part) != set(range(ctm.nprimary)):
         raise NotImplementedError
-    primary_states = range(nprimary)
+    primary_states = range(ctm.nprimary)
     primary_distn_dense = dict_to_numpy_array(
-            primary_distn, nodelist=primary_states)
+            ctm.primary_distn, nodelist=primary_states)
     Q_primary_dense = rate_matrix_to_numpy_array(
-            Q_primary, nodelist=primary_states)
-
-    # Get some info about the compound process,
-    # which we will use for the non-Rao-Blackwellized log likelihoods.
-    ctm = _tmjp.CompoundToleranceModel(
-            Q_primary, primary_distn, primary_to_part,
-            rate_on, rate_off)
-    ctm.init_compound()
+            ctm.Q_primary, nodelist=primary_states)
 
     # Construct a map from (tuple(tolerance_states), primary_state) to a
     # compound state.
@@ -655,8 +641,8 @@ def _tmjp_clever_sample_helper_dense(
 
     # sample histories and summarize them using rao-blackwellization
     for history_info in _sample_tmjp.gen_histories_v1(
-            T, root, Q_primary, primary_to_part,
-            leaf_to_primary_state, rate_on, rate_off, primary_distn,
+            T, root, ctm.Q_primary, ctm.primary_to_part,
+            leaf_to_primary_state, ctm.rate_on, ctm.rate_off, ctm.primary_distn,
             disease_data=disease_data, nhistories=nhistories):
         T_primary_aug, tol_trajectories = history_info
 
@@ -695,7 +681,7 @@ def _tmjp_clever_sample_helper_dense(
 
         # Use the dense transition matrix Rao-Blackwellization.
         ll_info = _tmjp_dense.ll_expectation_helper(
-                primary_to_part, rate_on, rate_off,
+                ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
                 Q_primary_dense, primary_distn_dense,
                 T_primary_aug, root)
         ll_init, ll_dwell, ll_trans = ll_info
@@ -792,7 +778,7 @@ def _tmjp_dumb_sample_helper(
         Q_primary, primary_distn,
         node_to_allowed_compound_states,
         root, rate_on, rate_off,
-        nsamples):
+        nhistories=None):
     """
     This sampler is dumb insofar as it uses the compound process directly.
 
@@ -821,7 +807,7 @@ def _tmjp_dumb_sample_helper(
     for T_aug in _sampler.gen_restricted_histories(
             T, Q_compound, node_to_allowed_compound_states,
             root=root, root_distn=compound_distn,
-            uniformization_factor=2, nhistories=nsamples):
+            uniformization_factor=2, nhistories=nhistories):
 
         # Get some stats of the histories.
         info = _mjp.get_history_statistics(T_aug, root=root)
@@ -979,27 +965,17 @@ def test_sample_tmjp_v1():
     # gibbs sampling enabled by conditional independence
     # of some components of the compound process.
 
-    # Define the tolerance process rates.
-    rate_on = 0.5
-    rate_off = 1.5
+    # Define the tolerance Markov jump process.
+    ctm = _tmjp.get_example_tolerance_process_info()
 
-    #TODO the ctm should be returned directly
-    # Define some other properties of the process,
-    # in a way that is not object-oriented.
-    info = _tmjp.get_example_tolerance_process_info(rate_on, rate_off)
-    (primary_distn, Q_primary, primary_to_part,
-            compound_to_primary, compound_to_tolerances, compound_distn,
-            Q_compound) = info
-    ctm = _tmjp.CompoundToleranceModel(
-            Q_primary, primary_distn, primary_to_part,
-            rate_on, rate_off)
+    #TODO remove this
+    #(primary_distn, Q_primary, primary_to_part,
+            #compound_to_primary, compound_to_tolerances, compound_distn,
+            #Q_compound) = info
 
     # Summarize properties of the process.
-    nprimary = len(primary_distn)
-    nparts = len(set(primary_to_part.values()))
-    compound_total_rates = _mjp.get_total_rates(Q_compound)
-    primary_total_rates = _mjp.get_total_rates(Q_primary)
-    tolerance_distn = _tmjp.get_tolerance_distn(rate_off, rate_on)
+    compound_total_rates = _mjp.get_total_rates(ctm.Q_compound)
+    primary_total_rates = _mjp.get_total_rates(ctm.Q_primary)
 
     # Define the number of samples per repeat.
     nsamples = 1000
@@ -1007,8 +983,9 @@ def test_sample_tmjp_v1():
 
     # Simulate some data for testing.
     info = get_simulated_data_for_testing(
-            Q_primary, primary_distn, compound_distn,
-            primary_to_part, compound_to_primary, compound_to_tolerances,
+            ctm.Q_primary, ctm.primary_distn, ctm.compound_distn,
+            ctm.primary_to_part, ctm.compound_to_primary,
+            ctm.compound_to_tolerances,
             sample_disease_data=False)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
@@ -1020,21 +997,23 @@ def test_sample_tmjp_v1():
     # Get some posterior expectations.
     expectation_info = _mjp.get_expected_history_statistics(
             T, node_to_allowed_compound_states,
-            root, root_distn=compound_distn, Q_default=Q_compound)
+            root, root_distn=ctm.compound_distn, Q_default=ctm.Q_compound)
     dwell_times, post_root_distn, transitions = expectation_info
 
     # Compute contributions to differential entropy.
     diff_ent_info = _mjp.differential_entropy_helper(
-        Q_compound, compound_distn,
+        ctm.Q_compound, ctm.compound_distn,
         post_root_distn, dwell_times, transitions)
     diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
 
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
     v1_info, d_info = _tmjp_clever_sample_helper_dense(
-            T, root, Q_primary, primary_to_part,
-            leaf_to_primary_state, rate_on, rate_off,
-            primary_distn, nhistories=nsamples)
+            ctm, T, root, leaf_to_primary_state,
+            #T, root, ctm.Q_primary, ctm.primary_to_part,
+            #leaf_to_primary_state, ctm.rate_on, ctm.rate_off,
+            #primary_distn, 
+            nhistories=nsamples)
     #v1_neg_ll_contribs_init = v1_info[0]
     #v1_neg_ll_contribs_dwell = v1_info[1]
     #v1_neg_ll_contribs_trans = v1_info[2]
@@ -1046,12 +1025,12 @@ def test_sample_tmjp_v1():
     # This calls a separate function for more isolated profiling.
     neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
             ctm,
-            T, primary_to_part, compound_to_primary,
-            Q_compound, compound_distn,
-            Q_primary, primary_distn,
+            T, ctm.primary_to_part, ctm.compound_to_primary,
+            ctm.Q_compound, ctm.compound_distn,
+            ctm.Q_primary, ctm.primary_distn,
             node_to_allowed_compound_states,
-            root, rate_on, rate_off,
-            nsamples)
+            root, ctm.rate_on, ctm.rate_off,
+            nhistories=nsamples)
     neg_ll_contribs_init = neg_ll_info[0]
     neg_ll_contribs_dwell = neg_ll_info[1]
     neg_ll_contribs_trans = neg_ll_info[2]
@@ -1103,13 +1082,12 @@ def test_sample_tmjp_v1_disease():
     # of some components of the compound process.
     # Disease data is used.
 
-    # Define the tolerance process rates.
-    rate_on = 0.5
-    rate_off = 1.5
-
     # Define some other properties of the process,
     # in a way that is not object-oriented.
-    info = _tmjp.get_example_tolerance_process_info(rate_on, rate_off)
+    ctm = _tmjp.get_example_tolerance_process_info()
+
+    #TODO broken after this point; use the ctm instead
+
     (primary_distn, Q_primary, primary_to_part,
             compound_to_primary, compound_to_tolerances, compound_distn,
             Q_compound) = info
@@ -1175,8 +1153,9 @@ def test_sample_tmjp_v1_disease():
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
     v1_info, d_info = _tmjp_clever_sample_helper_dense(
-            T, root, Q_primary, primary_to_part,
-            leaf_to_primary_state, rate_on, rate_off, primary_distn,
+            ctm, T, root, leaf_to_primary_state,
+            #Q_primary, primary_to_part,
+            #leaf_to_primary_state, rate_on, rate_off, primary_distn,
             disease_data=disease_data, nhistories=nsamples)
     v1_neg_ll_contribs_init = v1_info[0]
     v1_neg_ll_contribs_dwell = v1_info[1]
@@ -1192,12 +1171,12 @@ def test_sample_tmjp_v1_disease():
     # This calls a separate function for more isolated profiling.
     neg_ll_info, pm_neg_ll_info = _tmjp_dumb_sample_helper(
             ctm,
-            T, primary_to_part, compound_to_primary,
-            Q_compound, compound_distn,
-            Q_primary, primary_distn,
+            T, ctm.primary_to_part, ctm.compound_to_primary,
+            ctm.Q_compound, ctm.compound_distn,
+            ctm.Q_primary, ctm.primary_distn,
             node_to_allowed_compound_states,
-            root, rate_on, rate_off,
-            nsamples)
+            root, ctm.rate_on, ctm.rate_off,
+            nhistories=nsamples)
     neg_ll_contribs_init = neg_ll_info[0]
     neg_ll_contribs_dwell = neg_ll_info[1]
     neg_ll_contribs_trans = neg_ll_info[2]

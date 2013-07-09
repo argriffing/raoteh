@@ -781,7 +781,7 @@ def get_primary_proposal_rate_matrix(
 
 
 def get_example_tolerance_process_info(
-        tolerance_rate_on, tolerance_rate_off):
+        tolerance_rate_on=0.5, tolerance_rate_off=1.5):
     """
     Construct a toy model intended for testing.
 
@@ -860,7 +860,12 @@ def get_example_tolerance_process_info(
             tolerance_rate_on, tolerance_rate_off)
     ctm.init_compound()
 
+    #TODO delete this
+    """
     return (ctm.primary_distn, ctm.Q_primary, ctm.primary_to_part,
             ctm.compound_to_primary, ctm.compound_to_tolerances,
             ctm.compound_distn, ctm.Q_compound)
+    """
+
+    return ctm
 
