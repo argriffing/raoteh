@@ -10,6 +10,7 @@ from __future__ import division, print_function, absolute_import
 
 from collections import defaultdict
 import random
+import textwrap
 
 import numpy as np
 import networkx as nx
@@ -165,10 +166,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     dwell_times, post_root_distn, transitions = expectation_info
 
     # Compute contributions to differential entropy.
-    diff_ent_info = _mjp.differential_entropy_helper(
-        ctm.Q_compound, ctm.compound_distn,
-        post_root_distn, dwell_times, transitions)
-    diff_ent_init, diff_ent_dwell, diff_ent_trans = diff_ent_info
+    diff_ent_cnll = _tmjp.differential_entropy_helper(
+            ctm, post_root_distn, dwell_times, transitions)
 
     # Define the number of samples.
     nsamples = 100
@@ -176,14 +175,6 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
 
     # Do some Rao-Teh conditional samples,
     # and get the negative expected log likelihood.
-    #
-    # statistics for the full process samples
-    sampled_root_distn = defaultdict(float)
-    neg_ll_contribs_init = []
-    neg_ll_contribs_dwell = []
-    neg_ll_contribs_trans = []
-    #
-    # Statistics for the partial process samples.
     # The idea for the pm_ prefix is that we can use the compound
     # process Rao-Teh to sample the pure primary process without bias
     # if we throw away the tolerance process information.
@@ -192,30 +183,25 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # by integrating over the possible tolerance trajectories.
     # This allows us to test this integration without worrying that
     # the primary process history samples are biased.
-    pm_neg_ll_contribs_dwell = []
-    pm_neg_ll_contribs_init = []
-    pm_neg_ll_contribs_trans = []
-    #
+
+    sampled_root_distn = defaultdict(float)
+    plain_cnlls = []
+    pm_cnlls = []
     for T_aug in _sampler.gen_restricted_histories(
             T, ctm.Q_compound, node_to_allowed_compound_states,
             root=root, root_distn=ctm.compound_distn,
             uniformization_factor=2, nhistories=nsamples):
 
-        # Get some stats of the histories.
+        # Compound process log likelihood contributions.
         info = _mjp.get_history_statistics(T_aug, root=root)
         dwell_times, root_state, transitions = info
-
-        sampled_root_distn[root_state] += 1.0 / nsamples
-
-        # Compound process log likelihood contributions.
         post_root_distn = {root_state : 1}
-        neg_ll_info = _mjp.differential_entropy_helper(
-                ctm.Q_compound, ctm.compound_distn,
-                post_root_distn, dwell_times, transitions)
-        neg_ll_init, neg_ll_dwell, neg_ll_trans = neg_ll_info
-        neg_ll_contribs_init.append(neg_ll_init)
-        neg_ll_contribs_dwell.append(neg_ll_dwell)
-        neg_ll_contribs_trans.append(neg_ll_trans)
+        plain_cnll = _tmjp.differential_entropy_helper(
+                ctm, post_root_distn, dwell_times, transitions)
+        plain_cnlls.append(plain_cnll)
+
+        # Update the root distribution.
+        sampled_root_distn[root_state] += 1.0 / nsamples
 
         # Get a tree annotated with only the primary process,
         # after having thrown away the sampled tolerance
@@ -235,11 +221,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         extras = get_redundant_degree_two_nodes(T_primary_aug) - set(T)
         T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
 
-        ll_info = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
-        ll_init, ll_dwell, ll_trans = ll_info
-        pm_neg_ll_contribs_init.append(-ll_init)
-        pm_neg_ll_contribs_dwell.append(-ll_dwell)
-        pm_neg_ll_contribs_trans.append(-ll_trans)
+        pm_cnll = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
+        pm_cnlls.append(pm_cnll)
 
     # Define a rate matrix for a primary process proposal distribution.
     Q_proposal = get_primary_proposal_rate_matrix(
@@ -259,9 +242,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # conditional on the primary states at the leaves.
     # The imp_ prefix denotes importance sampling.
     imp_sampled_root_distn = defaultdict(float)
-    imp_neg_ll_contribs_init = []
-    imp_neg_ll_contribs_dwell = []
-    imp_neg_ll_contribs_trans = []
+    imp_cnlls = []
     importance_weights = []
     for T_primary_aug in _sampler.gen_histories(
             T, Q_proposal, leaf_to_primary_state,
@@ -302,28 +283,26 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         # Append the importance weight to the list.
         importance_weights.append(importance_weight)
 
-        ll_info = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
-        ll_init, ll_dwell, ll_trans = ll_info
-        imp_neg_ll_contribs_init.append(-ll_init)
-        imp_neg_ll_contribs_dwell.append(-ll_dwell)
-        imp_neg_ll_contribs_trans.append(-ll_trans)
+        imp_cnll = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
+        imp_cnlls.append(imp_cnll)
+
+    # Get the importance weights normalized to have average value 1.
+    w = np.array(importance_weights) / np.mean(importance_weights)
 
     # define some expectations
-    normalized_imp_trans = (np.array(importance_weights) * np.array(
-            imp_neg_ll_contribs_trans)) / np.mean(importance_weights)
-    normalized_imp_init = (np.array(importance_weights) * np.array(
-            imp_neg_ll_contribs_init)) / np.mean(importance_weights)
-    normalized_imp_dwell = (np.array(importance_weights) * np.array(
-            imp_neg_ll_contribs_dwell)) / np.mean(importance_weights)
-
+    norm_imp_init = w * np.array([x.init for x in imp_cnlls])
+    norm_imp_init_prim = w * np.array([x.init_prim for x in imp_cnlls])
+    norm_imp_init_tol = w * np.array([x.init_tol for x in imp_cnlls])
+    norm_imp_dwell = w * np.array([x.dwell for x in imp_cnlls])
+    norm_imp_trans = w * np.array([x.trans for x in imp_cnlls])
+    norm_imp_trans_prim = w * np.array([x.trans_prim for x in imp_cnlls])
+    norm_imp_trans_tol = w * np.array([x.trans_tol for x in imp_cnlls])
 
     # Get Rao-Teh samples of primary process trajectories
     # conditional on the primary states at the leaves.
     # The met_ prefix denotes Metropolis-Hastings.
     met_sampled_root_distn = defaultdict(float)
-    met_neg_ll_contribs_init = []
-    met_neg_ll_contribs_dwell = []
-    met_neg_ll_contribs_trans = []
+    met_cnlls = []
     naccepted = 0
     nrejected = 0
 
@@ -343,11 +322,32 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         else:
             nrejected += 1
 
-        ll_info = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
-        ll_init, ll_dwell, ll_trans = ll_info
-        met_neg_ll_contribs_init.append(-ll_init)
-        met_neg_ll_contribs_dwell.append(-ll_dwell)
-        met_neg_ll_contribs_trans.append(-ll_trans)
+        met_cnll = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
+        met_cnlls.append(met_cnll)
+
+    neg_ll_contribs_init = [x.init for x in plain_cnlls]
+    neg_ll_contribs_dwell = [x.dwell for x in plain_cnlls]
+    neg_ll_contribs_trans = [x.trans for x in plain_cnlls]
+    init_prim = [x.init_prim for x in plain_cnlls]
+    init_tol = [x.init_tol for x in plain_cnlls]
+    trans_prim = [x.trans_prim for x in plain_cnlls]
+    trans_tol = [x.trans_tol for x in plain_cnlls]
+    #
+    pm_neg_ll_contribs_init = [x.init for x in pm_cnlls]
+    pm_neg_ll_contribs_dwell = [x.dwell for x in pm_cnlls]
+    pm_neg_ll_contribs_trans = [x.trans for x in pm_cnlls]
+    pm_init_prim = [x.init_prim for x in pm_cnlls]
+    pm_init_tol = [x.init_tol for x in pm_cnlls]
+    pm_trans_prim = [x.trans_prim for x in pm_cnlls]
+    pm_trans_tol = [x.trans_tol for x in pm_cnlls]
+    #
+    met_neg_ll_contribs_init = [x.init for x in met_cnlls]
+    met_neg_ll_contribs_dwell = [x.dwell for x in met_cnlls]
+    met_neg_ll_contribs_trans = [x.trans for x in met_cnlls]
+    met_init_prim = [x.init_prim for x in met_cnlls]
+    met_init_tol = [x.init_tol for x in met_cnlls]
+    met_trans_prim = [x.trans_prim for x in met_cnlls]
+    met_trans_tol = [x.trans_tol for x in met_cnlls]
 
     print()
     print('--- tmjp experiment ---')
@@ -356,40 +356,57 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     print('sampled root distn :', sampled_root_distn)
     print('analytic root distn:', post_root_distn)
     print()
-    print('diff ent init :', diff_ent_init)
-    print('neg ll init   :', np.mean(neg_ll_contribs_init))
-    print('error         :', np.std(neg_ll_contribs_init) / sqrt_nsamp)
-    print('pm neg ll init:', np.mean(pm_neg_ll_contribs_init))
-    print('error         :', np.std(pm_neg_ll_contribs_init) / sqrt_nsamp)
-    print('imp init      :', np.mean(normalized_imp_init))
-    print('error         :', np.std(normalized_imp_init) / sqrt_nsamp)
-    print('met init      :', np.mean(met_neg_ll_contribs_init))
-    print('error         :', np.std(met_neg_ll_contribs_init) / sqrt_nsamp)
+    print('--- init contribution ---')
+    print('diff ent  :', val_exact(diff_ent_cnll.init))
+    print('    prim  :', val_exact(diff_ent_cnll.init_prim))
+    print('    tol   :', val_exact(diff_ent_cnll.init_tol))
+    print('neg ll    :', val_err(neg_ll_contribs_init))
+    print('    prim  :', val_err(init_prim))
+    print('    tol   :', val_err(init_tol))
+    print('pm neg ll :', val_err(pm_neg_ll_contribs_init))
+    print('    prim  :', val_err(pm_init_prim))
+    print('    tol   :', val_err(pm_init_tol))
+    print('imp neg ll:', val_err(norm_imp_init))
+    print('    prim  :', val_err(norm_imp_init_prim))
+    print('    tol   :', val_err(norm_imp_init_tol))
+    print('met neg ll:', val_err(met_neg_ll_contribs_init))
+    print('    prim  :', val_err(met_init_prim))
+    print('    tol   :', val_err(met_init_tol))
     print()
-    print('diff ent dwell:', diff_ent_dwell)
-    print('neg ll dwell  :', np.mean(neg_ll_contribs_dwell))
-    print('error         :', np.std(neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('pm neg ll dwel:', np.mean(pm_neg_ll_contribs_dwell))
-    print('error         :', np.std(pm_neg_ll_contribs_dwell) / sqrt_nsamp)
-    print('imp dwell     :', np.mean(normalized_imp_dwell))
-    print('error         :', np.std(normalized_imp_dwell) / sqrt_nsamp)
-    print('met dwell     :', np.mean(met_neg_ll_contribs_dwell))
-    print('error         :', np.std(met_neg_ll_contribs_dwell) / sqrt_nsamp)
+    print('--- dwell contribution ---')
+    print('diff ent  :', val_exact(diff_ent_cnll.dwell))
+    print('neg ll    :', val_err(neg_ll_contribs_dwell))
+    print('pm neg ll :', val_err(pm_neg_ll_contribs_dwell))
+    print('imp neg ll:', val_err(norm_imp_dwell))
+    print('met neg ll:', val_err(met_neg_ll_contribs_dwell))
     print()
-    print('diff ent trans:', diff_ent_trans)
-    print('neg ll trans  :', np.mean(neg_ll_contribs_trans))
-    print('error         :', np.std(neg_ll_contribs_trans) / sqrt_nsamp)
-    print('pm neg ll tran:', np.mean(pm_neg_ll_contribs_trans))
-    print('error         :', np.std(pm_neg_ll_contribs_trans) / sqrt_nsamp)
-    print('imp trans     :', np.mean(normalized_imp_trans))
-    print('error         :', np.std(normalized_imp_trans) / sqrt_nsamp)
-    print('met trans     :', np.mean(met_neg_ll_contribs_trans))
-    print('error         :', np.std(met_neg_ll_contribs_trans) / sqrt_nsamp)
+    print('--- trans contribution ---')
+    print('diff ent  :', val_exact(diff_ent_cnll.trans))
+    print('    prim  :', val_exact(diff_ent_cnll.trans_prim))
+    print('    tol   :', val_exact(diff_ent_cnll.trans_tol))
+    print('neg ll    :', val_err(neg_ll_contribs_trans))
+    print('    prim  :', val_err(trans_prim))
+    print('    tol   :', val_err(trans_tol))
+    print('pm neg ll :', val_err(pm_neg_ll_contribs_trans))
+    print('    prim  :', val_err(pm_trans_prim))
+    print('    tol   :', val_err(pm_trans_tol))
+    print('imp neg ll:', val_err(norm_imp_trans))
+    print('    prim  :', val_err(norm_imp_trans_prim))
+    print('    tol   :', val_err(norm_imp_trans_tol))
+    print('met neg ll:', val_err(met_neg_ll_contribs_trans))
+    print('    prim  :', val_err(met_trans_prim))
+    print('    tol   :', val_err(met_trans_tol))
     print()
     print('number of accepted M-H samples:', naccepted)
     print('number of rejected M-H samples:', nrejected)
     print()
-    print('importance weights:', importance_weights)
+    print('importance weights:')
+    elements = []
+    for weight in importance_weights:
+        s = '{:8.3f}'.format(weight).lstrip()
+        elements.append(s)
+    for line in textwrap.wrap(' '.join(elements), width=79):
+        print(line)
     print('mean of weights:', np.mean(importance_weights))
     print('error          :', np.std(importance_weights) / sqrt_nsamp)
     print()
