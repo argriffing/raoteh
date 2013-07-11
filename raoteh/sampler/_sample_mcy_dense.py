@@ -10,13 +10,17 @@ the joint states using the node_to_pmap.
 from __future__ import division, print_function, absolute_import
 
 import networkx as nx
+import numpy as np
 
-from raoteh.sampler import _util, _graph_transform, _mc0, _mcy, _sample_mc0
+from raoteh.sampler import (
+        _util, _graph_transform,
+        _mc0_dense, mcy_dense, _sample_mc0_dense,
+        )
 
 
 __all__ = []
 
-def resample_states(T, root,
+def resample_states(T, root, nstates,
         node_to_allowed_states=None, root_distn=None, P_default=None):
     """
     This function applies to a tree for which nodes will be assigned states.
@@ -35,12 +39,14 @@ def resample_states(T, root,
         then its set of allowed states is assumed to be unrestricted.
         Entries of this map that correspond to nodes not in the tree
         will be silently ignored.
-    root_distn : dict, optional
-        A sparse finite distribution or weights over root states.
+    nstates : integer
+        Number of states.
+    root_distn : 1d ndarray, optional
+        A dense finite distribution or weights over root states.
         Values should be positive but are not required to sum to 1.
         If the distribution is not provided,
         then it will be assumed to have values of 1 for each possible state.
-    P_default : directed weighted networkx graph, optional
+    P_default : 2d ndarray, optional
         If an edge is not annotated with a transition matrix P,
         then this default transition matrix will be used.
 
@@ -52,38 +58,18 @@ def resample_states(T, root,
         then the state will have been sampled.
 
     """
-    # Get the possible states for each node,
-    # after accounting for the rooted tree shape
-    # and the edge-specific transition matrix sparsity patterns
-    # and the observed states.
-    node_to_set = _mcy.get_node_to_set(T, root,
+    # Get the map from each node to a dense array
+    # defining the subtree likelihood for each state.
+    node_to_pmap = _mcy_dense.get_node_to_pmap(T, root, nstates,
             node_to_allowed_states=node_to_allowed_states,
             P_default=P_default)
 
-    # Check that the root node_to_set is not empty.
-    if not node_to_set[root]:
-        raise _util.StructuralZeroProb('root node_to_set is empty')
-
-    # Get the map from each node to a sparse map
-    # from each feasible state to the subtree likelihood.
-    node_to_pmap = _mcy.get_node_to_pmap(T, root,
-            node_to_allowed_states=node_to_allowed_states,
-            P_default=P_default, node_to_set=node_to_set)
-
-    # Check some invariants.
-    if set(node_to_set) != set(node_to_pmap):
-        raise Exception('internal error')
-    for node, node_set in node_to_set.items():
-        if node_set != set(node_to_pmap[node]):
-            msg = 'internal error %s %s' % (node_to_set, node_to_pmap)
-            raise Exception(msg)
-
     # Use the generic sampler.
-    return _sample_mc0.resample_states(T, root, node_to_pmap,
+    return _sample_mc0_dense.resample_states(T, root, node_to_pmap, nstates,
             root_distn=root_distn, P_default=P_default)
 
 
-def resample_edge_states(T, root, P, event_nodes,
+def resample_edge_states(T, root, P, event_nodes, nstates,
         node_to_allowed_states=None, root_distn=None):
     """
     This function applies to a tree for which edges will be assigned states.
@@ -100,13 +86,15 @@ def resample_edge_states(T, root, P, event_nodes,
         This is the original tree.
     root : integer
         Root of the tree.
-    P : weighted directed networkx graph
-        A sparse transition matrix assumed to be identical for all edges.
+    P : 2d ndarray
+        A transition matrix assumed to be identical for all edges.
         The weights are transition probabilities.
     event_nodes : set of integers
         States of edges adjacent to these nodes are allowed to not be the same
         as each other.  For nodes that are not event nodes,
         the adjacent edge states must all be the same as each other.
+    nstates : integer
+        Number of states.
     node_to_allowed_states : dict, optional
         A map from a node to a set of allowed states.
         If the map is None then the sets of allowed states are assumed
@@ -115,8 +103,11 @@ def resample_edge_states(T, root, P, event_nodes,
         then its set of allowed states is assumed to be unrestricted.
         Entries of this map that correspond to nodes not in the tree
         will be silently ignored.
-    root_distn : dict, optional
-        Map from root state to probability.
+    root_distn : 1d ndarray, optional
+        A dense finite distribution or weights over root states.
+        Values should be positive but are not required to sum to 1.
+        If the distribution is not provided,
+        then it will be assumed to have values of 1 for each possible state.
 
     Returns
     -------
@@ -173,7 +164,7 @@ def resample_edge_states(T, root, P, event_nodes,
             raise _util.StructuralZeroProb('a region has no allowed states')
 
     # Sample the states.
-    chunk_node_to_sampled_state = resample_states(chunk_tree, root,
+    chunk_node_to_sampled_state = resample_states(chunk_tree, root, nstates,
             node_to_allowed_states=chunk_node_to_allowed_states,
             root_distn=root_distn, P_default=P)
 
