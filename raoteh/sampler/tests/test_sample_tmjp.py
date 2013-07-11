@@ -913,7 +913,7 @@ def test_sample_tmjp_v1_disease():
     ctm = _tmjp.get_example_tolerance_process_info()
 
     # Define the number of samples.
-    nsamples = 1000
+    nsamples = 10000
 
     # Simulate some data for testing.
     info = get_simulated_data(ctm, sample_disease_data=True)

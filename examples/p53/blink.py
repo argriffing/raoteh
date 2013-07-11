@@ -10,10 +10,12 @@ import create_mg94
 import app_helper
 
 from raoteh.sampler import (
+        _density,
+        _graph_transform,
+        _mjp_dense,
+        _tmjp,
         _tmjp_dense,
         _sample_tmjp,
-        _mjp_dense,
-        _density,
         )
 
 
@@ -91,53 +93,113 @@ def xxx_compound_ll_expectation_helper_dense(
 
 
 #TODO copypasted from tests/test_sample_tmjp.py
-#TODO some modification for disease data
-def _tmjp_clever_sample_helper_dense(
-        T, root, Q_primary, primary_to_part,
-        leaf_to_primary_state, rate_on, rate_off, primary_distn,
+def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
         disease_data=None, nhistories=None):
     """
-    The args are the same as for _sample_tmjp.gen_histories_v1().
+    A helper function for speed profiling.
+
+    Parameters
+    ----------
+    ctm : instance of CompoundToleranceModel
+        Compound tolerance model.
+    T : x
+        x
+    root : x
+        x
+    leaf_to_primary_state : x
+        x
+    disease_data : sequence, optional
+        For each tolerance class,
+        map each node to a set of allowed tolerance states.
+    nhistories : integer, optional
+        Sample this many histories.
+
     """
     # init dense transition matrix stuff
-    nprimary = len(primary_to_part)
-    if set(primary_to_part) != set(range(nprimary)):
+    if set(ctm.primary_to_part) != set(range(ctm.nprimary)):
         raise NotImplementedError
-    primary_states = range(nprimary)
+    primary_states = range(ctm.nprimary)
     primary_distn_dense = _density.dict_to_numpy_array(
-            primary_distn, nodelist=primary_states)
+            ctm.primary_distn, nodelist=primary_states)
     Q_primary_dense = _density.rate_matrix_to_numpy_array(
-            Q_primary, nodelist=primary_states)
+            ctm.Q_primary, nodelist=primary_states)
 
-    # init dense transition matrix process summary lists
-    d_neg_ll_contribs_init = []
-    d_neg_ll_contribs_dwell = []
-    d_neg_ll_contribs_trans = []
+    """
+    # Construct a map from (tuple(tolerance_states), primary_state) to a
+    # compound state.
+    compound_reduction_map = {}
+    for compound_state in range(ctm.ncompound):
+        primary_state = ctm.compound_to_primary[compound_state]
+        tolerance_states = ctm.compound_to_tolerances[compound_state]
+        expanded_compound_state = (tuple(tolerance_states), primary_state)
+        compound_reduction_map[expanded_compound_state] = compound_state
+    """
+    
+    v1_cnlls = []
+    d_cnlls = []
 
     # sample histories and summarize them using rao-blackwellization
     for history_info in _sample_tmjp.gen_histories_v1(
-            T, root, Q_primary, primary_to_part,
-            leaf_to_primary_state, rate_on, rate_off, primary_distn,
+            ctm, T, root, leaf_to_primary_state,
             disease_data=disease_data, nhistories=nhistories):
         T_primary_aug, tol_trajectories = history_info
 
-        # use the dense transition matrix rao-blackwellization
-        ll_info = _tmjp_dense.ll_expectation_helper(
-                primary_to_part, rate_on, rate_off,
+        # Reconstitute the compound process trajectory,
+        # so that we can compute non-Rao-Blackwellized log likelihoods.
+        all_trajectories = tol_trajectories + [T_primary_aug]
+        T_merged, dummy_events = _graph_transform.add_trajectories(
+                T, root, all_trajectories,
+                edge_to_event_times=None)
+
+        # Check that T_merged has the same weighted edge length as T.
+        if not np.allclose(
+                T_merged.size(weight='weight'),
+                T.size(weight='weight')):
+            raise Exception('internal error')
+
+        """
+        # Construct the compound trajectory from the merged trajectories.
+        T_compound = nx.Graph()
+        for na, nb in nx.bfs_edges(T_merged, root):
+            edge_obj = T_merged[na][nb]
+            weight = edge_obj['weight']
+            primary_state = edge_obj['states'][-1]
+            tol_states = edge_obj['states'][:-1]
+            expanded_compound_state = (tuple(tol_states), primary_state)
+            compound_state = compound_reduction_map[expanded_compound_state]
+
+            # Check the round trip for the compound state correspondence.
+            assert_equal(ctm.compound_to_primary[compound_state],
+                    primary_state)
+            assert_equal(ctm.compound_to_tolerances[compound_state],
+                    tol_states)
+
+            # Add the edge annotated with the compound state.
+            T_compound.add_edge(na, nb, state=compound_state, weight=weight)
+
+        # Check that T_compound has the same weighted edge length as T.
+        assert_allclose(
+                T_compound.size(weight='weight'),
+                T.size(weight='weight'))
+
+        info = _mjp.get_history_statistics(T_compound, root=root)
+        dwell_times, root_state, transitions = info
+
+        post_root_distn = {root_state : 1.0}
+        v1_cnll = _tmjp.differential_entropy_helper(
+                ctm, post_root_distn, dwell_times, transitions)
+        v1_cnlls.append(v1_cnll)
+        """
+
+        # Use the dense transition matrix Rao-Blackwellization.
+        d_cnll = _tmjp_dense.ll_expectation_helper(
+                ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
                 Q_primary_dense, primary_distn_dense,
                 T_primary_aug, root,
                 disease_data=disease_data)
-        ll_init, ll_dwell, ll_trans = ll_info
-        d_neg_ll_contribs_init.append(-ll_init)
-        d_neg_ll_contribs_dwell.append(-ll_dwell)
-        d_neg_ll_contribs_trans.append(-ll_trans)
+        d_cnlls.append(d_cnll)
 
-    d_neg_ll_contribs = (
-            d_neg_ll_contribs_init,
-            d_neg_ll_contribs_dwell,
-            d_neg_ll_contribs_trans)
-    
-    return d_neg_ll_contribs
+    return v1_cnlls, d_cnlls
 
 
 def main():
@@ -183,20 +245,26 @@ def main():
     Q_primary, primary_distn, state_to_residue, residue_to_part = info
     primary_to_part = dict(
             (i, residue_to_part[r]) for i, r in state_to_residue.items())
-    nparts = len(set(primary_to_part.values()))
-    nprimary = len(primary_to_part)
-    if nprimary != 61:
-        print(primary_to_part)
+
+    # Construct the compound tolerance model.
+    # Do not initialize attributes that require O(N) where N is
+    # the size of the state space of the compound process.
+    ctm = _tmjp.CompoundToleranceModel(
+            Q_primary, primary_distn, primary_to_part,
+            rate_on, rate_off)
+
+    if ctm.nprimary != 61:
+        print(ctm.primary_to_part)
         raise Exception(
                 'expected 61 non-stop codons '
-                'but found ' + str(nprimary))
+                'but found ' + str(ctm.nprimary))
     
     print('genetic code:')
     for triple in genetic_code:
         print(triple)
     print()
     print('codon distn:')
-    app_helper.print_codon_distn(codon_to_state, primary_distn)
+    app_helper.print_codon_distn(codon_to_state, ctm.primary_distn)
     print()
     
     # read the tree with branch lengths estimated by paml
@@ -218,15 +286,14 @@ def main():
         name_codons_list = list(app_helper.read_phylip(fin))
 
     # Estimate expectations, column by column.
-    #TODO use disease constraints
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
     names, codon_sequences = zip(*name_codons_list)
     codon_columns = zip(*codon_sequences)
     total_log_likelihood = 0
     primary_distn_dense = _density.dict_to_numpy_array(
-            primary_distn, nodelist=states)
+            ctm.primary_distn, nodelist=states)
     Q_dense = _density.rate_matrix_to_numpy_array(
-            Q_primary, nodelist=states)
+            ctm.Q_primary, nodelist=states)
     print('computing expected log likelihoods per column...')
     for i, codon_column in enumerate(codon_columns):
 
@@ -240,7 +307,7 @@ def main():
                     residue_to_part[r] for r in human_disease_residues)
             human_node = name_to_leaf['Has']
             disease_data = []
-            for part in range(nparts):
+            for part in range(ctm.nparts):
                 tmap = dict((n, {0, 1}) for n in T)
                 if part in human_disease_parts:
                     tmap[human_node] = {0}
@@ -266,15 +333,16 @@ def main():
 
         # Use conditional Rao-Teh with Gibbs modification to sample
         # from the distribution of fully augmented trajectories.
+        # Use Rao-Blackwellization.
         nhistories = 10
-        info = _tmjp_clever_sample_helper_dense(
-                T, root, Q_primary, primary_to_part,
-                leaf_to_primary_state, rate_on, rate_off, primary_distn,
+        v1_cnlls, rb_cnlls = _tmjp_clever_sample_helper_dense(
+                ctm, T, root, leaf_to_primary_state,
                 disease_data=disease_data, nhistories=nhistories)
-        d_neg_ll_contribs_init = info[0]
-        d_neg_ll_contribs_dwell = info[1]
-        d_neg_ll_contribs_trans = info[2]
-        neg_log_likelihoods = [sum(contribs) for contribs in zip(*info)]
+
+        contribs = [(x.init, x.dwell, x.trans) for x in rb_cnlls]
+
+        neg_log_likelihoods = [sum(x) for x in contribs]
+
         mean_log_likelihood = -np.mean(neg_log_likelihoods)
 
         # Add to the total log likelihood.
