@@ -655,19 +655,3 @@ class TestToleranceProcessMarginalLogLikelihood(TestCase):
                 Q, state_to_part, T,
                 rate_off, rate_on, primary_distn, root)
 
-
-def test_compound_tolerance_model():
-    # smoke test
-    Q_primary = None
-    primary_distn = None
-    primary_to_part = None
-    rate_on = None
-    rate_off = None
-    ctm = _tmjp.CompoundToleranceModel(
-            Q_primary, primary_distn, primary_to_part,
-            rate_on, rate_off)
-    first = ctm.Q_compound
-    second = ctm.Q_compound
-    third = ctm.Q_compound
-    print(first, second, third)
-

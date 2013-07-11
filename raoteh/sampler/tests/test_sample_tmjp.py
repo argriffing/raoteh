@@ -54,58 +54,6 @@ from raoteh.sampler._tmjp import (
         )
 
 
-
-#TODO this should go into the _tmjp module.
-def _compound_ll_expectation_helper(ctm, T_primary_aug, root,
-        disease_data=None):
-    """
-    Get contributions to the expected log likelihood of the compound process.
-
-    The primary process trajectory is fully observed,
-    but the binary tolerance states are unobserved.
-
-    Parameters
-    ----------
-    ctm : CompoundToleranceModel
-        Information about the evolutionary process.
-    T_primary_aug : x
-        x
-    root : integer
-        The root node.
-    disease_data : sequence, optional
-        For each tolerance class,
-        map each node to a set of allowed tolerance states.
-
-    Returns
-    -------
-    cnll : CompoundNegLL
-        x
-
-    """
-    total_tree_length = T_primary_aug.size(weight='weight')
-    primary_info = _mjp.get_history_statistics(T_primary_aug, root=root)
-    dwell_times, root_state, transitions = primary_info
-    post_root_distn = {root_state : 1}
-
-    neg_ll_info = _mjp.differential_entropy_helper(
-            ctm.Q_primary, ctm.primary_distn,
-            post_root_distn, dwell_times, transitions)
-    neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
-
-    # This function call is the speed bottleneck for this function.
-    tol_summary = _tmjp.get_tolerance_summary(ctm, T_primary_aug, root,
-            disease_data=disease_data)
-
-    tol_info = _tmjp.get_tolerance_ll_contribs(
-            ctm.rate_on, ctm.rate_off, total_tree_length, *tol_summary)
-    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
-
-    cnll = _tmjp_util.CompoundNegLL(
-            neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,
-            neg_trans_prim_ll, -trans_tol_ll)
-    return cnll
-
-
 def test_get_feasible_history():
 
     # Define a base tree and root.
@@ -144,7 +92,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     ctm = _tmjp.get_example_tolerance_process_info()
 
     # Simulate some data for testing.
-    info = get_simulated_data_for_testing(ctm, sample_disease_data=False)
+    info = get_simulated_data(ctm, sample_disease_data=False)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
             reference_leaf, reference_disease_parts) = info
@@ -221,7 +169,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         extras = get_redundant_degree_two_nodes(T_primary_aug) - set(T)
         T_primary_aug = remove_redundant_nodes(T_primary_aug, extras)
 
-        pm_cnll = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
+        pm_cnll = _tmjp.ll_expectation_helper(ctm, T_primary_aug, root)
         pm_cnlls.append(pm_cnll)
 
     # Define a rate matrix for a primary process proposal distribution.
@@ -283,7 +231,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         # Append the importance weight to the list.
         importance_weights.append(importance_weight)
 
-        imp_cnll = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
+        imp_cnll = _tmjp.ll_expectation_helper(ctm, T_primary_aug, root)
         imp_cnlls.append(imp_cnll)
 
     # Get the importance weights normalized to have average value 1.
@@ -322,7 +270,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
         else:
             nrejected += 1
 
-        met_cnll = _compound_ll_expectation_helper(ctm, T_primary_aug, root)
+        met_cnll = _tmjp.ll_expectation_helper(ctm, T_primary_aug, root)
         met_cnlls.append(met_cnll)
 
     neg_ll_contribs_init = [x.init for x in plain_cnlls]
@@ -403,7 +351,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     print('importance weights:')
     elements = []
     for weight in importance_weights:
-        s = '{:8.3f}'.format(weight).lstrip()
+        s = '{:8.4f}'.format(weight).lstrip()
         elements.append(s)
     for line in textwrap.wrap(' '.join(elements), width=79):
         print(line)
@@ -699,7 +647,7 @@ def _tmjp_clever_sample_helper(
         T_primary_aug, tol_trajectories = history_info
 
         # use the non-dense transition matrix rao-blackwellization
-        ll_info = _compound_ll_expectation_helper(
+        ll_info = _tmjp.ll_expectation_helper(
                 primary_to_part, rate_on, rate_off,
                 Q_primary, primary_distn, T_primary_aug, root)
         ll_init, ll_dwell, ll_trans = ll_info
@@ -797,14 +745,14 @@ def _tmjp_dumb_sample_helper(
             print(list(nx.bfs_edges(T_primary_aug, root)))
             raise Exception('internal error: T_primary_aug missing %s' % bad)
 
-        pm_cnll = _compound_ll_expectation_helper(
+        pm_cnll = _tmjp.ll_expectation_helper(
                 ctm, T_primary_aug, root, disease_data=disease_data)
         pm_cnlls.append(pm_cnll)
 
     return cnlls, pm_cnlls
 
 
-def get_simulated_data_for_testing(ctm, sample_disease_data=False):
+def get_simulated_data(ctm, sample_disease_data=False):
     """
     """
     # Sample a non-tiny random tree without branch lengths.
@@ -818,7 +766,7 @@ def get_simulated_data_for_testing(ctm, sample_disease_data=False):
 
     # Add some random branch lengths onto the edges of the tree.
     for na, nb in nx.bfs_edges(T, root):
-        scale = 2.6
+        scale = 0.6
         T[na][nb]['weight'] = np.random.exponential(scale=scale)
 
     # Get the total tree length.
@@ -911,7 +859,7 @@ def test_sample_tmjp_v1():
     nsamples = 1000
 
     # Simulate some data for testing.
-    info = get_simulated_data_for_testing(ctm, sample_disease_data=False)
+    info = get_simulated_data(ctm, sample_disease_data=False)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
             reference_leaf, reference_disease_parts) = info
@@ -965,7 +913,7 @@ def test_sample_tmjp_v1_disease():
     nsamples = 1000
 
     # Simulate some data for testing.
-    info = get_simulated_data_for_testing(ctm, sample_disease_data=True)
+    info = get_simulated_data(ctm, sample_disease_data=True)
     (T, root, leaf_to_primary_state,
             node_to_allowed_primary_states, node_to_allowed_compound_states,
             reference_leaf, reference_disease_parts) = info
@@ -1078,42 +1026,55 @@ def print_cnlls(diff_ent_cnll, plain_cnlls, pm_cnlls, v1_cnlls, d_cnlls):
     print('d:   Gibbs with rao blackwellization')
     print()
     print('--- init contribution ---')
+    print()
     print('diff ent :', val_exact(diff_ent_cnll.init))
     print('    prim :', val_exact(diff_ent_cnll.init_prim))
     print('    tol  :', val_exact(diff_ent_cnll.init_tol))
+    print()
     print('neg ll   :', val_err(neg_ll_contribs_init))
     print('    prim :', val_err(init_prim))
     print('    tol  :', val_err(init_tol))
+    print()
     print('pm neg ll:', val_err(pm_neg_ll_contribs_init))
     print('    prim :', val_err(pm_init_prim))
     print('    tol  :', val_err(pm_init_tol))
+    print()
     print('v1 neg ll:', val_err(v1_neg_ll_contribs_init))
     print('    prim :', val_err(v1_init_prim))
     print('    tol  :', val_err(v1_init_tol))
+    print()
     print('d neg ll :', val_err(d_neg_ll_contribs_init))
     print('    prim :', val_err(d_init_prim))
     print('    tol  :', val_err(d_init_tol))
     print()
+    print()
     print('--- dwell contribution ---')
+    print()
     print('diff ent :', val_exact(diff_ent_cnll.dwell))
     print('neg ll   :', val_err(neg_ll_contribs_dwell))
     print('pm neg ll:', val_err(pm_neg_ll_contribs_dwell))
     print('v1 neg ll:', val_err(v1_neg_ll_contribs_dwell))
     print('d neg ll :', val_err(d_neg_ll_contribs_dwell))
     print()
+    print()
     print('--- trans contribution ---')
+    print()
     print('diff ent :', val_exact(diff_ent_cnll.trans))
     print('    prim :', val_exact(diff_ent_cnll.trans_prim))
     print('    tol  :', val_exact(diff_ent_cnll.trans_tol))
+    print()
     print('neg ll   :', val_err(neg_ll_contribs_trans))
     print('    prim :', val_err(trans_prim))
     print('    tol  :', val_err(trans_tol))
+    print()
     print('pm neg ll:', val_err(pm_neg_ll_contribs_trans))
     print('    prim :', val_err(pm_trans_prim))
     print('    tol  :', val_err(pm_trans_tol))
+    print()
     print('v1 neg ll:', val_err(v1_neg_ll_contribs_trans))
     print('    prim :', val_err(v1_trans_prim))
     print('    tol  :', val_err(v1_trans_tol))
+    print()
     print('d neg ll :', val_err(d_neg_ll_contribs_trans))
     print('    prim :', val_err(d_trans_prim))
     print('    tol  :', val_err(d_trans_tol))

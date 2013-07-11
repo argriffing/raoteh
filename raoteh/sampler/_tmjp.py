@@ -180,6 +180,56 @@ class CompoundToleranceModel(object):
                     self.Q_compound.add_edge(i, j, weight=weight)
 
 
+def ll_expectation_helper(ctm, T_primary_aug, root,
+        disease_data=None):
+    """
+    Get contributions to the expected log likelihood of the compound process.
+
+    The primary process trajectory is fully observed,
+    but the binary tolerance states are unobserved.
+
+    Parameters
+    ----------
+    ctm : CompoundToleranceModel
+        Information about the evolutionary process.
+    T_primary_aug : x
+        x
+    root : integer
+        The root node.
+    disease_data : sequence, optional
+        For each tolerance class,
+        map each node to a set of allowed tolerance states.
+
+    Returns
+    -------
+    cnll : CompoundNegLL
+        x
+
+    """
+    total_tree_length = T_primary_aug.size(weight='weight')
+    primary_info = _mjp.get_history_statistics(T_primary_aug, root=root)
+    dwell_times, root_state, transitions = primary_info
+    post_root_distn = {root_state : 1}
+
+    neg_ll_info = _mjp.differential_entropy_helper(
+            ctm.Q_primary, ctm.primary_distn,
+            post_root_distn, dwell_times, transitions)
+    neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
+
+    # This function call is the speed bottleneck for this function.
+    tol_summary = get_tolerance_summary(ctm, T_primary_aug, root,
+            disease_data=disease_data)
+
+    tol_info = get_tolerance_ll_contribs(
+            ctm.rate_on, ctm.rate_off, total_tree_length, *tol_summary)
+    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
+
+    cnll = _tmjp_util.CompoundNegLL(
+            neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,
+            neg_trans_prim_ll, -trans_tol_ll)
+    return cnll
+
+
 def differential_entropy_helper(
         ctm, post_root_distn, post_dwell_times, post_transitions):
     """

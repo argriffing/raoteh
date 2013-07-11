@@ -11,6 +11,8 @@ import scipy.linalg
 from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_)
 
+import pyfelscore
+
 from raoteh.sampler._linalg import sparse_expm
 from raoteh.sampler._util import get_dense_rate_matrix
 
@@ -31,8 +33,13 @@ def _check_sparse_expm(Q_sparse, t):
                 prob = P_sparse[sa][sb]['weight']
                 P_observed[sa_index, sb_index] = prob
 
-    # Check that both results give the same answer.
-    assert_allclose(P_expected, P_observed)
+    # Compute the expm using the pyfelscore module.
+    P_pyfelscore = np.empty_like(Q_dense)
+    pyfelscore.get_tolerance_rate_matrix(t, Q_dense, P_pyfelscore)
+
+    # Check that all results give the same answer.
+    assert_allclose(P_observed, P_expected)
+    assert_allclose(P_pyfelscore, P_expected)
 
 
 class TestSmallExpm(TestCase):
