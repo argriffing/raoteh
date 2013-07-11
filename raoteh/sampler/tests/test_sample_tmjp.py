@@ -810,6 +810,8 @@ def get_simulated_data(ctm, sample_disease_data=False):
     node_to_allowed_compound_states = {}
     node_to_allowed_primary_states = {}
     for node in T:
+        allowed_primary = set()
+        allowed_compound = set()
         if sample_disease_data and (node == reference_leaf):
             primary_state = leaf_to_primary_state[node]
             allowed_primary = {primary_state}
@@ -820,11 +822,12 @@ def get_simulated_data(ctm, sample_disease_data=False):
                 if prim != primary_state:
                     continue
                 comp_tols = ctm.compound_to_tolerances[comp]
-                comp_tol_set = set(p for p, v in enumerate(tols) if v)
+                comp_tol_set = set(p for p, v in enumerate(comp_tols) if v)
                 # the tolerance set must match the reference tolerances exactly
                 if comp_tol_set != ref_tol_set:
                     continue
                 allowed_compound.add(comp)
+            assert_equal(len(allowed_compound), 1)
         elif node in leaf_to_primary_state:
             primary_state = leaf_to_primary_state[node]
             allowed_primary = {primary_state}
@@ -967,9 +970,20 @@ def test_sample_tmjp_v1_disease():
     print()
     print('--- tmjp v1 test with simulated disease data ---')
     print()
-    print('number of sampled histories:', nsamples)
+    print('tree:')
+    for na, nb in nx.bfs_edges(T, root):
+        print(na, nb, T[na][nb]['weight'])
+    print('leaf_to_primary_state:')
+    for leaf, state in sorted(leaf_to_primary_state.items()):
+        print(leaf, state)
+    print('root node:', root)
+    print('reference leaf:', reference_leaf)
     print('sampled reference leaf disease tolerance classes:')
     print(reference_disease_parts)
+    print('allowed compound states at the reference leaf:')
+    print(node_to_allowed_compound_states[reference_leaf])
+    print()
+    print('number of sampled histories:', nsamples)
     print()
     print_cnlls(diff_ent_cnll, cnlls, pm_cnlls, v1_cnlls, d_cnlls)
 
