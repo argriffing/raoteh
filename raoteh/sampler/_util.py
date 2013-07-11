@@ -53,6 +53,22 @@ def get_dense_rate_matrix(Q_sparse):
     return states, Q_dense
 
 
+def array_random_choice(a):
+    # This algorithm is not appropriate for multiple random samples
+    # from the same array.
+    # If you want to do that, then use numpy random.choice instead.
+    if not a:
+        raise ValueError('the array is empty')
+    total = a.sum()
+    if total <= 0:
+        raise ValueError('weight is not positive')
+    x = random.random() * total
+    for i, w in enumerate(a):
+        x -= w
+        if x < 0:
+            return i
+
+
 def dict_random_choice(d):
     # This algorithm is not appropriate for multiple random samples
     # from the same dictionary.
