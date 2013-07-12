@@ -214,6 +214,8 @@ def resample_primary_states_v1(
     This function is not involved in resampling uniformization times.
 
     """
+    nprimary = len(primary_to_part)
+
     # Precompute the set of all tolerance classes.
     tolerance_classes = set(primary_to_part.values())
 
@@ -295,7 +297,9 @@ def resample_primary_states_v1(
         # the set of all primary states not forbidden
         # by the tolerance class trajectory within the chunk node.
         allowed_states = set()
-        for prim in set(primary_distn):
+        for prim, prob in enumerate(primary_distn):
+            if not prob:
+                continue
             if primary_to_part[prim] not in forbidden_tols:
                 allowed_states.add(prim)
 
@@ -346,7 +350,7 @@ def resample_primary_states_v1(
     # Use mcy-type conditional sampling to
     # sample primary states at each node of the chunk tree.
     chunk_node_to_sampled_state = _sample_mcy_dense.resample_states(
-            chunk_tree, root, ctm.nprimary,
+            chunk_tree, root, nprimary,
             node_to_allowed_states=chunk_node_to_allowed_states,
             root_distn=primary_distn, P_default=P_primary)
 

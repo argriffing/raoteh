@@ -209,7 +209,8 @@ def get_likelihood(root_pmap, root_distn=None):
     return likelihood
 
 
-#TODO this is not tested adequately
+#TODO Add a cython implementation,
+#TODO and also add more tests.
 def get_joint_endpoint_distn(T, root, node_to_pmap, node_to_distn, nstates):
     """
 
@@ -336,6 +337,8 @@ def get_joint_endpoint_distn_naive(T, root, node_to_set,
     return T_aug
 
 
+#TODO Add a cython implementation,
+#TODO and also add more tests.
 def get_node_to_distn(T, root, node_to_pmap, nstates,
         root_distn=None, P_default=None):
     """

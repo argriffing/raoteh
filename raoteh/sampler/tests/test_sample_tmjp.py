@@ -594,10 +594,11 @@ def _tmjp_clever_sample_helper_dense(
                 ctm, post_root_distn, dwell_times, transitions)
         v1_cnlls.append(v1_cnll)
 
+        # TODO change this call so that it mostly passes only ctm
         # Apply Rao-Blackwellization to the primary process trajectory.
         d_cnll = _tmjp_dense.ll_expectation_helper(
                 ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
-                Q_primary_dense, primary_distn_dense,
+                ctm.Q_primary, ctm.primary_distn,
                 T_primary_aug, root,
                 disease_data=disease_data)
         d_cnlls.append(d_cnll)

@@ -39,7 +39,7 @@ def resample_poisson(T, rates, root=None):
     """
     # If no root was specified then pick one arbitrarily.
     if root is None:
-        root = get_first_element(T)
+        root = _util.get_first_element(T)
 
     # Define the next node.
     next_node = max(T) + 1

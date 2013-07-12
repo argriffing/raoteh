@@ -629,6 +629,8 @@ def differential_entropy_helper(
     # Contribution of the initial primary state.
     diff_ent_init_prim = 0.0
     for compound_state, post_prob in enumerate(post_root_distn):
+        if not post_prob:
+            continue
         primary_state = ctm.compound_to_primary[compound_state]
         prior_prob = ctm.primary_distn[primary_state]
         diff_ent_init_prim -= special.xlogy(post_prob, prior_prob)
@@ -640,26 +642,31 @@ def differential_entropy_helper(
     # is untolerated.
     diff_ent_init_tol = 0.0
     for compound_state, post_prob in enumerate(post_root_distn):
+        if not post_prob:
+            continue
         primary_state = ctm.compound_to_primary[compound_state]
         primary_part = ctm.primary_to_part[primary_state]
         tol_states = ctm.compound_to_tolerances[compound_state]
         if not tol_states[primary_part]:
+            print('primary fail')
             diff_ent_init_tol = np.inf
         tol_count = sum(1 for tol_state in tol_states if tol_state)
         untol_count = sum(1 for tol_state in tol_states if not tol_state)
         if tol_count:
-            if 1 in ctm.tolerance_distn:
-                prior_prob = ctm.tolerance_distn[1]
+            prior_prob = ctm.tolerance_distn[1]
+            if prior_prob:
                 diff_ent_init_tol -= special.xlogy(
                         post_prob * (tol_count-1), prior_prob)
             else:
+                print('tol_count fail')
                 diff_ent_init_tol = np.inf
         if untol_count:
-            if 0 in ctm.tolerance_distn:
-                prior_prob = ctm.tolerance_distn[0]
+            prior_prob = ctm.tolerance_distn[0]
+            if prior_prob:
                 diff_ent_init_tol -= special.xlogy(
                         post_prob * untol_count, prior_prob)
             else:
+                print('untol_count fail')
                 diff_ent_init_tol = np.inf
 
     # Check the initial state contribution to the differential entropy
@@ -758,7 +765,7 @@ def get_tolerance_summary(
     # Summarize the tolerance process.
     total_weight = T_primary.size(weight='weight')
     nparts = len(set(primary_to_part.values()))
-    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+    tolerance_distn = get_three_state_tolerance_distn(rate_off, rate_on)
 
     # Compute conditional expectations of statistics
     # of the tolerance process.
@@ -884,7 +891,7 @@ def get_tolerance_ll_contribs(
         x
 
     """
-    tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+    tolerance_distn = get_three_state_tolerance_distn(rate_off, rate_on)
     init_ll_contrib = (
             special.xlogy(expected_initial_on - 1, tolerance_distn[1]) +
             special.xlogy(expected_initial_off, tolerance_distn[0]))
