@@ -15,7 +15,12 @@ import random
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _graph_transform, _mjp, _sample_mcy
+from raoteh.sampler import (
+        _graph_transform,
+        _mjp,
+        _sample_mcx,
+        _sample_mcy,
+        )
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element)
@@ -546,88 +551,15 @@ def gen_mh_histories(T, Q, node_to_allowed_states,
                 root_distn=root_distn)
 
 
+#TODO This function is obsolete; it is in the process of being replaced
+#TODO by _sample_mcx.get_feasible_history().
 def get_feasible_history(T, P, node_to_state, root=None, root_distn=None):
-    """
-    Find an arbitrary feasible history.
-
-    This is being replaced by get_restricted_feasible_history.
-
-    Parameters
-    ----------
-    T : weighted undirected acyclic networkx graph
-        This is the original tree.
-    P : weighted directed networkx graph
-        A sparse transition matrix assumed to be identical for all edges.
-        The weights are transition probabilities.
-    node_to_state : dict
-        A map from nodes to states.
-        Nodes with unknown states do not correspond to keys in this map.
-    root : integer, optional
-        Root of the tree.
-    root_distn : dict, optional
-        Map from root state to probability.
-
-    Returns
-    -------
-    feasible_history : weighted undirected networkx graph
-        A feasible history as a networkx graph.
-        The format is similar to that of the input tree,
-        except for a couple of differences.
-        Additional degree-two vertices have been added at the points
-        at which the state has changed along a branch.
-        Each edge is annotated not only by the 'weight'
-        that defines its length, but also by the 'state'
-        which is constant along each edge.
-
-    Notes
-    -----
-    The returned history is not sampled according to any particularly
-    meaningful distribution.
-    It is up to the caller to remove redundant self-transitions.
-
-    """
-    # Check that nodes and states are integers.
-    for node, state in node_to_state.items():
-        fail = False
-        try:
-            if int(node) != node or int(state) != state:
-                fail = True
-        except TypeError:
-            fail = True
-        if fail:
-            raise ValueError(
-                    'expected nodes and states in the node_to_state map '
-                    'to be integers but instead found node_to_state: ' + str(
-                        node_to_state))
-
-    # If the root has not been specified,
-    # pick a root with known state if any exist,
-    # and pick an arbitrary one otherwise.
-    if root is None:
-        if node_to_state:
-            root = get_first_element(node_to_state)
-        else:
-            root = get_first_element(T)
-
-    # Get the set of all states.
-    all_states = set(P)
-    if root_distn is not None:
-        all_states.update(set(root_distn))
-
-    # Convert the state restriction format.
-    node_to_allowed_states = {}
-    for node in T:
-        if node in node_to_state:
-            allowed = {node_to_state[node]}
-        else:
-            allowed = all_states
-        node_to_allowed_states[node] = allowed
-
-    # Get the restricted feasible history.
-    return get_restricted_feasible_history(
-        T, P, node_to_allowed_states, root, root_distn=root_distn)
+    T_history = _sample_mcx.get_feasible_history(T, node_to_state,
+            root=root, root_distn=root_distn, P_default=P)
+    return T_history
 
 
+#TODO this is mcy-like
 def get_restricted_feasible_history(
         T, P, node_to_allowed_states, root, root_distn=None):
     """

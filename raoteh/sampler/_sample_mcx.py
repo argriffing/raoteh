@@ -11,12 +11,115 @@ from __future__ import division, print_function, absolute_import
 
 import networkx as nx
 
-from raoteh.sampler import _mcx, _sample_mc0, _graph_transform
-
-from raoteh.sampler._util import StructuralZeroProb
+from raoteh.sampler import _util, _mcx, _sample_mc0, _graph_transform
 
 
 __all__ = []
+
+
+def get_feasible_history(T, node_to_state,
+        root=None, root_distn=None, P_default=None):
+    """
+    Find an arbitrary feasible history.
+
+    This is being replaced by get_restricted_feasible_history.
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        This is the original tree.
+    node_to_state : dict
+        A map from nodes to states.
+        Nodes with unknown states do not correspond to keys in this map.
+    root : integer, optional
+        Root of the tree.
+    root_distn : dict, optional
+        Map from root state to probability.
+    P_default : weighted directed networkx graph
+        A sparse transition matrix assumed to be identical for all edges.
+        The weights are transition probabilities.
+
+    Returns
+    -------
+    feasible_history : weighted undirected networkx graph
+        A feasible history as a networkx graph.
+        The format is similar to that of the input tree,
+        except for a couple of differences.
+        Additional degree-two vertices have been added at the points
+        at which the state has changed along a branch.
+        Each edge is annotated not only by the 'weight'
+        that defines its length, but also by the 'state'
+        which is constant along each edge.
+
+    Notes
+    -----
+    The returned history is not sampled according to any particularly
+    meaningful distribution.
+    It is up to the caller to remove redundant self-transitions.
+
+    """
+    # Check that nodes and states are integers.
+    for node, state in node_to_state.items():
+        fail = False
+        try:
+            if int(node) != node or int(state) != state:
+                fail = True
+        except TypeError:
+            fail = True
+        if fail:
+            raise ValueError(
+                    'expected nodes and states in the node_to_state map '
+                    'to be integers but instead found node_to_state: ' + str(
+                        node_to_state))
+
+    # If the root has not been specified,
+    # pick a root with known state if any exist,
+    # and pick an arbitrary one otherwise.
+    if root is None:
+        if node_to_state:
+            root = get_first_element(node_to_state)
+        else:
+            root = get_first_element(T)
+
+    # Get the set of all states.
+    all_states = set(P_default)
+    if root_distn is not None:
+        all_states.update(set(root_distn))
+
+    # Bookkeeping.
+    non_event_nodes = set(T)
+
+    # Repeatedly split edges until no structural error is raised.
+    events_per_edge = 0
+    k = None
+    while True:
+
+        # If the number of events per edge is already as large
+        # as the number of states, then no feasible solution exists.
+        # For this conclusion to be valid,
+        # self-transitions (as in uniformization) must be allowed,
+        # otherwise strange things can happen because of periodicity.
+        if events_per_edge > len(P_default):
+            raise Exception('failed to find a feasible history')
+
+        # Increment some stuff and bisect edges if appropriate.
+        if k is None:
+            k = 0
+        else:
+            T = _graph_transform.get_edge_bisected_graph(T)
+            events_per_edge += 2**k
+            k += 1
+
+        # Get the event nodes.
+        event_nodes = set(T) - non_event_nodes
+
+        # Try to sample edge states.
+        try:
+            return resample_edge_states(T, root, event_nodes,
+                    node_to_state=node_to_state,
+                    root_distn=root_distn, P_default=P_default)
+        except _util.StructuralZeroProb as e:
+            pass
 
 
 def resample_states(T, root,
@@ -65,8 +168,8 @@ def resample_states(T, root,
             root_distn=root_distn, P_default=P_default)
 
 
-def resample_edge_states(T, root, P, event_nodes,
-        node_to_state=None, root_distn=None):
+def resample_edge_states(T, root, event_nodes,
+        node_to_state=None, root_distn=None, P_default=None):
     """
     This function applies to a tree for which edges will be assigned states.
 
@@ -82,9 +185,6 @@ def resample_edge_states(T, root, P, event_nodes,
         This is the original tree.
     root : integer
         Root of the tree.
-    P : weighted directed networkx graph
-        A sparse transition matrix assumed to be identical for all edges.
-        The weights are transition probabilities.
     event_nodes : set of integers
         States of edges adjacent to these nodes are allowed to not be the same
         as each other.  For nodes that are not event nodes,
@@ -94,6 +194,9 @@ def resample_edge_states(T, root, P, event_nodes,
         Nodes with unknown states do not correspond to keys in this map.
     root_distn : dict, optional
         Map from root state to probability.
+    P_default : weighted directed networkx graph, optional
+        A sparse transition matrix assumed to be identical for all edges.
+        The weights are transition probabilities.
 
     Returns
     -------
@@ -137,14 +240,15 @@ def resample_edge_states(T, root, P, event_nodes,
                 state = node_to_state[n]
                 chunk_state = chunk_node_to_state.get(chunk_node, state)
                 if state != chunk_state:
-                    raise ZeroProbError('found conflicting state assignments '
+                    raise _util.StructuralZeroProb(
+                            'found conflicting state assignments '
                             'for a tree region delimited by event nodes')
                 chunk_node_to_state[chunk_node] = state
 
     # Sample the states.
     chunk_node_to_sampled_state = resample_states(chunk_tree, root,
             node_to_state=chunk_node_to_state,
-            root_distn=root_distn, P_default=P)
+            root_distn=root_distn, P_default=P_default)
 
     # Construct a copy of the original tree, map states onto its edges,
     # and return the tree.

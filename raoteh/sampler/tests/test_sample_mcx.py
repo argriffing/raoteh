@@ -211,8 +211,9 @@ class TestEdgeStateSampler(TestCase):
 
             # Sample the edges states.
             T_aug = _sample_mcx.resample_edge_states(
-                    T, root, P, event_nodes,
-                    node_to_state=node_to_state, root_distn=root_distn)
+                    T, root, event_nodes,
+                    node_to_state=node_to_state, root_distn=root_distn,
+                    P_default=P)
             
             # The unweighted and weighted tree size should be unchanged.
             assert_equal(T.size(), T_aug.size())
@@ -281,8 +282,9 @@ class TestEdgeStateSampler(TestCase):
 
             # Sample the edges states.
             T_aug = _sample_mcx.resample_edge_states(
-                    T, root, P, event_nodes,
-                    node_to_state=node_to_state, root_distn=None)
+                    T, root, event_nodes,
+                    node_to_state=node_to_state, root_distn=None,
+                    P_default=P)
             
             # The unweighted and weighted tree size should be unchanged.
             assert_equal(T.size(), T_aug.size())
