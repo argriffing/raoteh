@@ -23,7 +23,7 @@ import networkx as nx
 from raoteh.sampler import (
         _graph_transform,
         _mjp, _tmjp,
-        _sampler, _sample_mcy, _sample_mcz, _sample_mjp,
+        _sample_mcx, _sample_mcy, _sample_mcz, _sample_mjp,
         )
 
 from raoteh.sampler._util import (
@@ -537,9 +537,10 @@ def get_feasible_history(ctm, T, root, node_to_primary_state,
     P_proposal = get_uniformized_transition_matrix(Q_proposal)
 
     # Sample the primary process trajectory using this proposal.
-    primary_trajectory = _sampler.get_feasible_history(
-            T, P_proposal, node_to_primary_state,
-            root=root, root_distn=ctm.primary_distn)
+    primary_trajectory = _sample_mcx.get_feasible_history(
+            T, node_to_primary_state,
+            root=root, root_distn=ctm.primary_distn,
+            P_default=P_proposal)
 
     # Remove redundant nodes in the primary process trajectory
     # so that it can be more efficiently used as a background

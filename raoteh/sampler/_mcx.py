@@ -64,9 +64,16 @@ def get_node_to_pset(T, root, node_to_state=None, P_default=None):
         A map from a node to the set of states with positive subtree likelihood.
 
     """
-    # Input validation.
-    if len(set(T)) < 2:
-        raise ValueError('expected at least two nodes in the tree')
+    if len(set(T)) == 1:
+        if root not in T:
+            raise ValueError('unrecognized root')
+        if (node_to_state is not None) and (root in node_to_state):
+            root_state = node_to_state[root]
+            root_pset = {root_state}
+        else:
+            all_states = set(P_default)
+            root_pset = all_states
+        return {root : root_pset}
 
     # Bookkeeping.
     successors = nx.dfs_successors(T, root)
