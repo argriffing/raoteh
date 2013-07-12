@@ -14,7 +14,7 @@ import numpy as np
 
 from raoteh.sampler import (
         _util, _graph_transform,
-        _mc0_dense, mcy_dense, _sample_mc0_dense,
+        _mc0_dense, _mcy_dense, _sample_mc0_dense,
         )
 
 

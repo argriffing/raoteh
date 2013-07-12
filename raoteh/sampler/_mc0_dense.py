@@ -165,6 +165,12 @@ def get_likelihood(root_pmap, root_distn=None):
         The likelihood.
 
     """
+    # Check for shape compatibility.
+    if root_distn is not None:
+        if root_pmap.shape != root_distn.shape:
+            raise ValueError('root shape mismatch: '
+                    '%s %s' % (root_pmap.shape, root_distn.shape))
+
     # Check whether the prior by itself causes the likelihood to be zero.
     if root_distn is not None:
         prior_feasible_rstates = set(s for s, p in enumerate(root_distn) if p)

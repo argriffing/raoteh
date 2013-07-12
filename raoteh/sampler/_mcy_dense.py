@@ -284,12 +284,12 @@ def get_likelihood(T, root, nstates,
         then its set of allowed states is assumed to be unrestricted.
         Entries of this map that correspond to nodes not in the tree
         will be silently ignored.
-    root_distn : dict, optional
-        A sparse finite distribution or weights over root states.
+    root_distn : 1d ndarray, optional
+        A dense finite distribution or weights over root states.
         Values should be positive but are not required to sum to 1.
         If the distribution is not provided,
         then it will be assumed to have values of 1 for each possible state.
-    P_default : directed weighted networkx graph, optional
+    P_default : 2d ndarray, optional
         If an edge is not annotated with a transition matrix P,
         then this default transition matrix will be used.
 
@@ -303,9 +303,7 @@ def get_likelihood(T, root, nstates,
     # Otherwise, get likelihoods conditional on the root state
     # and eturn the likelihood.
     if len(T) == 1:
-        if _util.get_first_element(T) != root:
-            raise Exception('the tree has only a single node, '
-                    'but this node is not the root')
+        _util._check_root(T, root)
         allowed_states = node_to_allowed_states[root]
         if not allowed_states:
             raise _util.StructuralZeroProb('the tree has only a single node, '
@@ -313,13 +311,13 @@ def get_likelihood(T, root, nstates,
         if root_distn is None:
             return 1
         else:
-            nonzero_prob_states = allowed_states & set(root_distn)
-            if not nonzero_prob_states:
+            pos_prob_states = set(s for s in allowed_states if root_distn[s])
+            if not pos_prob_states:
                 raise _util.StructuralZeroProb('the tree has only '
                         'a single node, and every state with positive '
                         'prior probability at the root is disallowed '
                         'by a node state constraint')
-            return sum(root_distn[s] for s in nonzero_prob_states)
+            return sum(root_distn[s] for s in pos_prob_states)
     else:
         node_to_pmap = get_node_to_pmap(T, root, nstates,
                 node_to_allowed_states=node_to_allowed_states,

@@ -57,8 +57,8 @@ def array_random_choice(a):
     # This algorithm is not appropriate for multiple random samples
     # from the same array.
     # If you want to do that, then use numpy random.choice instead.
-    if not a:
-        raise ValueError('the array is empty')
+    if a is None:
+        raise ValueError('the input array must not be None')
     total = a.sum()
     if total <= 0:
         raise ValueError('weight is not positive')

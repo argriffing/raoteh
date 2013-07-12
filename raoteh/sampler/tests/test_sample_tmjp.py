@@ -31,6 +31,7 @@ from raoteh.sampler import (
         _sampler,
         _sample_tmjp,
         _sample_tree,
+        _sample_tmjp_dense,
         )
 
 from raoteh.sampler._util import (
@@ -504,14 +505,15 @@ def _tmjp_clever_sample_helper_debug(
     return neg_ll_contribs, d_neg_ll_contribs
 
 
-def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
+def _tmjp_clever_sample_helper_dense(
+        ctm, T, root, leaf_to_primary_state,
         disease_data=None, nhistories=None):
     """
     A helper function for speed profiling.
 
     Parameters
     ----------
-    ctm : instance of CompoundToleranceModel
+    ctm : instance of _tmjp_dense.CompoundToleranceModel
         Compound tolerance model.
     T : x
         x
@@ -526,15 +528,6 @@ def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
         Sample this many histories.
 
     """
-    # init dense transition matrix stuff
-    if set(ctm.primary_to_part) != set(range(ctm.nprimary)):
-        raise NotImplementedError
-    primary_states = range(ctm.nprimary)
-    primary_distn_dense = dict_to_numpy_array(
-            ctm.primary_distn, nodelist=primary_states)
-    Q_primary_dense = rate_matrix_to_numpy_array(
-            ctm.Q_primary, nodelist=primary_states)
-
     # Construct a map from (tuple(tolerance_states), primary_state) to a
     # compound state.
     compound_reduction_map = {}
@@ -548,7 +541,7 @@ def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
     d_cnlls = []
 
     # sample histories and summarize them using rao-blackwellization
-    for history_info in _sample_tmjp.gen_histories_v1(
+    for history_info in _sample_tmjp_dense.gen_histories_v1(
             ctm, T, root, leaf_to_primary_state,
             disease_data=disease_data, nhistories=nhistories):
         T_primary_aug, tol_trajectories = history_info
@@ -589,15 +582,19 @@ def _tmjp_clever_sample_helper_dense(ctm, T, root, leaf_to_primary_state,
                 T_compound.size(weight='weight'),
                 T.size(weight='weight'))
 
-        info = _mjp.get_history_statistics(T_compound, root=root)
+        # Summarize the compound process.
+        info = _mjp_dense.get_history_statistics(
+                T_compound, ctm.ncompound, root=root)
         dwell_times, root_state, transitions = info
 
-        post_root_distn = {root_state : 1.0}
-        v1_cnll = _tmjp.differential_entropy_helper(
+        # Apply Rao-Blackwellization to the compound process summary.
+        post_root_distn = np.zeros(ctm.ncompound, dtype=float)
+        post_root_distn[root_state] = 1.0
+        v1_cnll = _tmjp_dense.differential_entropy_helper(
                 ctm, post_root_distn, dwell_times, transitions)
         v1_cnlls.append(v1_cnll)
 
-        # Use the dense transition matrix Rao-Blackwellization.
+        # Apply Rao-Blackwellization to the primary process trajectory.
         d_cnll = _tmjp_dense.ll_expectation_helper(
                 ctm.primary_to_part, ctm.rate_on, ctm.rate_off,
                 Q_primary_dense, primary_distn_dense,
@@ -858,6 +855,22 @@ def test_sample_tmjp_v1():
     # Define the tolerance Markov jump process.
     ctm = _tmjp.get_example_tolerance_process_info()
 
+    # init dense transition matrix stuff
+    nprimary = len(ctm.primary_to_part)
+    if set(ctm.primary_to_part) != set(range(ctm.nprimary)):
+        raise NotImplementedError
+    primary_states = range(ctm.nprimary)
+    primary_distn_dense = dict_to_numpy_array(
+            ctm.primary_distn, nodelist=primary_states)
+    Q_primary_dense = rate_matrix_to_numpy_array(
+            ctm.Q_primary, nodelist=primary_states)
+
+    # Get the dense ctm.
+    ctm_dense = _tmjp_dense.CompoundToleranceModel(
+            Q_primary_dense, primary_distn_dense, ctm.primary_to_part,
+            ctm.rate_on, ctm.rate_off)
+    ctm_dense.init_compound()
+
     # Define the number of samples per repeat.
     nsamples = 1000
 
@@ -883,7 +896,7 @@ def test_sample_tmjp_v1():
     # Get neg ll contribs using the clever sampler.
     # This calls a separate function for more isolated profiling.
     v1_cnlls, d_cnlls = _tmjp_clever_sample_helper_dense(
-            ctm, T, root, leaf_to_primary_state, nhistories=nsamples)
+            ctm_dense, T, root, leaf_to_primary_state, nhistories=nsamples)
 
     # Get neg ll contribs using the dumb sampler.
     # This calls a separate function for more isolated profiling.
@@ -913,7 +926,7 @@ def test_sample_tmjp_v1_disease():
     ctm = _tmjp.get_example_tolerance_process_info()
 
     # Define the number of samples.
-    nsamples = 10000
+    nsamples = 1000
 
     # Simulate some data for testing.
     info = get_simulated_data(ctm, sample_disease_data=True)

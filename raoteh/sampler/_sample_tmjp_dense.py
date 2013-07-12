@@ -23,18 +23,15 @@ import numpy as np
 import networkx as nx
 
 from raoteh.sampler import (
-        _graph_transform, _util,
+        _graph_transform,
+        _util,
+        _mjp, _tmjp,
         _mjp_dense, _tmjp_dense,
-        _sampler,
-        _sample_mcy, _sample_mcz, _sample_mjp,
+        _sample_mcy, _sample_mjp,
+        _sample_mcx_dense, _sample_mcy_dense, _sample_mjp_dense,
         )
 
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb, get_first_element)
-
-from raoteh.sampler._sample_mjp import (
-        get_uniformized_transition_matrix,
-        )
+from raoteh.sampler._sample_mjp_dense import get_uniformized_transition_matrix
 
 
 __all__ = []
@@ -82,22 +79,20 @@ def gen_histories_v1(ctm, T, root, node_to_primary_state,
 
     # Summarize the primary process in ways that are useful for Rao-Teh.
     primary_total_rates = _mjp_dense.get_total_rates(ctm.Q_primary)
-    primary_max_total_rate = max(primary_total_rates.values())
+    primary_max_total_rate = primary_total_rates.max()
     primary_omega = uniformization_factor * primary_max_total_rate
-    primary_poisson_rates = dict(
-            (a, primary_omega - q) for a, q in primary_total_rates.items())
+    primary_poisson_rates = primary_omega - primary_total_rates
     P_primary = get_uniformized_transition_matrix(
             ctm.Q_primary, omega=primary_omega)
 
-    # Summarize the compound process.
-    Q_tolerance = _tmjp.get_tolerance_rate_matrix(ctm.rate_off, ctm.rate_on)
-
-    # Summarize the tolerance process in ways that are useful for Rao-Teh.
-    tolerance_total_rates = _mjp.get_total_rates(Q_tolerance)
-    tolerance_max_total_rate = max(tolerance_total_rates.values())
+    # Summarize the 2-state tolerance process
+    # in ways that are useful for Rao-Teh.
+    Q_tolerance = _tmjp_dense.get_tolerance_rate_matrix(
+            ctm.rate_off, ctm.rate_on)
+    tolerance_total_rates = _mjp_dense.get_total_rates(Q_tolerance)
+    tolerance_max_total_rate = tolerance_total_rates.max()
     tolerance_omega = uniformization_factor * tolerance_max_total_rate
-    tolerance_poisson_rates = dict(
-            (a, tolerance_omega - q) for a, q in tolerance_total_rates.items())
+    tolerance_poisson_rates = tolerance_omega - tolerance_total_rates
     P_tolerance = get_uniformized_transition_matrix(
             Q_tolerance, omega=tolerance_omega)
 
@@ -124,7 +119,7 @@ def gen_histories_v1(ctm, T, root, node_to_primary_state,
 
         # Resample poisson events on the primary trajectory,
         # then extract the event map from the resulting timing trajectory.
-        timing_traj = _sample_mjp.resample_poisson(
+        timing_traj = _sample_mjp_dense.resample_poisson(
                 primary_trajectory, primary_poisson_rates)
         event_map = _graph_transform.get_event_map(T, root, timing_traj)
         edge_to_event_times = {}
@@ -198,9 +193,21 @@ def resample_primary_states_v1(
         This is the original tree.
     root : integer
         Root of the tree.
+    primary_to_part : x
+        x
+    P_primary : x
+        x
+    primary_distn : x
+        x
+    tolerance_trajectories : x
+        x
+    edge_to_event_times : x
+        x
 
     Returns
     -------
+    T_primary_aug : x
+        x
 
     Notes
     -----
@@ -338,8 +345,8 @@ def resample_primary_states_v1(
 
     # Use mcy-type conditional sampling to
     # sample primary states at each node of the chunk tree.
-    chunk_node_to_sampled_state = _sample_mcy.resample_states(
-            chunk_tree, root,
+    chunk_node_to_sampled_state = _sample_mcy_dense.resample_states(
+            chunk_tree, root, ctm.nprimary,
             node_to_allowed_states=chunk_node_to_allowed_states,
             root_distn=primary_distn, P_default=P_primary)
 
@@ -469,8 +476,9 @@ def resample_tolerance_states_v1(
 
     # Use mcy-type conditional sampling to
     # sample tolerance states at each node of the chunk tree.
-    chunk_node_to_tolerance_state = _sample_mcy.resample_states(
-            chunk_tree, root,
+    ntolerance_states = 2
+    chunk_node_to_tolerance_state = _sample_mcy_dense.resample_states(
+            chunk_tree, root, ntolerance_states,
             node_to_allowed_states=chunk_node_to_allowed_states,
             root_distn=tolerance_distn, P_default=P_tolerance)
 
@@ -528,12 +536,13 @@ def get_feasible_history(ctm, T, root, node_to_primary_state,
     """
     # Get the tolerance state distribution, rate matrix,
     # and uniformized tolerance transition probability matrix.
-    Q_tolerance = _tmjp.get_tolerance_rate_matrix(ctm.rate_off, ctm.rate_on)
+    Q_tolerance = _tmjp_dense.get_tolerance_rate_matrix(
+            ctm.rate_off, ctm.rate_on)
     P_tolerance = get_uniformized_transition_matrix(Q_tolerance)
 
     # Get a primary process proposal rate matrix
     # that approximates the primary component of the compound process.
-    Q_proposal = _tmjp.get_primary_proposal_rate_matrix(
+    Q_proposal = _tmjp_dense.get_primary_proposal_rate_matrix(
             ctm.Q_primary, ctm.primary_to_part, ctm.tolerance_distn)
 
     # Get the uniformized transition probability matrix
@@ -541,9 +550,9 @@ def get_feasible_history(ctm, T, root, node_to_primary_state,
     P_proposal = get_uniformized_transition_matrix(Q_proposal)
 
     # Sample the primary process trajectory using this proposal.
-    primary_trajectory = _sampler.get_feasible_history(
-            T, P_proposal, node_to_primary_state,
-            root=root, root_distn=ctm.primary_distn)
+    primary_trajectory = _sample_mcx_dense.get_feasible_history(
+            T, node_to_primary_state, ctm.nprimary,
+            root=root, root_distn=ctm.primary_distn, P_default=P_proposal)
 
     # Remove redundant nodes in the primary process trajectory
     # so that it can be more efficiently used as a background

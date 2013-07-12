@@ -98,7 +98,7 @@ class CompoundToleranceModel(object):
         self.nprimary = len(primary_to_part)
         self.nparts = len(set(primary_to_part.values()))
         self.ncompound = int(np.ldexp(self.nprimary, self.nparts))
-        self.tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+        self.tolerance_distn = get_two_state_tolerance_distn(rate_off, rate_on)
 
         # Mark some attributes as un-initialized.
         # These attributes are related to the compound distribution,
@@ -110,6 +110,7 @@ class CompoundToleranceModel(object):
 
     def init_compound(self):
         """
+
         """
         if self.Q_compound is not None:
             raise Exception(
@@ -117,7 +118,115 @@ class CompoundToleranceModel(object):
         if self.ncompound > 1e6:
             raise Exception(
                     'the compound state space is too big')
-        raise NotImplementedError
+
+        # Define a compound state space.
+        self.compound_to_primary = []
+        self.compound_to_tolerances = []
+        for primary, tolerances in itertools.product(
+                range(self.nprimary),
+                itertools.product((0, 1), repeat=self.nparts)):
+            self.compound_to_primary.append(primary)
+            self.compound_to_tolerances.append(tolerances)
+
+        # Define the distribution over compound states.
+        self.compound_distn = np.zeros(self.ncompound)
+        for i, (primary, tolerances) in enumerate(
+                zip(self.compound_to_primary, self.compound_to_tolerances)):
+            part = self.primary_to_part[primary]
+            if tolerances[part] == 1:
+                p_primary = self.primary_distn[primary]
+                p_tolerances = 1.0
+                for tolerance_class, tolerance_state in enumerate(tolerances):
+                    if tolerance_class != part:
+                        p_tolerances *= self.tolerance_distn[tolerance_state]
+                self.compound_distn[i] = p_primary * p_tolerances
+
+        # Check that the distributions have the correct normalization.
+        # The loop is unrolled to better isolate errors.
+        if not np.allclose(self.primary_distn.sum(), 1):
+            raise Exception('internal error')
+        if not np.allclose(self.tolerance_distn.sum(), 1):
+            raise Exception('internal error')
+        if not np.allclose(self.compound_distn.sum(), 1):
+            raise Exception('internal error')
+
+        # Define the compound transition rate matrix.
+        # This is slow, but we do not need to be fast.
+        shape = (self.ncompound, self.ncompound)
+        self.Q_compound = np.zeros(shape, dtype=float)
+        for i in range(self.ncompound):
+            for j in range(self.ncompound):
+                if i == j:
+                    continue
+                i_prim = self.compound_to_primary[i]
+                j_prim = self.compound_to_primary[j]
+                i_tols = self.compound_to_tolerances[i]
+                j_tols = self.compound_to_tolerances[j]
+                tol_pairs = list(enumerate(zip(i_tols, j_tols)))
+                tol_diffs = [(k, x, y) for k, (x, y) in tol_pairs if x != y]
+                tol_hdist = len(tol_diffs)
+
+                # Look for a tolerance state change.
+                # Do not allow simultaneous primary and tolerance changes.
+                # Do not allow more than one simultaneous tolerance change.
+                # Do not allow changes to the primary tolerance class.
+                if tol_hdist > 0:
+                    if i_prim != j_prim:
+                        continue
+                    if tol_hdist > 1:
+                        continue
+                    part, i_tol, j_tol = tol_diffs[0]
+                    if part == self.primary_to_part[i_prim]:
+                        continue
+
+                    # Add the transition rate.
+                    if j_tol:
+                        rate = self.rate_on
+                    else:
+                        rate = self.rate_off
+                    self.Q_compound[i, j] = rate
+
+                # Look for a primary state change.
+                # Do not allow simultaneous primary and tolerance changes.
+                # Do not allow a change to a non-tolerated primary class.
+                # Do not allow transitions that have zero rate
+                # in the primary process.
+                if i_prim != j_prim:
+                    if tol_hdist > 0:
+                        continue
+                    if not i_tols[self.primary_to_part[j_prim]]:
+                        continue
+                    if not self.Q_primary[i_prim, j_prim]:
+                        continue
+                    
+                    # Add the primary state transition rate.
+                    rate = self.Q_primary[i_prim, j_prim]
+                    self.Q_compound[i, j] = rate
+
+        self.Q_compound -= np.diag(self.Q_compound.sum(axis=1))
+
+
+def get_tolerance_rate_matrix(rate_off, rate_on):
+    """
+    Get the two-state tolerance rate matrix.
+
+    Parameters
+    ----------
+    rate_off : float
+        Rate of tolerance transition from on to off.
+    rate_on : float
+        Rate of tolerance transition from off to on.
+
+    Returns
+    -------
+    Q_tolerance : 2d ndarray
+        Tolerance state transition rate matrix.
+
+    """
+    Q_tolerance = np.array([
+        [-rate_on, rate_on],
+        [rate_off, -rate_off]], dtype=float)
+    return Q_tolerance
 
 
 def get_tolerance_expm_augmented_tree(T, root, Q_default=None):
@@ -258,7 +367,34 @@ def get_expected_tolerance_history_statistics(
             absorption_expectation)
 
 
-def get_tolerance_distn(rate_off, rate_on):
+def get_two_state_tolerance_distn(rate_off, rate_on):
+    """
+
+    Parameters
+    ----------
+    rate_off : float
+        Rate of tolerance transition from on to off.
+    rate_on : float
+        Rate of tolerance transition from off to on.
+
+    Returns
+    -------
+    tolerance_distn : dict
+        Sparse distribution over the tolerance states 0 and 1.
+        Tolerance state 0 is off, and tolerance state 1 is on.
+
+    """
+    if (rate_off < 0) or (rate_on < 0):
+        raise ValueError('rates must be non-negative')
+    total_tolerance_rate = rate_off + rate_on
+    if total_tolerance_rate <= 0:
+        raise ValueError('the total tolerance rate must be positive')
+    unnormal_tolerance_distn = np.array([rate_off, rate_on], dtype=float)
+    tolerance_distn = unnormal_tolerance_distn / total_tolerance_rate
+    return tolerance_distn
+
+
+def get_three_state_tolerance_distn(rate_off, rate_on):
     """
 
     Parameters
@@ -452,6 +588,115 @@ def ll_expectation_helper(
     cnll = _tmjp_util.CompoundNegLL(
             neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,
             neg_trans_prim_ll, -trans_tol_ll)
+    return cnll
+
+
+#TODO copypasted from _tmjp
+def differential_entropy_helper(
+        ctm, post_root_distn, post_dwell_times, post_transitions):
+    """
+    More sophisticated than _mjp.differential_entropy_helper().
+
+    The primary process is assumed to be time-reversible,
+    and the prior distribution at the root is assumed to be
+    the stationary distribution of the compound process.
+
+    Parameters
+    ----------
+    ctm : instance of _tmjp_dense.CompoundToleranceModel
+        Compound tolerance model.
+    post_root_distn : 1d ndarray
+        Compound process posterior state distribution at the root.
+    post_dwell_times : 1d ndarray
+        Compound process posterior expected dwell time for each state.
+    post_transitions : 2d ndarray
+        Compound process posterior expected count of each transition type.
+
+    Returns
+    -------
+    cnll : instance of CompoundNegLL
+        Negative log likelihood of the trajectory, additively separated.
+
+    """
+    # Get the non-separated differential entropy components for comparison.
+    # The dwell time component will be used directly,
+    # without further separation.
+    info = _mjp_dense.differential_entropy_helper(
+            ctm.Q_compound, ctm.compound_distn,
+            post_root_distn, post_dwell_times, post_transitions)
+    diff_ent_init, diff_ent_dwell, diff_ent_trans = info
+
+    # Contribution of the initial primary state.
+    diff_ent_init_prim = 0.0
+    for compound_state, post_prob in enumerate(post_root_distn):
+        primary_state = ctm.compound_to_primary[compound_state]
+        prior_prob = ctm.primary_distn[primary_state]
+        diff_ent_init_prim -= special.xlogy(post_prob, prior_prob)
+
+    # Contribution of the initial tolerance states.
+    # This is careful about incompatibility between primary state
+    # and tolerance states; it gives an infinity negative log likelihood
+    # to the case where the tolerance class of the primary state
+    # is untolerated.
+    diff_ent_init_tol = 0.0
+    for compound_state, post_prob in enumerate(post_root_distn):
+        primary_state = ctm.compound_to_primary[compound_state]
+        primary_part = ctm.primary_to_part[primary_state]
+        tol_states = ctm.compound_to_tolerances[compound_state]
+        if not tol_states[primary_part]:
+            diff_ent_init_tol = np.inf
+        tol_count = sum(1 for tol_state in tol_states if tol_state)
+        untol_count = sum(1 for tol_state in tol_states if not tol_state)
+        if tol_count:
+            if 1 in ctm.tolerance_distn:
+                prior_prob = ctm.tolerance_distn[1]
+                diff_ent_init_tol -= special.xlogy(
+                        post_prob * (tol_count-1), prior_prob)
+            else:
+                diff_ent_init_tol = np.inf
+        if untol_count:
+            if 0 in ctm.tolerance_distn:
+                prior_prob = ctm.tolerance_distn[0]
+                diff_ent_init_tol -= special.xlogy(
+                        post_prob * untol_count, prior_prob)
+            else:
+                diff_ent_init_tol = np.inf
+
+    # Check the initial state contribution to the differential entropy
+    if not np.allclose(
+            diff_ent_init_prim + diff_ent_init_tol,
+            diff_ent_init):
+        raise Exception(
+                'internal differential entropy calculation error: '
+                '%s + %s = %s but expected %s' % (
+                    diff_ent_init_prim, diff_ent_init_tol,
+                    diff_ent_init_prim + diff_ent_init_tol,
+                    diff_ent_init))
+
+    # Transition contribution to differential entropy.
+    diff_ent_trans_prim = 0.0
+    diff_ent_trans_tol = 0.0
+    for sa in range(ctm.ncompound):
+        for sb in range(ctm.ncompound):
+            rate = ctm.Q_compound[sa, sb]
+            ntrans_expected = post_transitions[sa, sb]
+            sa_primary = ctm.compound_to_primary[sa]
+            sb_primary = ctm.compound_to_primary[sb]
+            if sa_primary != sb_primary:
+                diff_ent_trans_prim -= special.xlogy(ntrans_expected, rate)
+            else:
+                diff_ent_trans_tol -= special.xlogy(ntrans_expected, rate)
+
+    # Check the transition contribution to the differential entropy
+    if not np.allclose(
+            diff_ent_trans_prim + diff_ent_trans_tol,
+            diff_ent_trans):
+        raise Exception('internal error')
+
+    # Aggregate and return the contributions to the differential entropy.
+    cnll = _tmjp_util.CompoundNegLL(
+            diff_ent_init_prim, diff_ent_init_tol, diff_ent_dwell,
+            diff_ent_trans_prim, diff_ent_trans_tol)
     return cnll
 
 
@@ -756,19 +1001,17 @@ def get_primary_proposal_rate_matrix(
 
     Parameters
     ----------
-    Q_primary : directed weighted networkx graph
-        A sparse transition rate matrix.
-        The diagonal entries are assumed to be missing.
+    Q_primary : 2d ndarray.
+        x
     primary_to_part : dict
         Maps the primary state to its tolerance class.
-    tolerance_distn : dict
-        The sparse distribution over tolerance states 0 and 1.
+    tolerance_distn : 1d ndarray
+        The dense distribution over tolerance states 0 and 1.
 
     Returns
     -------
-    Q_primary_proposal : directed weighted networkx graph
-        A sparse transition rate matrix.
-        The diagonal entries are assumed to be missing.
+    Q_primary_proposal : 2d ndarray
+        A transition rate matrix.
         It is related to the primary process transition rate matrix,
         but the between-tolerance-class rates may be reduced.
 
@@ -784,14 +1027,17 @@ def get_primary_proposal_rate_matrix(
     It is also used to help construct an initial feasible trajectory.
 
     """
-    Q_proposal = nx.DiGraph()
-    for sa, sb in Q_primary.edges():
-        primary_rate = Q_primary[sa][sb]['weight']
-        if primary_to_part[sa] == primary_to_part[sb]:
-            Q_proposal.add_edge(sa, sb, weight=primary_rate)
-        elif 1 in tolerance_distn:
-            proposal_rate = primary_rate * tolerance_distn[1]
-            Q_proposal.add_edge(sa, sb, weight=proposal_rate)
+    check_square_dense(Q_primary)
+    nprimary = len(primary_to_part)
+
+    # Adjust the proposal rate matrix
+    # by reducing rates that cross tolerance classes.
+    Q_proposal = Q_primary.copy()
+    for sa in range(nprimary):
+        for sb in range(nprimary):
+            if primary_to_part[sa] != primary_to_part[sb]:
+                Q_proposal[sa, sb] *= tolerance_distn[1]
+    Q_proposal -= np.diag(Q_proposal.sum(axis=1))
     return Q_proposal
 
 
