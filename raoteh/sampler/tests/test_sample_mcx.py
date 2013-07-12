@@ -13,11 +13,7 @@ from numpy.testing import (run_module_suite, TestCase,
         assert_equal, assert_allclose, assert_, assert_raises,
         decorators)
 
-from raoteh.sampler import _mc0, _mcx
-
-from raoteh.sampler import _sample_mcx
-
-from raoteh.sampler._util import StructuralZeroProb
+from raoteh.sampler import _util, _mc0, _mcx, _sample_mcx
 
 
 class TestNodeStateSampler(TestCase):
@@ -51,7 +47,7 @@ class TestNodeStateSampler(TestCase):
             node_to_state_set = _mc0.get_node_to_set(T, root,
                     node_to_pset, P_default=P)
             assert_raises(
-                    StructuralZeroProb,
+                    _util.StructuralZeroProb,
                     _sample_mcx.resample_states,
                     T, root,
                     node_to_state, P_default=P)
@@ -97,7 +93,7 @@ class TestNodeStateSampler(TestCase):
         node_to_state = {0: 0, 2: 2}
         for root in T:
             assert_raises(
-                    StructuralZeroProb,
+                    _util.StructuralZeroProb,
                     _sample_mcx.resample_states,
                     T, root,
                     node_to_state, root_distn=root_distn, P_default=P)
@@ -296,6 +292,62 @@ class TestEdgeStateSampler(TestCase):
             assert_equal(T_aug[0][10]['state'], 22)
             assert_equal(T_aug[0][20]['state'], 22)
             assert_equal(T_aug[0][30]['state'], 22)
+
+
+class TestFeasibleStateSampler(TestCase):
+
+    def test_get_feasible_history(self):
+
+        # This transition matrix is on a 4x4 grid.
+        P = _mc0.get_example_transition_matrix()
+
+        # Define a very sparse tree.
+        T = nx.Graph()
+        T.add_weighted_edges_from([
+            (0, 12, 1.0),
+            (0, 23, 2.0),
+            (0, 33, 1.0),
+            ])
+
+        # Define the known states
+        node_to_state = {
+                12 : 11,
+                23 : 14,
+                33 : 41}
+
+        # Define a root at a node with a known state,
+        # so that we can avoid specifying a distribution at the root.
+        root = 12
+        T_aug = _sample_mcx.get_feasible_history(T, node_to_state,
+                root=root, P_default=P)
+
+        # The unweighted and weighted tree size should be unchanged.
+        assert_allclose(
+                T.size(weight='weight'), T_aug.size(weight='weight'))
+
+        # Check that for each node in the initial tree,
+        # all adjacent edges in the augmented tree have the same state.
+        # Furthermore if the state of the node in the initial tree is known,
+        # check that the adjacent edges share this known state.
+        for a in T:
+            states = set()
+            for b in T_aug.neighbors(a):
+                states.add(T_aug[a][b]['state'])
+            assert_equal(len(states), 1)
+            state = _util.get_first_element(states)
+            if a in node_to_state:
+                assert_equal(node_to_state[a], state)
+
+        # Check that every adjacent edge pair is a valid transition.
+        successors = nx.dfs_successors(T_aug, root)
+        for a, b in nx.bfs_edges(T_aug, root):
+            if b in successors:
+                for c in successors[b]:
+                    ab = T_aug[a][b]['state']
+                    bc = T_aug[b][c]['state']
+                    assert_(ab in P)
+                    assert_(bc in P[ab])
+                    assert_(P[ab][bc]['weight'] > 0)
 
 
 if __name__ == '__main__':
