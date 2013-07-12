@@ -59,6 +59,66 @@ __all__ = []
 
 
 
+class CompoundToleranceModel(object):
+    """
+    A read-only aggregation of information describing an evolutionary process.
+
+    """
+    def __init__(self,
+            Q_primary, primary_distn, primary_to_part,
+            rate_on, rate_off):
+        """
+
+        Parameters
+        ----------
+        Q_primary : 2d ndarray
+            x
+        primary_distn : 1d ndarray
+            x
+        primary_to_part : dict
+            x
+        rate_on : float
+            x
+        rate_off : float
+            x
+
+        """
+        # Store the inputs.
+        self.Q_primary = Q_primary
+        self.primary_distn = primary_distn
+        self.primary_to_part = primary_to_part
+        self.rate_on = rate_on
+        self.rate_off = rate_off
+
+        # Precompute some summaries which can be computed quickly
+        # and do not use much memory.
+        # Summaries that are slow or complicated to compute or which may use
+        # too much memory are computed on demand
+        # through an explicit function call.
+        self.nprimary = len(primary_to_part)
+        self.nparts = len(set(primary_to_part.values()))
+        self.ncompound = int(np.ldexp(self.nprimary, self.nparts))
+        self.tolerance_distn = get_tolerance_distn(rate_off, rate_on)
+
+        # Mark some attributes as un-initialized.
+        # These attributes are related to the compound distribution,
+        # and may be initialized later using init_compound().
+        self.Q_compound = None
+        self.compound_distn = None
+        self.compound_to_primary = None
+        self.compound_to_tolerances = None
+
+    def init_compound(self):
+        """
+        """
+        if self.Q_compound is not None:
+            raise Exception(
+                    'compound attributes should be initialized only once')
+        if self.ncompound > 1e6:
+            raise Exception(
+                    'the compound state space is too big')
+        raise NotImplementedError
+
 
 def get_tolerance_expm_augmented_tree(T, root, Q_default=None):
     """
