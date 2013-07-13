@@ -53,6 +53,159 @@ def _define_state_mask(node_to_allowed_states, preorder_nodes, nstates):
                 state_mask[na_index, sa] = 0
     return state_mask
 
+#TODO copypasted from get_node_to_pmap
+def kitchen_sink(T, root, nstates,
+        node_to_allowed_states=None, root_distn=None,
+        P_default=None):
+    """
+    For each node, construct the map from state to subtree likelihood.
+
+    Parameters
+    ----------
+    T : undirected unweighted acyclic networkx graph
+        A tree whose edges are optionally annotated
+        with edge-specific state transition probability matrix P.
+    root : integer
+        The root node.
+    nstates : integer
+        Number of states.
+    node_to_allowed_states : dict, optional
+        A map from a node to a set of allowed states.
+        If the map is None then the sets of allowed states are assumed
+        to be unrestricted by observations.
+        Similarly, if a node is missing from this map
+        then its set of allowed states is assumed to be unrestricted.
+        Entries of this map that correspond to nodes not in the tree
+        will be silently ignored.
+    P_default : 2d ndarray, optional
+        Transition matrix to be used for edges
+        which are not annotated with an edge-specific transition matrix.
+    node_to_set : dict, optional
+        Maps nodes to possible states.
+
+    Returns
+    -------
+    node_to_pmap : dict
+        A map from a node to a map from a state to a subtree likelihood.
+    node_to_distn : dict
+        A map from a node to a map from a state to a subtree likelihood.
+
+    """
+    _util._check_root(T, root)
+
+    #TODO Check whether this special-casing is required
+    #TODO also check for get_node_to_pmap.
+    if len(T) == 1:
+
+        # get the root pmap
+        allowed_states = set(range(nstates))
+        if node_to_allowed_states is not None:
+            allowed_states &= node_to_allowed_states[root]
+        root_pmap = np.array(
+                [1 if s in allowed_states else 0 for s in range(nstates)],
+                dtype=float)
+        node_to_pmap = {root : root_pmap}
+
+        # get the posterior root distn
+        if root_distn is None:
+            post_root_weights = root_pmap
+        else:
+            post_root_weights = root_pmap * root_distn
+        post_root_distn = post_root_weights / post_root_weights.sum()
+
+    else:
+        state_mask, node_to_pmap, node_to_distn = _esd_kitchen_sink(
+                T, root, nstates,
+                node_to_allowed_states=node_to_allowed_states,
+                root_distn=root_distn,
+                P_default=P_default)
+    return node_to_pmap, node_to_distn
+
+
+#TODO Copypasted from _esd_get_node_to_pmap().
+def _esd_kitchen_sink(
+        T, root, nstates,
+        node_to_allowed_states=None, root_distn=None, P_default=None,
+        ):
+    """
+    Do a bunch of stuff using pyfelscore (cython).
+
+    For speed optimization,
+    this function does a bunch of stuff using pyfelscore (cython)
+    to avoid multiple data structure conversions.
+
+    """
+    # Construct the bfs tree, preserving transition matrices on the edges.
+    T_bfs = nx.DiGraph()
+    for na, nb in nx.bfs_edges(T, root):
+        T_bfs.add_edge(na, nb)
+        edge_object = T[na][nb]
+        P = edge_object.get('P', None)
+        if P is not None:
+            T_bfs[na][nb]['P'] = P
+
+    # Get the ordered list of nodes in preorder.
+    preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
+
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices, tree_csr_indptr = digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
+
+    # Define the state mask.
+    state_mask = _define_state_mask(
+            node_to_allowed_states, preorder_nodes, nstates)
+
+    # Construct the edge-specific transition matrix as an ndim-3 numpy array.
+    esd_transitions = get_esd_transitions(
+            T_bfs, preorder_nodes, nstates, P_default=P_default)
+
+    # Backward pass to update the state mask.
+    pyfelscore.mcy_esd_get_node_to_pset(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask)
+
+    # Forward pass to update the state mask.
+    pyfelscore.esd_get_node_to_set(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask)
+
+    # Backward pass to get partial probabilities.
+    nnodes = len(preorder_nodes)
+    subtree_probability = np.zeros((nnodes, nstates), dtype=float)
+    pyfelscore.mcy_esd_get_node_to_pmap(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            state_mask,
+            subtree_probability)
+
+    # Another pass to get the marginal distributions at the nodes.
+    if root_distn is None:
+        root_distn = np.ones(nstates, dtype=float)
+    node_to_distn_array = np.empty((nnodes, nstates), dtype=float)
+    pyfelscore.mc0_esd_get_node_to_distn(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            root_distn,
+            subtree_probability,
+            node_to_distn_array)
+
+    # Convert the ndarrays back into dicts.
+    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
+    node_to_pmap = {}
+    node_to_distn = {}
+    for na_index, na in enumerate(preorder_nodes):
+        node_to_pmap[na] = subtree_probability[na_index]
+        node_to_distn[na] = node_to_distn_array[na_index]
+
+    # Return the state mask and the node_to_pmap dict.
+    return state_mask, node_to_pmap, node_to_distn
+
 
 def _esd_get_node_to_pmap(T, root, nstates,
         node_to_allowed_states=None, P_default=None):
@@ -118,15 +271,7 @@ def _esd_get_node_to_pmap(T, root, nstates,
     node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
     node_to_pmap = {}
     for na_index, na in enumerate(preorder_nodes):
-        allowed_states = set()
-        for sa in range(nstates):
-            if state_mask[na_index, sa]:
-                allowed_states.add(sa)
-        pmap = np.zeros(nstates, dtype=float)
-        for sa in range(nstates):
-            if sa in allowed_states:
-                pmap[sa] = subtree_probability[na_index, sa]
-        node_to_pmap[na] = pmap
+        node_to_pmap[na] = subtree_probability[na_index]
 
     # Return the state mask and the node_to_pmap dict.
     return state_mask, node_to_pmap

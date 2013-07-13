@@ -312,16 +312,21 @@ def get_expected_tolerance_history_statistics(
     # Construct the augmented tree by annotating each edge
     # with the appropriate state transition probability matrix.
     T_aug = get_tolerance_expm_augmented_tree(T, root)
+    ntolerance_states = 3
 
     # Construct the node to pmap dict.
-    ntolerance_states = 3
-    node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root, ntolerance_states,
-            node_to_allowed_states=node_to_allowed_states)
+    #node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root, ntolerance_states,
+            #node_to_allowed_states=node_to_allowed_states)
 
     # Get the marginal state distribution for each node in the tree,
     # conditional on the known states.
-    node_to_distn = _mc0_dense.get_node_to_distn(
-            T_aug, root, node_to_pmap, ntolerance_states,
+    #node_to_distn = _mc0_dense.get_node_to_distn(
+            #T_aug, root, node_to_pmap, ntolerance_states,
+            #root_distn=root_distn)
+
+    node_to_pmap, node_to_distn = _mcy_dense.kitchen_sink(
+            T_aug, root, ntolerance_states,
+            node_to_allowed_states=node_to_allowed_states,
             root_distn=root_distn)
 
     # For each edge in the tree, get the joint distribution
