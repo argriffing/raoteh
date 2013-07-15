@@ -563,7 +563,7 @@ def ll_expectation_helper(
 
     Returns
     -------
-    cnll : instance of ComopundNegLL
+    cnll : instance of CompoundNegLL
         x
 
     """
@@ -592,11 +592,6 @@ def ll_expectation_helper(
     tol_info = get_tolerance_ll_contribs(
             rate_on, rate_off, total_tree_length, *tol_summary)
     init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
-
-    #TODO these three lines are unused
-    init_ll = -neg_init_prim_ll + init_tol_ll
-    dwell_ll = dwell_tol_ll
-    trans_ll = -neg_trans_prim_ll + trans_tol_ll
 
     cnll = _tmjp_util.CompoundNegLL(
             neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,

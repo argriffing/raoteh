@@ -798,7 +798,7 @@ def get_simulated_data(ctm, sample_disease_data=False):
         # Construct a tolerance state vector.
         # Require the tolerance of the observed primary state to be 1.
         # Get the sampled disease part set from the tolerance vector.
-        tols = [random.choice((0, 1)) for p in range(ctm.nparts)]
+        tols = [np.random.choice((0, 1)) for p in range(ctm.nparts)]
         tols[ref_part] = 1
         reference_disease_parts = set(p for p, v in enumerate(tols) if not v)
         ref_tol_set = set(range(ctm.nparts)) - reference_disease_parts
@@ -925,6 +925,7 @@ def test_sample_tmjp_v1_disease():
     # gibbs sampling enabled by conditional independence
     # of some components of the compound process.
     # Disease data is used.
+    np.random.seed(12345)
 
     # Define some other properties of the process,
     # in a way that is not object-oriented.
@@ -947,7 +948,7 @@ def test_sample_tmjp_v1_disease():
     ctm_dense.init_compound()
 
     # Define the number of samples.
-    nsamples = 1000
+    nsamples = 10000
 
     # Simulate some data for testing.
     info = get_simulated_data(ctm, sample_disease_data=True)
