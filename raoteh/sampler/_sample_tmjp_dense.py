@@ -509,7 +509,7 @@ def get_feasible_history(ctm, T, root, node_to_primary_state,
 
     Parameters
     ----------
-    ctm : instance of CompoundToleranceModel
+    ctm : instance of _tmjp_dense.CompoundToleranceModel
         Model defining the compound Markov process.
     T : weighted undirected acyclic networkx graph
         This is the original tree.

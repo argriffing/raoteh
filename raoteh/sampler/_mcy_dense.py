@@ -211,7 +211,6 @@ def _esd_kitchen_sink(
             joint_distns)
 
     # Convert the ndarrays back into dicts.
-    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
     node_to_pmap = {}
     node_to_distn = {}
     edge_to_joint_distn = {}
@@ -292,7 +291,6 @@ def _esd_get_node_to_pmap(T, root, nstates,
             subtree_probability)
 
     # Convert the subtree probability ndarray to node_to_pmap.
-    node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
     node_to_pmap = {}
     for na_index, na in enumerate(preorder_nodes):
         node_to_pmap[na] = subtree_probability[na_index]

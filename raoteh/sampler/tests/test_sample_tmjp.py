@@ -910,6 +910,10 @@ def test_sample_tmjp_v1():
     print()
     print('number of sampled histories:', nsamples)
     print()
+    #print('v1 dwell contributions:')
+    #for cnll in v1_cnlls:
+        #print(cnll.dwell)
+    #print()
     print_cnlls(diff_ent_cnll, cnlls, pm_cnlls, v1_cnlls, d_cnlls)
 
 
@@ -925,6 +929,22 @@ def test_sample_tmjp_v1_disease():
     # Define some other properties of the process,
     # in a way that is not object-oriented.
     ctm = _tmjp.get_example_tolerance_process_info()
+
+    # init dense transition matrix stuff
+    nprimary = len(ctm.primary_to_part)
+    if set(ctm.primary_to_part) != set(range(ctm.nprimary)):
+        raise NotImplementedError
+    primary_states = range(ctm.nprimary)
+    primary_distn_dense = dict_to_numpy_array(
+            ctm.primary_distn, nodelist=primary_states)
+    Q_primary_dense = rate_matrix_to_numpy_array(
+            ctm.Q_primary, nodelist=primary_states)
+
+    # Get the dense ctm.
+    ctm_dense = _tmjp_dense.CompoundToleranceModel(
+            Q_primary_dense, primary_distn_dense, ctm.primary_to_part,
+            ctm.rate_on, ctm.rate_off)
+    ctm_dense.init_compound()
 
     # Define the number of samples.
     nsamples = 1000
@@ -978,7 +998,7 @@ def test_sample_tmjp_v1_disease():
 
     # Get neg ll contribs using the clever sampler.
     v1_cnlls, d_cnlls = _tmjp_clever_sample_helper_dense(
-            ctm, T, root, leaf_to_primary_state,
+            ctm_dense, T, root, leaf_to_primary_state,
             disease_data=disease_data, nhistories=nsamples)
 
     print()

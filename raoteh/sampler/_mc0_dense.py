@@ -337,6 +337,61 @@ def get_joint_endpoint_distn_naive(T, root, node_to_set,
     return T_aug
 
 
+#TODO failing tests
+def get_node_to_distn_esd(T, root, node_to_pmap, nstates,
+        root_distn=None, P_default=None):
+    """
+
+    """
+    # Construct the bfs tree, preserving transition matrices on the edges.
+    T_bfs = nx.DiGraph()
+    for na, nb in nx.bfs_edges(T, root):
+        T_bfs.add_edge(na, nb)
+        edge_object = T[na][nb]
+        P = edge_object.get('P', None)
+        if P is not None:
+            T_bfs[na][nb]['P'] = P
+
+    # Get the ordered list of nodes in preorder.
+    preorder_nodes = list(nx.dfs_preorder_nodes(T, root))
+    nnodes = len(preorder_nodes)
+
+    # Put node_to_pmap into a dense array.
+    subtree_probability = np.empty((nnodes, nstates), dtype=float)
+    for nb_index, nb in enumerate(preorder_nodes):
+        subtree_probability[nb_index] = node_to_pmap[nb]
+
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices, tree_csr_indptr = _density.digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
+
+    # Construct the edge-specific transition matrix as an ndim-3 numpy array.
+    esd_transitions = _density.get_esd_transitions(
+            T_bfs, preorder_nodes, nstates, P_default=P_default)
+
+    # Define the prior distribution at the root.
+    if root_distn is None:
+        root_distn = np.ones(nstates, dtype=float)
+
+    # Get the posterior distribution at each node.
+    node_to_distn_array = np.empty((nnodes, nstates), dtype=float)
+    pyfelscore.mc0_esd_get_node_to_distn(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            root_distn,
+            subtree_probability,
+            node_to_distn_array)
+
+    # Convert the ndarray back into a dict.
+    node_to_distn = {}
+    for na_index, na in enumerate(preorder_nodes):
+        node_to_distn[na] = node_to_distn_array[na_index]
+
+    # Return the dict.
+    return node_to_distn
+
+
 #TODO Add a cython implementation,
 #TODO and also add more tests.
 def get_node_to_distn(T, root, node_to_pmap, nstates,
