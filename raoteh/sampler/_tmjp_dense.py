@@ -496,6 +496,9 @@ def get_tolerance_process_log_likelihood(
             rate = Q_primary[sa][sb]['weight']
             log_likelihood += scipy.special.xlogy(ntransitions, rate)
 
+    # Precompute edges.
+    T_primary_edges = list(nx.bfs_edges(T_primary, root))
+
     # Add the log likelihood contribution of the process
     # associated with each tolerance class.
     tolerance_classes = set(primary_to_part.values())
@@ -515,7 +518,7 @@ def get_tolerance_process_log_likelihood(
         # Construct the piecewise homogeneous Markov jump process.
         T_tol, node_to_allowed_tolerances = get_inhomogeneous_mjp(
                 primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
-                tolerance_class)
+                T_primary_edges, tolerance_class)
 
         # Get the likelihood from the augmented tree and the root distribution.
         likelihood = _mjp.get_likelihood(
@@ -777,6 +780,9 @@ def get_tolerance_summary(
     nparts = len(set(primary_to_part.values()))
     tolerance_distn = get_three_state_tolerance_distn(rate_off, rate_on)
 
+    # Precompute edges.
+    T_primary_edges = list(nx.bfs_edges(T_primary, root))
+
     # Compute conditional expectations of statistics
     # of the tolerance process.
     # This requires constructing independent piecewise homogeneous
@@ -800,7 +806,7 @@ def get_tolerance_summary(
         # conditional on the trajectory of the primary state.
         T_tol, node_to_allowed_tolerances = get_inhomogeneous_mjp(
                 primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
-                tolerance_class)
+                T_primary_edges, tolerance_class)
 
         # Further restrict the node_to_allowed_tolerances using disease data.
         if disease_data is not None:
@@ -953,7 +959,7 @@ def get_primary_state_to_absorption_rate(
 
 def get_inhomogeneous_mjp(
         primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
-        tolerance_class):
+        T_primary_edges, tolerance_class):
     """
     Get a restricted piecewise homogeneous Markov jump process.
 
@@ -971,6 +977,8 @@ def get_inhomogeneous_mjp(
         Primary process trajectory.
     root : integer
         Root node
+    T_primary_edges : sequence of directed edges as node pairs
+        Edges directed away from the root.
     tolerance_class : integer
         The tolerance class under consideration.
 
@@ -1005,7 +1013,7 @@ def get_inhomogeneous_mjp(
     # The third state of each edge-specific rate matrix is an
     # absorbing state which will never be entered.
     T_tol = nx.Graph()
-    for na, nb in nx.bfs_edges(T_primary, root):
+    for na, nb in T_primary_edges:
         edge = T_primary[na][nb]
         primary_state = edge['state']
         local_tolerance_class = primary_to_part[primary_state]

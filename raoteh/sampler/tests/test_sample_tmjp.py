@@ -607,7 +607,7 @@ def _tmjp_clever_sample_helper_dense(
 
 
 #TODO this function is bit-rotted
-def _tmjp_clever_sample_helper(
+def _tmjp_sample_helper_sparse_vs_dense(
         T, root, Q_primary, primary_to_part,
         leaf_to_primary_state, rate_on, rate_off,
         primary_distn, nhistories):
