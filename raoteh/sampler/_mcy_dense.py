@@ -112,14 +112,19 @@ def kitchen_sink(T, root, nstates,
         else:
             post_root_weights = root_pmap * root_distn
         post_root_distn = post_root_weights / post_root_weights.sum()
+        node_to_distn = {root : post_root_distn}
+
+        # no edges
+        edge_to_joint_distn = {}
 
     else:
-        state_mask, node_to_pmap, node_to_distn = _esd_kitchen_sink(
+        info = _esd_kitchen_sink(
                 T, root, nstates,
                 node_to_allowed_states=node_to_allowed_states,
                 root_distn=root_distn,
                 P_default=P_default)
-    return node_to_pmap, node_to_distn
+        state_mask, node_to_pmap, node_to_distn, edge_to_joint_distn = info
+    return node_to_pmap, node_to_distn, edge_to_joint_distn
 
 
 #TODO Copypasted from _esd_get_node_to_pmap().
@@ -195,16 +200,35 @@ def _esd_kitchen_sink(
             subtree_probability,
             node_to_distn_array)
 
+    # Another pass to get the joint endpoint state distributions on edges.
+    joint_distns = np.empty((nnodes, nstates, nstates), dtype=float)
+    pyfelscore.mc0_esd_get_joint_endpoint_distn(
+            tree_csr_indices,
+            tree_csr_indptr,
+            esd_transitions,
+            subtree_probability,
+            node_to_distn_array,
+            joint_distns)
+
     # Convert the ndarrays back into dicts.
     node_to_index = dict((n, i) for i, n in enumerate(preorder_nodes))
     node_to_pmap = {}
     node_to_distn = {}
+    edge_to_joint_distn = {}
     for na_index, na in enumerate(preorder_nodes):
         node_to_pmap[na] = subtree_probability[na_index]
         node_to_distn[na] = node_to_distn_array[na_index]
+    for na_index, na in enumerate(preorder_nodes):
+        node_ind_start = tree_csr_indptr[na_index]
+        node_ind_stop = tree_csr_indptr[na_index+1]
+        for j in range(node_ind_start, node_ind_stop):
+            nb_index = tree_csr_indices[j]
+            nb = preorder_nodes[nb_index]
+            edge = (na, nb)
+            edge_to_joint_distn[edge] = joint_distns[nb_index]
 
     # Return the state mask and the node_to_pmap dict.
-    return state_mask, node_to_pmap, node_to_distn
+    return state_mask, node_to_pmap, node_to_distn, edge_to_joint_distn
 
 
 def _esd_get_node_to_pmap(T, root, nstates,

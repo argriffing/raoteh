@@ -324,15 +324,20 @@ def get_expected_tolerance_history_statistics(
             #T_aug, root, node_to_pmap, ntolerance_states,
             #root_distn=root_distn)
 
-    node_to_pmap, node_to_distn = _mcy_dense.kitchen_sink(
+    # For each edge in the tree, get the joint distribution
+    # over the states at the endpoints of the edge.
+    #T_joint = _mc0_dense.get_joint_endpoint_distn(
+            #T_aug, root, node_to_pmap, node_to_distn, ntolerance_states)
+
+    node_to_pmap, node_to_distn, edge_to_joint_distn = _mcy_dense.kitchen_sink(
             T_aug, root, ntolerance_states,
             node_to_allowed_states=node_to_allowed_states,
             root_distn=root_distn)
 
-    # For each edge in the tree, get the joint distribution
-    # over the states at the endpoints of the edge.
-    T_joint = _mc0_dense.get_joint_endpoint_distn(
-            T_aug, root, node_to_pmap, node_to_distn, ntolerance_states)
+    T_joint = nx.Graph()
+    for (na, nb), J in edge_to_joint_distn.items():
+        edge_obj = T_aug[na][nb]
+        T_joint.add_edge(na, nb, J=J)
 
     # Compute the expectations of the dwell times and the transition counts
     # by iterating over all edges and using the edge-specific
@@ -910,6 +915,42 @@ def get_tolerance_ll_contribs(
     return init_ll_contrib, dwell_ll_contrib, trans_ll_contrib
 
 
+def get_primary_state_to_absorption_rate(
+        Q_primary, primary_to_part, tolerance_class):
+    """
+    Define the absorption rate for each primary state.
+
+    This is a helper function for speed profiling get_inhomogeneous_mjp().
+
+    Parameters
+    ----------
+    Q_primary : 2d ndarray
+        Primary process rate matrix.
+    primary_to_part : dict
+        Map from primary state to tolerance class.
+    tolerance_class : integer
+        The tolerance class under consideration.
+
+    Returns
+    -------
+    primary_state_to_absorption_rate : dict
+        Map from primary state to absorption rate.
+
+    """
+    check_square_dense(Q_primary)
+    nprimary = len(primary_to_part)
+    primary_state_to_absorption_rate = {}
+    for sa in range(nprimary):
+        absorption_rate = 0
+        for sb in range(nprimary):
+            if sb != sa:
+                if primary_to_part[sb] == tolerance_class:
+                    rate = Q_primary[sa, sb]
+                    absorption_rate += rate
+        primary_state_to_absorption_rate[sa] = absorption_rate
+    return primary_state_to_absorption_rate
+
+
 def get_inhomogeneous_mjp(
         primary_to_part, rate_on, rate_off, Q_primary, T_primary, root,
         tolerance_class):
@@ -948,6 +989,10 @@ def get_inhomogeneous_mjp(
     check_square_dense(Q_primary)
     nprimary = len(primary_to_part)
 
+    # Define the absorption rate for each primary state.
+    primary_state_to_absorption_rate = get_primary_state_to_absorption_rate(
+        Q_primary, primary_to_part, tolerance_class)
+
     # Define the set of allowed tolerances at each node.
     # These may be further constrained
     # by the sampled primary process trajectory.
@@ -973,12 +1018,7 @@ def get_inhomogeneous_mjp(
             local_rate_off = 0
         else:
             local_rate_off = rate_off
-        absorption_rate = 0
-        for sb in range(nprimary):
-            if sb != primary_state:
-                if primary_to_part[sb] == tolerance_class:
-                    rate = Q_primary[primary_state, sb]
-                    absorption_rate += rate
+        absorption_rate = primary_state_to_absorption_rate[primary_state]
 
         # Construct the local tolerance rate matrix.
         Q_tol = np.zeros((3, 3), dtype=float)
