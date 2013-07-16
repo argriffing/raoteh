@@ -14,7 +14,7 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _density, _mc0_dense, _mcy_dense
+from raoteh.sampler import _util, _density, _mc0_dense, _mcy_dense
 
 
 __all__ = []

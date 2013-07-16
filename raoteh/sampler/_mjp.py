@@ -11,7 +11,7 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _mc0, _mcy
+from raoteh.sampler import _util, _mc0, _mcy
 
 from raoteh.sampler._linalg import (
         sparse_expm,

@@ -564,10 +564,11 @@ def ll_expectation_helper(
 
     tol_info = get_tolerance_ll_contribs(
             rate_on, rate_off, total_tree_length, *tol_summary)
-    init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
+    init_tol_ll, dwell_ll_prim, dwell_ll_tol, trans_tol_ll = tol_info
 
     cnll = _tmjp_util.CompoundNegLL(
-            neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,
+            neg_init_prim_ll, -init_tol_ll,
+            -dwell_ll_prim, -dwell_ll_tol,
             neg_trans_prim_ll, -trans_tol_ll)
     return cnll
 
@@ -661,6 +662,36 @@ def differential_entropy_helper(
                     diff_ent_init_prim + diff_ent_init_tol,
                     diff_ent_init))
 
+    # Contribution of dwell times, partitioned into primary vs. tolerance.
+    diff_ent_dwell_prim = 0
+    diff_ent_dwell_tol = 0
+    for compound_state, dwell_time in enumerate(post_dwell_times):
+        primary_state = ctm.compound_to_primary[compound_state]
+        primary_part = ctm.primary_to_part[primary_state]
+        tol_states = ctm.compound_to_tolerances[compound_state]
+        if len(tol_states) != ctm.nparts:
+            raise Exception('internal error; %s != %s' % (
+                len(tol_states), ctm.nparts))
+        on_count = sum(1 for tol in tol_states if tol == 1)
+        off_count = sum(1 for tol in tol_states if tol == 0)
+        if on_count + off_count != ctm.nparts:
+            raise Exception('internal error; %s + %s != %s' % (
+                on_count, off_count, ctm.nparts))
+        diff_ent_dwell_tol += dwell_time * off_count * ctm.rate_on
+        diff_ent_dwell_tol += dwell_time * (on_count - 1) * ctm.rate_off
+        absorption_rate = 0
+        for sb in range(ctm.ncompound):
+            sb_primary = ctm.compound_to_primary[sb]
+            if primary_state != sb_primary:
+                absorption_rate += ctm.Q_compound[compound_state][sb]
+        diff_ent_dwell_prim += dwell_time * absorption_rate
+
+    # Check the dwell time contribution to the differential entropy
+    if not np.allclose(
+            diff_ent_dwell_prim + diff_ent_dwell_tol,
+            diff_ent_dwell):
+        raise Exception('internal error')
+
     # Transition contribution to differential entropy.
     diff_ent_trans_prim = 0.0
     diff_ent_trans_tol = 0.0
@@ -683,7 +714,8 @@ def differential_entropy_helper(
 
     # Aggregate and return the contributions to the differential entropy.
     cnll = _tmjp_util.CompoundNegLL(
-            diff_ent_init_prim, diff_ent_init_tol, diff_ent_dwell,
+            diff_ent_init_prim, diff_ent_init_tol,
+            diff_ent_dwell_prim, diff_ent_dwell_tol,
             diff_ent_trans_prim, diff_ent_trans_tol)
     return cnll
 
@@ -869,7 +901,9 @@ def get_tolerance_ll_contribs(
     -------
     init_ll_contrib : float
         x
-    dwell_ll_contrib : float
+    dwell_ll_contrib_prim : float
+        x
+    dwell_ll_contrib_tol : float
         x
     trans_ll_contrib : float
         x
@@ -879,14 +913,17 @@ def get_tolerance_ll_contribs(
     init_ll_contrib = (
             special.xlogy(expected_initial_on - 1, tolerance_distn[1]) +
             special.xlogy(expected_initial_off, tolerance_distn[0]))
-    dwell_ll_contrib = -(
+    dwell_ll_contrib_prim = -expected_nabsorptions
+    dwell_ll_contrib_tol = -(
             expected_dwell_off * rate_on +
-            (expected_dwell_on - total_tree_length) * rate_off +
-            expected_nabsorptions)
+            (expected_dwell_on - total_tree_length) * rate_off)
     trans_ll_contrib = (
             special.xlogy(expected_ngains, rate_on) +
             special.xlogy(expected_nlosses, rate_off))
-    return init_ll_contrib, dwell_ll_contrib, trans_ll_contrib
+    ret = (
+            init_ll_contrib, dwell_ll_contrib_prim,
+            dwell_ll_contrib_tol, trans_ll_contrib)
+    return ret
 
 
 def get_primary_state_to_absorption_rate(

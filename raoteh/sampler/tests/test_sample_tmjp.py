@@ -243,6 +243,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     norm_imp_init_prim = w * np.array([x.init_prim for x in imp_cnlls])
     norm_imp_init_tol = w * np.array([x.init_tol for x in imp_cnlls])
     norm_imp_dwell = w * np.array([x.dwell for x in imp_cnlls])
+    norm_imp_dwell_prim = w * np.array([x.dwell_prim for x in imp_cnlls])
+    norm_imp_dwell_tol = w * np.array([x.dwell_tol for x in imp_cnlls])
     norm_imp_trans = w * np.array([x.trans for x in imp_cnlls])
     norm_imp_trans_prim = w * np.array([x.trans_prim for x in imp_cnlls])
     norm_imp_trans_tol = w * np.array([x.trans_tol for x in imp_cnlls])
@@ -279,6 +281,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     neg_ll_contribs_trans = [x.trans for x in plain_cnlls]
     init_prim = [x.init_prim for x in plain_cnlls]
     init_tol = [x.init_tol for x in plain_cnlls]
+    dwell_prim = [x.dwell_prim for x in plain_cnlls]
+    dwell_tol = [x.dwell_tol for x in plain_cnlls]
     trans_prim = [x.trans_prim for x in plain_cnlls]
     trans_tol = [x.trans_tol for x in plain_cnlls]
     #
@@ -287,6 +291,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     pm_neg_ll_contribs_trans = [x.trans for x in pm_cnlls]
     pm_init_prim = [x.init_prim for x in pm_cnlls]
     pm_init_tol = [x.init_tol for x in pm_cnlls]
+    pm_dwell_prim = [x.dwell_prim for x in pm_cnlls]
+    pm_dwell_tol = [x.dwell_tol for x in pm_cnlls]
     pm_trans_prim = [x.trans_prim for x in pm_cnlls]
     pm_trans_tol = [x.trans_tol for x in pm_cnlls]
     #
@@ -295,6 +301,8 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     met_neg_ll_contribs_trans = [x.trans for x in met_cnlls]
     met_init_prim = [x.init_prim for x in met_cnlls]
     met_init_tol = [x.init_tol for x in met_cnlls]
+    met_dwell_prim = [x.dwell_prim for x in met_cnlls]
+    met_dwell_tol = [x.dwell_tol for x in met_cnlls]
     met_trans_prim = [x.trans_prim for x in met_cnlls]
     met_trans_tol = [x.trans_tol for x in met_cnlls]
 
@@ -305,7 +313,9 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     print('sampled root distn :', sampled_root_distn)
     print('analytic root distn:', post_root_distn)
     print()
+    print()
     print('--- init contribution ---')
+    print()
     print('diff ent  :', val_exact(diff_ent_cnll.init))
     print('    prim  :', val_exact(diff_ent_cnll.init_prim))
     print('    tol   :', val_exact(diff_ent_cnll.init_tol))
@@ -322,14 +332,32 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     print('    prim  :', val_err(met_init_prim))
     print('    tol   :', val_err(met_init_tol))
     print()
+    print()
     print('--- dwell contribution ---')
+    print()
     print('diff ent  :', val_exact(diff_ent_cnll.dwell))
+    print('    prim  :', val_exact(diff_ent_cnll.dwell_prim))
+    print('    tol   :', val_exact(diff_ent_cnll.dwell_tol))
+    print()
     print('neg ll    :', val_err(neg_ll_contribs_dwell))
+    print('    prim  :', val_err(dwell_prim))
+    print('    tol   :', val_err(dwell_tol))
+    print()
     print('pm neg ll :', val_err(pm_neg_ll_contribs_dwell))
+    print('    prim  :', val_err(pm_dwell_prim))
+    print('    tol   :', val_err(pm_dwell_tol))
+    print()
     print('imp neg ll:', val_err(norm_imp_dwell))
+    print('    prim  :', val_err(norm_imp_dwell_prim))
+    print('    tol   :', val_err(norm_imp_dwell_tol))
+    print()
     print('met neg ll:', val_err(met_neg_ll_contribs_dwell))
+    print('    prim  :', val_err(met_dwell_prim))
+    print('    tol   :', val_err(met_dwell_tol))
+    print()
     print()
     print('--- trans contribution ---')
+    print()
     print('diff ent  :', val_exact(diff_ent_cnll.trans))
     print('    prim  :', val_exact(diff_ent_cnll.trans_prim))
     print('    tol   :', val_exact(diff_ent_cnll.trans_tol))
@@ -345,6 +373,7 @@ def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     print('met neg ll:', val_err(met_neg_ll_contribs_trans))
     print('    prim  :', val_err(met_trans_prim))
     print('    tol   :', val_err(met_trans_tol))
+    print()
     print()
     print('number of accepted M-H samples:', naccepted)
     print('number of rejected M-H samples:', nrejected)
@@ -1045,29 +1074,41 @@ def print_cnlls(diff_ent_cnll, plain_cnlls, pm_cnlls, v1_cnlls, d_cnlls):
     neg_ll_contribs_trans = [x.trans for x in plain_cnlls]
     init_prim = [x.init_prim for x in plain_cnlls]
     init_tol = [x.init_tol for x in plain_cnlls]
+    dwell_prim = [x.dwell_prim for x in plain_cnlls]
+    dwell_tol = [x.dwell_tol for x in plain_cnlls]
     trans_prim = [x.trans_prim for x in plain_cnlls]
     trans_tol = [x.trans_tol for x in plain_cnlls]
+    #
     pm_neg_ll_contribs_init = [x.init for x in pm_cnlls]
     pm_neg_ll_contribs_dwell = [x.dwell for x in pm_cnlls]
     pm_neg_ll_contribs_trans = [x.trans for x in pm_cnlls]
     pm_init_prim = [x.init_prim for x in pm_cnlls]
     pm_init_tol = [x.init_tol for x in pm_cnlls]
+    pm_dwell_prim = [x.dwell_prim for x in pm_cnlls]
+    pm_dwell_tol = [x.dwell_tol for x in pm_cnlls]
     pm_trans_prim = [x.trans_prim for x in pm_cnlls]
     pm_trans_tol = [x.trans_tol for x in pm_cnlls]
+    #
     v1_neg_ll_contribs_init = [x.init for x in v1_cnlls]
     v1_neg_ll_contribs_dwell = [x.dwell for x in v1_cnlls]
     v1_neg_ll_contribs_trans = [x.trans for x in v1_cnlls]
     v1_init_prim = [x.init_prim for x in v1_cnlls]
     v1_init_tol = [x.init_tol for x in v1_cnlls]
+    v1_dwell_prim = [x.dwell_prim for x in v1_cnlls]
+    v1_dwell_tol = [x.dwell_tol for x in v1_cnlls]
     v1_trans_prim = [x.trans_prim for x in v1_cnlls]
     v1_trans_tol = [x.trans_tol for x in v1_cnlls]
+    #
     d_neg_ll_contribs_init = [x.init for x in d_cnlls]
     d_neg_ll_contribs_dwell = [x.dwell for x in d_cnlls]
     d_neg_ll_contribs_trans = [x.trans for x in d_cnlls]
     d_init_prim = [x.init_prim for x in d_cnlls]
     d_init_tol = [x.init_tol for x in d_cnlls]
+    d_dwell_prim = [x.dwell_prim for x in d_cnlls]
+    d_dwell_tol = [x.dwell_tol for x in d_cnlls]
     d_trans_prim = [x.trans_prim for x in d_cnlls]
     d_trans_tol = [x.trans_tol for x in d_cnlls]
+    #
     print('All samplers use Rao-Teh sampling.')
     print('plain: directly from compound distribution no rao blackwellization')
     print('pm:  directly from compound distribution with rao blackwellization')
@@ -1100,10 +1141,24 @@ def print_cnlls(diff_ent_cnll, plain_cnlls, pm_cnlls, v1_cnlls, d_cnlls):
     print('--- dwell contribution ---')
     print()
     print('diff ent :', val_exact(diff_ent_cnll.dwell))
+    print('    prim :', val_exact(diff_ent_cnll.dwell_prim))
+    print('    tol  :', val_exact(diff_ent_cnll.dwell_tol))
+    print()
     print('neg ll   :', val_err(neg_ll_contribs_dwell))
+    print('    prim :', val_err(dwell_prim))
+    print('    tol  :', val_err(dwell_tol))
+    print()
     print('pm neg ll:', val_err(pm_neg_ll_contribs_dwell))
+    print('    prim :', val_err(pm_dwell_prim))
+    print('    tol  :', val_err(pm_dwell_tol))
+    print()
     print('v1 neg ll:', val_err(v1_neg_ll_contribs_dwell))
+    print('    prim :', val_err(v1_dwell_prim))
+    print('    tol  :', val_err(v1_dwell_tol))
+    print()
     print('d neg ll :', val_err(d_neg_ll_contribs_dwell))
+    print('    prim :', val_err(d_dwell_prim))
+    print('    tol  :', val_err(d_dwell_tol))
     print()
     print()
     print('--- trans contribution ---')
