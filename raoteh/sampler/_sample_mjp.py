@@ -7,9 +7,7 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler._util import get_first_element
-
-from raoteh.sampler._mjp import get_total_rates
+from raoteh.sampler import _util, _mjp
 
 
 __all__ = []
@@ -41,7 +39,7 @@ def resample_poisson(T, state_to_rate, root=None):
 
     # If no root was specified then pick one arbitrarily.
     if root is None:
-        root = get_first_element(T)
+        root = _util.get_first_element(T)
 
     # Define the next node.
     next_node = max(T) + 1
@@ -96,7 +94,7 @@ def get_uniformized_transition_matrix(Q,
                 'should not both be provided')
 
     # Compute the total rates.
-    total_rates = get_total_rates(Q)
+    total_rates = _mjp.get_total_rates(Q)
 
     # Compute omega if necessary.
     if omega is None:

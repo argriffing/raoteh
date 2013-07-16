@@ -12,17 +12,9 @@ from collections import defaultdict
 import numpy as np
 import networkx as nx
 import scipy.linalg
-import scipy.stats
 from scipy import special
 
 from raoteh.sampler import _density, _mc0_dense, _mcy_dense
-
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_dense_rate_matrix,
-        get_first_element, get_arbitrary_tip)
-
-from raoteh.sampler._density import check_square_dense
 
 
 __all__ = []
@@ -48,7 +40,7 @@ def get_total_rates(Q):
         Total rate out of each state.
 
     """
-    check_square_dense(Q)
+    _density.check_square_dense(Q)
     return -np.diag(Q)
 
 
@@ -70,7 +62,7 @@ def get_conditional_transition_matrix(Q, total_rates=None):
         conditional on an instantaneous transition.
 
     """
-    check_square_dense(Q)
+    _density.check_square_dense(Q)
     if total_rates is None:
         total_rates = get_total_rates(Q)
     P = Q / total_rates
@@ -131,7 +123,7 @@ def get_history_root_state_and_transitions(T, nstates, root=None):
 
     # Pick a root with only one neighbor if no root was specified.
     if root is None:
-        root = get_arbitrary_tip(T, degrees)
+        root = _util.get_arbitrary_tip(T, degrees)
 
     # The root must have a well defined state.
     # This means that it cannot be adjacent to edges with differing states.
@@ -145,7 +137,7 @@ def get_history_root_state_and_transitions(T, nstates, root=None):
     successors = nx.dfs_successors(T, root)
     for a, b in nx.bfs_edges(T, root):
         if degrees[b] == 2:
-            c = get_first_element(successors[b])
+            c = _util.get_first_element(successors[b])
             sa = T[a][b]['state']
             sb = T[b][c]['state']
             if sa != sb:
@@ -361,7 +353,7 @@ def get_expm_augmented_tree(T, root, Q_default=None):
         edge = T[na][nb]
         weight = edge['weight']
         Q = edge.get('Q', Q_default)
-        check_square_dense(Q)
+        _density.check_square_dense(Q)
         P = custom_expm(Q, weight)
         T_aug.add_edge(na, nb, weight=weight, P=P)
     return T_aug
@@ -490,7 +482,7 @@ def get_expected_history_statistics(
 
         # Get the rate matrix to use for this edge.
         Q = T[na][nb].get('Q', Q_default)
-        check_square_dense(Q)
+        _density.check_square_dense(Q)
 
         # Get the elapsed time along the edge.
         t = T[na][nb]['weight']

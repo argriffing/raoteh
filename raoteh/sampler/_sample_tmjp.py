@@ -26,13 +26,6 @@ from raoteh.sampler import (
         _sample_mcx, _sample_mcy, _sample_mcz, _sample_mjp,
         )
 
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb, get_first_element)
-
-from raoteh.sampler._sample_mjp import (
-        get_uniformized_transition_matrix,
-        )
-
 
 __all__ = []
 
@@ -82,7 +75,7 @@ def gen_histories_v1(ctm, T, root, node_to_primary_state,
     primary_omega = uniformization_factor * primary_max_total_rate
     primary_poisson_rates = dict(
             (a, primary_omega - q) for a, q in primary_total_rates.items())
-    P_primary = get_uniformized_transition_matrix(
+    P_primary = _sample_mjp.get_uniformized_transition_matrix(
             ctm.Q_primary, omega=primary_omega)
 
     # Summarize the compound process.
@@ -94,7 +87,7 @@ def gen_histories_v1(ctm, T, root, node_to_primary_state,
     tolerance_omega = uniformization_factor * tolerance_max_total_rate
     tolerance_poisson_rates = dict(
             (a, tolerance_omega - q) for a, q in tolerance_total_rates.items())
-    P_tolerance = get_uniformized_transition_matrix(
+    P_tolerance = _sample_mjp.get_uniformized_transition_matrix(
             Q_tolerance, omega=tolerance_omega)
 
     # Generate histories using Rao-Teh sampling.
@@ -525,7 +518,7 @@ def get_feasible_history(ctm, T, root, node_to_primary_state,
     # Get the tolerance state distribution, rate matrix,
     # and uniformized tolerance transition probability matrix.
     Q_tolerance = _tmjp.get_tolerance_rate_matrix(ctm.rate_off, ctm.rate_on)
-    P_tolerance = get_uniformized_transition_matrix(Q_tolerance)
+    P_tolerance = _sample_mjp.get_uniformized_transition_matrix(Q_tolerance)
 
     # Get a primary process proposal rate matrix
     # that approximates the primary component of the compound process.
@@ -534,7 +527,7 @@ def get_feasible_history(ctm, T, root, node_to_primary_state,
 
     # Get the uniformized transition probability matrix
     # corresponding to the primary proposal transition rate matrix.
-    P_proposal = get_uniformized_transition_matrix(Q_proposal)
+    P_proposal = _sample_mjp.get_uniformized_transition_matrix(Q_proposal)
 
     # Sample the primary process trajectory using this proposal.
     primary_trajectory = _sample_mcx.get_feasible_history(

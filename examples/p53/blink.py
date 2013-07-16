@@ -238,8 +238,8 @@ def main():
     print()
     for i, codon_column in enumerate(codon_columns):
         
-        if i > 9:
-            break
+        #if i > 9:
+            #break
 
         # Get the column-specific human disease residues.
         # Convert the human disease data structure

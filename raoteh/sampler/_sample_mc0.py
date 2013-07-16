@@ -11,13 +11,7 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 import networkx as nx
 
-from raoteh.sampler import _mc0
-
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_unnormalized_dict_distn,
-        dict_random_choice,
-        )
+from raoteh.sampler import _util, _mc0
 
 
 __all__ = []
@@ -61,7 +55,7 @@ def resample_states(T, root, node_to_pmap, root_distn=None, P_default=None):
     # If the likelihood is numerically zero then raise a different exception.
     likelihood = _mc0.get_likelihood(root_pmap, root_distn=root_distn)
     if likelihood <= 0:
-        raise NumericalZeroProb(
+        raise _util.NumericalZeroProb(
                 'numerically intractably small likelihood: %s' % likelihood)
 
     # Bookkeeping structure related to tree traversal.
@@ -92,8 +86,8 @@ def resample_states(T, root, node_to_pmap, root_distn=None, P_default=None):
             prior = dict((s, P[parent_state][s]['weight']) for s in sinks)
 
         # Sample the state from the posterior distribution.
-        dpost = get_unnormalized_dict_distn(pmap, prior)
-        node_to_sampled_state[node] = dict_random_choice(dpost)
+        dpost = _util.get_unnormalized_dict_distn(pmap, prior)
+        node_to_sampled_state[node] = _util.dict_random_choice(dpost)
 
     # Return the map of sampled states.
     return node_to_sampled_state

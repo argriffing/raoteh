@@ -10,7 +10,6 @@ This module uses dense numpy ndarrays to represent state matrices and vectors.
 """
 from __future__ import division, print_function, absolute_import
 
-from collections import defaultdict
 import itertools
 
 import numpy as np
@@ -26,32 +25,6 @@ from raoteh.sampler import (
         _mcy_dense,
         _mjp_dense,
         _tmjp_util,
-        )
-
-from raoteh.sampler._util import (
-        StructuralZeroProb,
-        NumericalZeroProb,
-        get_first_element,
-        get_arbitrary_tip,
-        )
-
-from raoteh.sampler._linalg import (
-        sparse_expm,
-        expm_frechet_is_simple,
-        simple_expm_frechet,
-        )
-
-from raoteh.sampler._mjp import (
-        get_history_root_state_and_transitions,
-        get_conditional_transition_matrix,
-        )
-
-from raoteh.sampler._density import (
-        check_square_dense,
-        digraph_to_bool_csr,
-        get_esd_transitions,
-        dict_to_numpy_array,
-        rate_matrix_to_numpy_array,
         )
 
 
@@ -259,7 +232,7 @@ def get_tolerance_expm_augmented_tree(T, root, Q_default=None):
         edge = T[na][nb]
         weight = edge['weight']
         Q = edge.get('Q', Q_default)
-        check_square_dense(Q)
+        _density.check_square_dense(Q)
 
         # Construct the transition probability matrix.
         P = np.empty_like(Q)
@@ -349,18 +322,18 @@ def get_expected_tolerance_history_statistics(
 
         # Get the rate matrix to use for this edge.
         Q = T[na][nb].get('Q')
-        check_square_dense(Q)
+        _density.check_square_dense(Q)
 
         # Get the elapsed time along the edge.
         t = T[na][nb]['weight']
 
         # Get the conditional probability matrix associated with the edge.
         P = T_aug[na][nb]['P']
-        check_square_dense(P)
+        _density.check_square_dense(P)
 
         # Get the joint probability matrix associated with the edge.
         J = T_joint[na][nb]['J']
-        check_square_dense(J)
+        _density.check_square_dense(J)
 
         # Use Cython code to accumulate expectations along the branch.
         absorption_expectation += pyfelscore.get_tolerance_expectations(
@@ -482,7 +455,7 @@ def get_tolerance_process_log_likelihood(
     tolerance_distn = get_tolerance_distn(rate_off, rate_on)
 
     # Get the root state and the transitions of the primary process.
-    info = get_history_root_state_and_transitions(T_primary, root=root)
+    info = _mjp.get_history_root_state_and_transitions(T_primary, root=root)
     primary_root_state, primary_transitions = info
 
     # Initialize the log likelihood.
@@ -938,7 +911,7 @@ def get_primary_state_to_absorption_rate(
         Map from primary state to absorption rate.
 
     """
-    check_square_dense(Q_primary)
+    _density.check_square_dense(Q_primary)
     nprimary = len(primary_to_part)
     primary_state_to_absorption_rate = {}
     for sa in range(nprimary):
@@ -989,7 +962,7 @@ def get_inhomogeneous_mjp(
         Each set is either {1} or {0, 1}.
 
     """
-    check_square_dense(Q_primary)
+    _density.check_square_dense(Q_primary)
     nprimary = len(primary_to_part)
 
     # Define the absorption rate for each primary state.
@@ -1082,7 +1055,7 @@ def get_primary_proposal_rate_matrix(
     It is also used to help construct an initial feasible trajectory.
 
     """
-    check_square_dense(Q_primary)
+    _density.check_square_dense(Q_primary)
     nprimary = len(primary_to_part)
 
     # Adjust the proposal rate matrix

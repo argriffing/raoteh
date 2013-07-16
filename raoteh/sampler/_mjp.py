@@ -9,15 +9,9 @@ from collections import defaultdict
 import numpy as np
 import networkx as nx
 import scipy.linalg
-import scipy.stats
 from scipy import special
 
 from raoteh.sampler import _mc0, _mcy
-
-from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_dense_rate_matrix,
-        get_first_element, get_arbitrary_tip)
 
 from raoteh.sampler._linalg import (
         sparse_expm,
@@ -126,7 +120,7 @@ def get_history_root_state_and_transitions(T, root=None):
 
     # Pick a root with only one neighbor if no root was specified.
     if root is None:
-        root = get_arbitrary_tip(T, degrees)
+        root = _util.get_arbitrary_tip(T, degrees)
 
     # The root must have a well defined state.
     # This means that it cannot be adjacent to edges with differing states.
@@ -140,7 +134,7 @@ def get_history_root_state_and_transitions(T, root=None):
     successors = nx.dfs_successors(T, root)
     for a, b in nx.bfs_edges(T, root):
         if degrees[b] == 2:
-            c = get_first_element(successors[b])
+            c = _util.get_first_element(successors[b])
             sa = T[a][b]['state']
             sb = T[b][c]['state']
             if sa != sb:

@@ -16,28 +16,11 @@ import networkx as nx
 import scipy.linalg
 from scipy import special
 
-from raoteh.sampler import _util, _mc0, _mcy, _mjp, _tmjp_util
-
-from raoteh.sampler._util import (
-        StructuralZeroProb,
-        NumericalZeroProb,
-        get_first_element,
-        get_arbitrary_tip,
-        cached_property,
-        )
+from raoteh.sampler import _mc0, _mcy, _mjp, _tmjp_util
 
 from raoteh.sampler._linalg import (
-        sparse_expm,
         expm_frechet_is_simple,
         simple_expm_frechet,
-        )
-
-from raoteh.sampler._mjp import (
-        get_history_root_state_and_transitions,
-        get_total_rates,
-        get_conditional_transition_matrix,
-        get_expected_history_statistics,
-        get_expm_augmented_tree,
         )
 
 
@@ -427,7 +410,7 @@ def get_tolerance_process_log_likelihood(ctm, T_primary, root):
     primary_root_distn = ctm.primary_distn
 
     # Get the root state and the transitions of the primary process.
-    info = get_history_root_state_and_transitions(T_primary, root=root)
+    info = _mjp.get_history_root_state_and_transitions(T_primary, root=root)
     primary_root_state, primary_transitions = info
 
     # Initialize the log likelihood.
@@ -479,7 +462,7 @@ def get_absorption_integral(T, node_to_allowed_states,
     """
     Compute a certain integral.
 
-    This function is copypasted from get_expected_history_statistics in _mjp.
+    This function is copypasted from _mjp.get_expected_history_statistics().
     Its purpose is to compute a single weird thing -- the expectation
     over all tolerance processes and over all edges,
     of the "absorption rate" multiplied by the expected amount of time
@@ -527,7 +510,7 @@ def get_absorption_integral(T, node_to_allowed_states,
 
     # Construct the augmented tree by annotating each edge
     # with the appropriate state transition probability matrix.
-    T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
+    T_aug = _mjp.get_expm_augmented_tree(T, root, Q_default=Q_default)
 
     # Construct the node to pmap dict.
     node_to_pmap = _mcy.get_node_to_pmap(T_aug, root,
@@ -683,7 +666,7 @@ def get_tolerance_summary(ctm, T_primary, root, disease_data=None):
 
         # Compute conditional expectations of dwell times
         # and transitions for this tolerance class.
-        expectation_info = get_expected_history_statistics(
+        expectation_info = _mjp.get_expected_history_statistics(
                 T_tol, node_to_allowed_tolerances,
                 root, root_distn=ctm.tolerance_distn)
         dwell_times, post_root_distn, transitions = expectation_info
