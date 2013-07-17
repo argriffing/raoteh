@@ -18,7 +18,7 @@ from numpy.testing import (
         assert_equal, assert_allclose, assert_, assert_raises, decorators,
         )
 
-from raoteh.sampler import _mjp, _tmjp
+from raoteh.sampler import _mjp, _tmjp, _sampler
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
@@ -47,6 +47,48 @@ from raoteh.sampler._sampler import (
 from raoteh.sampler._sample_tree import (
         get_random_agglom_tree,
         )
+
+
+def test_primary_trajectory_log_likelihood():
+    # Compare two ways to compute the marginal log likelihood
+    # of the primary trajectory.
+    # The first way directly computes the log likelihood
+    # using only matrix exponentials of small 3x3 tolerance rate matrices.
+    # The second way computes some expectations of statistics
+    # using matrix exponentials and frechet derivatives of matrix exponentials
+    # of the small 3x3 tolerance rate matrices,
+    # and then computes the log likelihood through these expectations.
+    # The two methods should give the same log likelihood.
+
+    # Get an arbitrary tolerance process.
+    ctm = _tmjp.get_example_tolerance_process_info()
+
+    # Define an arbitrary tree with edges.
+    T = nx.Graph()
+    T.add_weighted_edges_from([
+        (0, 1, 0.1),
+        (0, 2, 0.2),
+        (0, 3, 0.3),
+        (3, 4, 0.4),
+        (3, 5, 0.5)])
+    root = 0
+
+    # Sample a primary process trajectory
+    # using forward sampling of the primary process rate matrix.
+    T_primary = _sampler.get_forward_sample(
+            T, ctm.Q_primary, root, ctm.primary_distn)
+
+    # Get the primary process log likelihood,
+    # under the compound tolerance model.
+    ll_direct = _tmjp.get_tolerance_process_log_likelihood(
+            ctm, T_primary, root)
+
+    # Get the log likelihood through the summary.
+    cnll = _tmjp.ll_expectation_helper(ctm, T_primary, root)
+    ll_indirect = -(cnll.init_prim + cnll.dwell_prim + cnll.trans_prim)
+
+    # Check that the two methods give the same answer.
+    assert_allclose(ll_indirect, ll_direct)
 
 
 class TestMonteCarloLikelihoodRatio(TestCase):
