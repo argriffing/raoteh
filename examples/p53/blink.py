@@ -91,7 +91,7 @@ def _tmjp_clever_sample_helper_dense(
         tol_info = _tmjp_dense.get_tolerance_ll_contribs(
                 ctm.rate_on, ctm.rate_off,
                 total_tree_length, *tolerance_summary)
-        init_tol_ll, dwell_tol_ll, trans_tol_ll = tol_info
+        init_tol_ll, dwell_prim_ll, dwell_tol_ll, trans_tol_ll = tol_info
 
         neg_ll_info = _mjp_dense.differential_entropy_helper(
                 ctm.Q_primary, ctm.primary_distn,
@@ -99,7 +99,8 @@ def _tmjp_clever_sample_helper_dense(
         neg_init_prim_ll, neg_dwell_prim_ll, neg_trans_prim_ll = neg_ll_info
 
         cnll = _tmjp_util.CompoundNegLL(
-                neg_init_prim_ll, -init_tol_ll, -dwell_tol_ll,
+                neg_init_prim_ll, -init_tol_ll,
+                -dwell_prim_ll, -dwell_tol_ll,
                 neg_trans_prim_ll, -trans_tol_ll)
 
         cnlls.append(cnll)

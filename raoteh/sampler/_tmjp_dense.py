@@ -1002,52 +1002,77 @@ def get_inhomogeneous_mjp(
     _density.check_square_dense(Q_primary)
     nprimary = len(primary_to_part)
 
-    # Define the absorption rate for each primary state.
-    primary_state_to_absorption_rate = get_primary_state_to_absorption_rate(
-        Q_primary, primary_to_part, tolerance_class)
+    # Convert primary_to_part into a dense array.
+    primary_to_part_array = np.array([
+        primary_to_part[i] for i in range(nprimary)], dtype=int)
 
-    # Define the set of allowed tolerances at each node.
-    # These may be further constrained
-    # by the sampled primary process trajectory.
-    node_to_allowed_tolerances = dict((n, {0, 1}) for n in T_primary)
-
-    # Construct the tree whose edges are in correspondence
-    # to the edges of the sampled primary trajectory,
-    # and whose edges are annotated with weights
-    # and with edge-specific 3-state transition rate matrices.
-    # The third state of each edge-specific rate matrix is an
-    # absorbing state which will never be entered.
-    T_tol = nx.Graph()
+    # Construct the bfs tree, preserving edge states.
+    T_bfs = nx.DiGraph()
     for na, nb in T_primary_edges:
-        edge = T_primary[na][nb]
-        primary_state = edge['state']
-        local_tolerance_class = primary_to_part[primary_state]
-        weight = edge['weight']
+        edge_object = T_primary[na][nb]
+        primary_state = edge_object['state']
+        T_bfs.add_edge(na, nb, state=primary_state)
 
-        # Define the local on->off rate, off->on rate,
-        # and absorption rate.
-        local_rate_on = rate_on
-        if tolerance_class == local_tolerance_class:
-            local_rate_off = 0
-        else:
-            local_rate_off = rate_off
-        absorption_rate = primary_state_to_absorption_rate[primary_state]
+    # Get the ordered list of nodes in preorder.
+    preorder_nodes = list(nx.dfs_preorder_nodes(T_primary, root))
+    nnodes = len(preorder_nodes)
 
-        # Construct the local tolerance rate matrix.
-        Q_tol = np.zeros((3, 3), dtype=float)
-        Q_tol[0, 1] = local_rate_on
-        Q_tol[1, 0] = local_rate_off
-        Q_tol[1, 2] = absorption_rate
-        Q_tol = Q_tol - np.diag(Q_tol.sum(axis=1))
+    # Put the tree into sparse boolean csr form.
+    tree_csr_indices, tree_csr_indptr = _density.digraph_to_bool_csr(
+            T_bfs, preorder_nodes)
 
-        # Add the edge.
-        T_tol.add_edge(na, nb, weight=weight, Q=Q_tol)
+    # Construct a dense array of primary states.
+    # The edges are defined in correspondence to the nodes
+    # further from the root.
+    edge_to_primary_state = np.empty(nnodes, dtype=int)
+    for na_index, na in enumerate(preorder_nodes):
+        node_ind_start = tree_csr_indptr[na_index]
+        node_ind_stop = tree_csr_indptr[na_index+1]
+        for j in range(node_ind_start, node_ind_stop):
+            nb_index = tree_csr_indices[j]
+            nb = preorder_nodes[nb_index]
 
-        # Possibly restrict the set of allowed tolerances
-        # at the endpoints of the edge.
-        if tolerance_class == local_tolerance_class:
-            for n in (na, nb):
-                node_to_allowed_tolerances[n].discard(0)
+            primary_state = T_primary[na][nb]['state']
+            edge_to_primary_state[nb_index] = primary_state
+
+    # Initialize the output arrays
+    # to be filled by pyfelscore.tmjp_get_inhomogeneous_mjp().
+    node_to_allowed_tolerances_array = np.ones((nnodes, 2), dtype=int)
+    tol_rate_matrices = np.empty((nnodes, 3, 3), dtype=float)
+
+    pyfelscore.tmjp_get_inhomogeneous_mjp(
+            tree_csr_indices,
+            tree_csr_indptr,
+            edge_to_primary_state,
+            #
+            primary_to_part_array, # (nprimary,)
+            Q_primary, # (nprimary, nprimary)
+            rate_on, rate_off, tolerance_class,
+            #
+            node_to_allowed_tolerances_array, # (nnodes, 2)
+            tol_rate_matrices, # (nnodes, 3, 3)
+            )
+
+    # Construct the tree with rate annotations.
+    T_tol = nx.Graph()
+    for na_index, na in enumerate(preorder_nodes):
+        node_ind_start = tree_csr_indptr[na_index]
+        node_ind_stop = tree_csr_indptr[na_index+1]
+        for j in range(node_ind_start, node_ind_stop):
+            nb_index = tree_csr_indices[j]
+            nb = preorder_nodes[nb_index]
+
+            # Annotate the edge between nodes na and nb.
+            weight = T_primary[na][nb]['weight']
+            T_tol.add_edge(na, nb, weight=weight,
+                Q=tol_rate_matrices[nb_index])
+
+    # Construct the map from nodes to sets of allowed tolerance states.
+    node_to_allowed_tolerances = {}
+    for na_index, na in enumerate(preorder_nodes):
+        arr = node_to_allowed_tolerances_array[na_index]
+        allowed_tolerances = set(i for i, v in enumerate(arr) if v)
+        node_to_allowed_tolerances[na] = allowed_tolerances
 
     # Return the info.
     return T_tol, node_to_allowed_tolerances

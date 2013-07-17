@@ -977,7 +977,7 @@ def test_sample_tmjp_v1_disease():
     ctm_dense.init_compound()
 
     # Define the number of samples.
-    nsamples = 10000
+    nsamples = 1000
 
     # Simulate some data for testing.
     info = get_simulated_data(ctm, sample_disease_data=True)
