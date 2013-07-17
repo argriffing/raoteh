@@ -142,6 +142,10 @@ def test_primary_trajectory_log_likelihood():
         # Append it to the list of mixture probabilities.
         mixture_p = np.prod([(p_off, p_on)[s] for s in tol_states])
         mixture_p /= (1 - p_off ** ctm.nparts)
+        #n_on = sum(1 for s in tol_states if s == 1)
+        #n_off = sum(1 for s in tol_states if s == 0)
+        #assert_allclose(n_on + n_off, ctm.nparts)
+        #mixture_p = (p_on ** (n_on - 1)) * (p_off ** n_off)
         slow_mixture.append(mixture_p)
 
         # Construct a slow rate matrix.
