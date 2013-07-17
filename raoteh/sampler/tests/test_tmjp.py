@@ -18,7 +18,7 @@ from numpy.testing import (
         assert_equal, assert_allclose, assert_, assert_raises, decorators,
         )
 
-from raoteh.sampler import _mjp, _tmjp, _sampler
+from raoteh.sampler import _util, _mjp, _tmjp, _sampler
 
 from raoteh.sampler._util import (
         StructuralZeroProb, NumericalZeroProb, get_first_element,
@@ -60,8 +60,23 @@ def test_primary_trajectory_log_likelihood():
     # and then computes the log likelihood through these expectations.
     # The two methods should give the same log likelihood.
 
+    tolerance_rate_on = 0.5
+    tolerance_rate_off = 1.5
+    tolerance_distn = _tmjp.get_tolerance_distn(
+            tolerance_rate_off, tolerance_rate_on)
+
     # Get an arbitrary tolerance process.
-    ctm = _tmjp.get_example_tolerance_process_info()
+    ctm = _tmjp.get_example_tolerance_process_info(
+            tolerance_rate_on=tolerance_rate_on,
+            tolerance_rate_off=tolerance_rate_off)
+
+    # Get slow and fast blinking tolerance processes.
+    ctm_slow = _tmjp.get_example_tolerance_process_info(
+            tolerance_rate_on=1e-5*tolerance_rate_on,
+            tolerance_rate_off=1e-5*tolerance_rate_off)
+    ctm_fast = _tmjp.get_example_tolerance_process_info(
+            tolerance_rate_on=1e2*tolerance_rate_on,
+            tolerance_rate_off=1e2*tolerance_rate_off)
 
     # Define an arbitrary tree with edges.
     T = nx.Graph()
@@ -83,9 +98,95 @@ def test_primary_trajectory_log_likelihood():
     ll_direct = _tmjp.get_tolerance_process_log_likelihood(
             ctm, T_primary, root)
 
+    # Get the primary process log likelihood,
+    # under the fast blinking compound tolerance model.
+    ll_direct_fast = _tmjp.get_tolerance_process_log_likelihood(
+            ctm_fast, T_primary, root)
+
+    # Get the primary process log likelihood,
+    # under the fast blinking compound tolerance model.
+    ll_direct_slow = _tmjp.get_tolerance_process_log_likelihood(
+            ctm_slow, T_primary, root)
+
     # Get the log likelihood through the summary.
     cnll = _tmjp.ll_expectation_helper(ctm, T_primary, root)
     ll_indirect = -(cnll.init_prim + cnll.dwell_prim + cnll.trans_prim)
+
+    # Get the log likelihood through the summary.
+    cnll = _tmjp.ll_expectation_helper(ctm_fast, T_primary, root)
+    ll_indirect_fast = -(cnll.init_prim + cnll.dwell_prim + cnll.trans_prim)
+
+    # Get the log likelihood through the summary.
+    cnll = _tmjp.ll_expectation_helper(ctm_slow, T_primary, root)
+    ll_indirect_slow = -(cnll.init_prim + cnll.dwell_prim + cnll.trans_prim)
+
+    # Get the log likelihood for the fast blinking limit.
+    Q_proposal = _tmjp.get_primary_proposal_rate_matrix(
+            ctm.Q_primary, ctm.primary_to_part, tolerance_distn)
+    ll_fast_limit = _mjp.get_trajectory_log_likelihood(
+            T_primary, root, ctm.primary_distn, Q_default=Q_proposal)
+
+    # Get the log likelihood for the slow blinking limit.
+    slow_mixture = []
+    slow_rate_matrices = []
+    slow_distns = []
+    total_blink_rate = tolerance_rate_on + tolerance_rate_off
+    p_off = tolerance_rate_off / total_blink_rate
+    p_on = tolerance_rate_on / total_blink_rate
+    for tol_states in itertools.product((0, 1), repeat=ctm.nparts):
+
+        if not any(tol_states):
+            continue
+
+        # Define the mixture probability.
+        # Append it to the list of mixture probabilities.
+        mixture_p = np.prod([(p_off, p_on)[s] for s in tol_states])
+        mixture_p /= (1 - p_off ** ctm.nparts)
+        slow_mixture.append(mixture_p)
+
+        # Construct a slow rate matrix.
+        # Append it to the list of rate matrix mixture components.
+        Q_slow = nx.DiGraph()
+        for sa, sb in ctm.Q_primary.edges():
+            weight = ctm.Q_primary[sa][sb]['weight']
+            sa_part = ctm.primary_to_part[sa]
+            sb_part = ctm.primary_to_part[sb]
+            if tol_states[sa_part] and tol_states[sb_part]:
+                Q_slow.add_edge(sa, sb, weight=weight)
+        slow_rate_matrices.append(Q_slow)
+
+        # Define the distribution.
+        slow_weights = {}
+        for sa, p in ctm.primary_distn.items():
+            part = ctm.primary_to_part[sa]
+            if tol_states[part]:
+                slow_weights[sa] = p
+        slow_distn = _util.get_normalized_dict_distn(slow_weights)
+        slow_distns.append(slow_distn)
+
+    assert_allclose(sum(slow_mixture), 1)
+
+    slow_likelihood = 0
+    for info in zip(slow_mixture, slow_rate_matrices, slow_distns):
+        p, Q_slow, slow_distn = info
+        ll = _mjp.get_trajectory_log_likelihood(
+                T_primary, root, slow_distn, Q_default=Q_slow)
+        slow_likelihood += p * np.exp(ll)
+    ll_slow_limit = np.log(slow_likelihood)
+
+
+    # Print some stuff.
+    print('ll_direct  :', ll_direct)
+    print('ll_indirect:', ll_indirect)
+    print()
+    print('ll_direct_fast  :', ll_direct_fast)
+    print('ll_indirect_fast:', ll_indirect_fast)
+    print('ll_fast_limit   :', ll_fast_limit)
+    print()
+    print('ll_direct_slow  :', ll_direct_slow)
+    print('ll_indirect_slow:', ll_indirect_slow)
+    print('ll_slow_limit   :', ll_slow_limit)
+    print()
 
     # Check that the two methods give the same answer.
     assert_allclose(ll_indirect, ll_direct)

@@ -223,20 +223,28 @@ def get_trajectory_log_likelihood(
     dwell_times, root_state, transitions = info
 
     # contribution of root state to log likelihood
-    init_ll = np.log(prior_root_distn[root_state])
+    if root_state in prior_root_distn:
+        init_ll = np.log(prior_root_distn[root_state])
+    else:
+        init_ll = -np.inf
 
     # contribution of dwell times
     ll = 0.0
     for state, dwell in dwell_times.items():
-        ll -= dwell * total_rates[state]
+        if state in total_rates:
+            ll -= dwell * total_rates[state]
     dwell_ll = ll
 
     # contribution of transitions
     ll = 0.0
     for sa, sb in transitions.edges():
         ntransitions = transitions[sa][sb]['weight']
-        rate = Q_default[sa][sb]['weight']
-        ll += special.xlogy(ntransitions, rate)
+        if ntransitions:
+            if Q_default.has_edge(sa, sb):
+                rate = Q_default[sa][sb]['weight']
+                ll += special.xlogy(ntransitions, rate)
+            else:
+                ll = -np.inf
     trans_ll = ll
 
     # Return the sum of the log likelihood contributions.
