@@ -32,14 +32,29 @@ int main(int argc, char **argv)
    *   - set of allowed primary states
    *   - for each tolerance class, the set of allowed tolerance states
    */
-
   const gsl_rng_type * T;
+  gsl_rng * r;
+
+  int i, n = 10;
+
+  gsl_rng_env_setup();
+
+  T = gsl_rng_default;
+  r = gsl_rng_alloc (T);
+
+  for (i = 0; i < n; i++) 
+    {
+      double u = gsl_rng_uniform (r);
+      printf ("%.5f\n", u);
+    }
+
+  gsl_rng_free (r);
 
   return 0;
 }
 
 
-int foo()
+int foo(int argc, char **argv)
 {
   int aflag = 0;
   int bflag = 0;
