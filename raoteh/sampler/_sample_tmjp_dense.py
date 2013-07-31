@@ -224,6 +224,9 @@ def resample_primary_states_v1(
             tolerance_trajectories,
             edge_to_event_times=edge_to_event_times)
 
+    # Precompute the breath first edges for the merged tree.
+    T_merged_bfs_edges = list(nx.bfs_edges(T_merged, root))
+
     # Construct the 'chunk tree' whose edges
     # are in correspondence with the primary process event nodes.
     info = _graph_transform.get_chunk_tree_type_b(
@@ -234,7 +237,7 @@ def resample_primary_states_v1(
     # tolerance classes in the 'off' state
     # that fall within the subtree represented by the chunk node.
     chunk_node_to_forbidden_tols = defaultdict(set)
-    for merged_edge in nx.bfs_edges(T_merged, root):
+    for merged_edge in T_merged_bfs_edges:
 
         # Unpack the merged edge and get the chunk node that it maps to.
         na, nb = merged_edge
@@ -263,7 +266,7 @@ def resample_primary_states_v1(
 
     # The chunk node may be constrained by primary state data.
     chunk_node_to_obs_state = {}
-    for merged_edge in nx.bfs_edges(T_merged, root):
+    for merged_edge in T_merged_bfs_edges:
 
         # Unpack the merged edge and get the chunk node that it maps to.
         na, nb = merged_edge
@@ -355,7 +358,7 @@ def resample_primary_states_v1(
     # Map the sampled chunk node primary states back onto
     # the base tree to give the sampled primary process trajectory.
     sampled_traj = nx.Graph()
-    for merged_edge in nx.bfs_edges(T_merged, root):
+    for merged_edge in T_merged_bfs_edges:
         merged_na, merged_nb = merged_edge
         weight = T_merged[merged_na][merged_nb]['weight']
         chunk_node = edge_to_chunk_node[merged_edge]
@@ -424,6 +427,9 @@ def resample_tolerance_states_v1(
             [primary_trajectory],
             edge_to_event_times=edge_to_event_times)
 
+    # Precompute the breath first edges for the merged tree.
+    T_merged_bfs_edges = list(nx.bfs_edges(T_merged, root))
+
     # Construct the 'chunk tree' whose edges
     # are in correspondence with the tolerance event nodes.
     info = _graph_transform.get_chunk_tree_type_b(
@@ -434,7 +440,7 @@ def resample_tolerance_states_v1(
     # tolerance classes of primary states that fall within
     # the trajectory subtree represented by that chunk node.
     chunk_node_to_tol_set = defaultdict(set)
-    for merged_edge in nx.bfs_edges(T_merged, root):
+    for merged_edge in T_merged_bfs_edges:
 
         # Unpack the merged edge and get the chunk node that it maps to.
         na, nb = merged_edge
@@ -452,7 +458,7 @@ def resample_tolerance_states_v1(
     if disease_data is not None:
         chunk_node_to_disease_restriction = dict(
                 (n, {0, 1}) for n in chunk_tree)
-        for merged_edge in nx.bfs_edges(T_merged, root):
+        for merged_edge in T_merged_bfs_edges:
             na, nb = merged_edge
             chunk_node = edge_to_chunk_node[merged_edge]
             for n in (na, nb):
@@ -487,7 +493,7 @@ def resample_tolerance_states_v1(
     # Map the sampled chunk node tolerance states back onto
     # the base tree to give the sampled tolerance process trajectory.
     tolerance_traj = nx.Graph()
-    for merged_edge in nx.bfs_edges(T_merged, root):
+    for merged_edge in T_merged_bfs_edges:
         merged_na, merged_nb = merged_edge
         weight = T_merged[merged_na][merged_nb]['weight']
         chunk_node = edge_to_chunk_node[merged_edge]
