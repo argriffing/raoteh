@@ -37,8 +37,6 @@ from raoteh.sampler._sample_mjp_dense import get_uniformized_transition_matrix
 __all__ = []
 
 
-#TODO under construction
-
 def gen_histories_v1(ctm, T, root, node_to_primary_state,
         disease_data=None, uniformization_factor=2, nhistories=None):
     """
