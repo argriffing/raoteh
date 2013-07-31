@@ -10,6 +10,11 @@
 #include <unistd.h>
 #include <gsl/gsl_rng.h>
 
+int read_rate_matrix(FILE *fin)
+{
+  //
+}
+
 int main(int argc, char **argv)
 {
   /* Read the options, or rather use a control file.
@@ -32,6 +37,12 @@ int main(int argc, char **argv)
    *   - set of allowed primary states
    *   - for each tolerance class, the set of allowed tolerance states
    */
+  return 0;
+}
+
+
+int play_with_gsl()
+{
   const gsl_rng_type * T;
   gsl_rng * r;
 
@@ -54,7 +65,7 @@ int main(int argc, char **argv)
 }
 
 
-int foo(int argc, char **argv)
+int play_with_getopt(int argc, char **argv)
 {
   int aflag = 0;
   int bflag = 0;
