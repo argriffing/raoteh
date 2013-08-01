@@ -52,6 +52,9 @@ N3 : unknown  unknown  on
 """
 
 def main():
+
+    # A summary of the tree.
+    nnodes = 4
     
     # Define the primary process and the tolerance processes.
     nprimary = 6
@@ -83,9 +86,30 @@ def main():
     rate_on = 1.0
     rate_off = 1.0
 
-    # Define a compound process.
-    for tol_arr in itertools.product((0, 1), repeat=nparts):
-        pass
+    # Define the compound process.
+    compound_to_primary = []
+    compound_to_tolerances = []
+    for primary_state in range(nprimary):
+        for tolerance_states in itertools.product((0, 1), repeat=nparts):
+            compound_to_primary.append(primary_state)
+            compound_to_tolerances.append(tolerance_states)
+    ncompound = len(compound_to_primary)
+    node_to_allowed_compound_states = {}
+    for node in range(nnodes):
+        allowed_compound = set()
+        for compound in range(ncompound):
+            primary = compound_to_primary[compound]
+            tolerances = compound_to_tolerances[compound]
+            if primary in node_to_allowed_primary_states[node]:
+            allowed_compound.add(compound)
+        node_to_allowed_compound_states[node] = allowed_compound
+
+
+def foo(allowed_primary_states, part_to_allowed_states,
+        compound_to_primary, compound_to_tolerances,
+        candidate_compound_state):
+    primary = compound_to_primary[candidate_compound_state]
+    tolerances = compound_to_tolerances[candidate_compound_state]
 
 
 if __name__ == '__main__':
