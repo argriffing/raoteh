@@ -26,6 +26,22 @@ def git_version():
         GIT_REVISION = 'Unknown'
     return GIT_REVISION
 
+try:
+    from sphinx.setup_command import BuildDoc
+    HAVE_SPHINX = True
+except ImportError:
+    HAVE_SPHINX = False
+
+if HAVE_SPHINX:
+    class RaotehBuildDoc(BuildDoc):
+        """Run in-place build before Raoteh doc build"""
+        def run(self):
+            ret = subprocess.call(
+                    [sys.executable, sys.argv[0], 'build_ext', '-i'])
+            if ret != 0:
+                raise RuntimeError("Building Raoteh failed!")
+            BuildDoc.run(self)
+
 def configuration(parent_package='', top_path=None):
     from numpy.distutils.misc_util import Configuration
     config = Configuration(None, parent_package, top_path)
@@ -40,7 +56,12 @@ def configuration(parent_package='', top_path=None):
 
 def setup_package():
     #write_version_py()
-    cmdclass = {}
+
+    if HAVE_SPHINX:
+        cmdclass = {'build_sphinx': RaotehBuildDoc}
+    else:
+        cmdclass = {}
+
     metadata = dict(
             name = 'raoteh',
             maintainer = 'raoteh developers',
