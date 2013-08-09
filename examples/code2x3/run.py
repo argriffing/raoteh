@@ -60,6 +60,40 @@ N5 : on       unknown  unknown
 
 """
 
+
+
+    # Specify values analogous to disease data.
+    # All tolerance states are known at the root.
+    # At internal nodes, no tolerance states are known.
+    # At the non-root leaves, only the tolerance state of the observed
+    # primary state is known; this primary state must be tolerated.
+    node_to_part_to_allowed_states = {
+
+            # at the root all tolerance states are known
+            0 : {0:{1}, 1:{0}, 2:{1}},
+
+            # at the two internal nodes all tolerance states are unknown
+            1 : {0:{0,1}, 1:{0,1}, 2:{0,1}},
+            2 : {0:{0,1}, 1:{0,1}, 2:{0,1}},
+
+            # at the three non-root leaves the only thing known about
+            # the tolerance states is that the observed primary state
+            # at the leaf must be tolerated.
+            3 : {0:{0,1}, 1:{0,1}, 2:{1}},
+            4 : {0:{0,1}, 1:{0,1}, 2:{1}},
+            5 : {0:{1}, 1:{0,1}, 2:{0,1}},
+            }
+
+    # Specify values analogous to codon alignment data.
+    node_to_allowed_primary_states = {
+            0 : {0},
+            1 : {0, 1, 2, 3, 4, 5},
+            2 : {0, 1, 2, 3, 4, 5},
+            3 : {4},
+            4 : {5},
+            5 : {1},
+            }
+
 def main():
 
     # A summary of the tree.
@@ -97,36 +131,54 @@ def main():
     # when all primary states are tolerated.
     branch_length = 0.5
 
-    # Specify values analogous to disease data.
-    # All tolerance states are known at the root.
-    # At internal nodes, no tolerance states are known.
-    # At the non-root leaves, only the tolerance state of the observed
-    # primary state is known; this primary state must be tolerated.
-    node_to_part_to_allowed_states = {
+    # L0, L1, L2 define three levels of data.
+    # L0 provides no data.
+    # L1 provides alignment data (primary states) only.
+    # L2 provides alignment data and disease data (tolerance class states).
 
-            # at the root all tolerance states are known
-            0 : {0:{1}, 1:{0}, 2:{1}},
+    # No primary states are known.
+    L0_node_to_allowed_primary_states = dict(
+            (n, {0, 1, 2, 3, 4, 5}) for n in range(nnodes))
 
-            # at the two internal nodes all tolerance states are unknown
-            1 : {0:{0,1}, 1:{0,1}, 2:{0,1}},
-            2 : {0:{0,1}, 1:{0,1}, 2:{0,1}},
+    # No tolerance states are known.
+    L0_node_part_to_allowed_states = dict(
+            ((n, p), {0, 1}) for n in range(nnodes) for p in range(nparts))
 
-            # at the three non-root leaves the only thing known about
-            # the tolerance states is that the observed primary state
-            # at the leaf must be tolerated.
-            3 : {0:{0,1}, 1:{0,1}, 2:{1}},
-            4 : {0:{0,1}, 1:{0,1}, 2:{1}},
-            5 : {0:{1}, 1:{0,1}, 2:{0,1}},
-            }
-
-    # Specify values analogous to codon alignment data.
-    node_to_allowed_primary_states = {
+    # Primary states are known at the degree-1 nodes.
+    L1_node_to_allowed_primary_states = {
             0 : {0},
             1 : {0, 1, 2, 3, 4, 5},
             2 : {0, 1, 2, 3, 4, 5},
             3 : {4},
             4 : {5},
             5 : {1},
+            }
+
+    # At the degree-1 nodes,
+    # the tolerance class of the known primary state is known to be tolerated.
+    L1_node_part_to_allowed_states = {
+            (0,0):{1}, (0,1):{0,1}, (0,2):{0,1},
+            (1,0):{0,1}, (1,1):{0,1}, (1,2):{0,1},
+            (2,0):{0,1}, (2,1):{0,1}, (2,2):{0,1},
+            (3,0):{0,1}, (3,1):{0,1}, (3,2):{1},
+            (4,0):{0,1}, (4,1):{0,1}, (4,2):{1},
+            (5,0):{1}, (5,1):{0,1}, (5,2):{0,1},
+            }
+
+    # Primary states are known at the degree-1 nodes.
+    L2_node_to_allowed_primary_states = L1_node_to_allowed_primary_states
+
+    # At the degree-1 nodes,
+    # the tolerance class of the known primary state is known to be tolerated.
+    # Additionally all tolerance classes are known at the root;
+    # this represents access to full disease data for a reference taxon.
+    L2_node_part_to_allowed_states = {
+            (0,0):{1}, (0,1):{0}, (0,2):{1},
+            (1,0):{0,1}, (1,1):{0,1}, (1,2):{0,1},
+            (2,0):{0,1}, (2,1):{0,1}, (2,2):{0,1},
+            (3,0):{0,1}, (3,1):{0,1}, (3,2):{1},
+            (4,0):{0,1}, (4,1):{0,1}, (4,2):{1},
+            (5,0):{1}, (5,1):{0,1}, (5,2):{0,1},
             }
 
     # Define the compound process.
