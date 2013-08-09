@@ -14,66 +14,61 @@ P0 --- P2 --- P4
 P1 --- P3 --- P5
 
 
-The partition of primary states into tolerance classes is as follows:
+The primary states are partitioned into tolerance classes as follows:
 
 T0 : {P0, P1}
 T1 : {P2, P3}
 T2 : {P4, P5}
 
 
-Tree schematic:
+Rooted tree schematic, annotated with known primary process states at leaves:
 
-    N0
-     |
-     |
-    N1
-    / \
-   /   \
- N2    N3
+        P0
+        N0
+         |
+         |
+        N1
+        / \
+       /   \
+     N2    N5
+     /\    P1
+    /  \   
+  N3   N4
+  P4   P5
 
 
-Primary process data:
+Available process state data:
 
 N0 : primary process state is P0
 N1 : primary process state is unknown
-N2 : primary process state is P4
-N3 : primary process state is P5
+N2 : primary process state is unknown
+N3 : primary process state is P4
+N4 : primary process state is P5
+N5 : primary process state is P1
 
 
 Tolerance class data (disease data):
 
      T0       T1       T2
     ---------------------
-N0 : on       off      unknown
+N0 : on       off      on
 N1 : unknown  unknown  unknown
-N2 : unknown  unknown  on
+N2 : unknown  unknown  unknown
 N3 : unknown  unknown  on
+N4 : unknown  unknown  on
+N5 : on       unknown  unknown
 
 """
 
 def main():
 
     # A summary of the tree.
-    nnodes = 4
+    nnodes = 6
     
     # Define the primary process and the tolerance processes.
     nprimary = 6
     nparts = 3
     primary_to_part = {0:0, 1:0, 2:1, 3:1, 4:2, 5:2}
-    node_to_allowed_primary_states = {
-            0 : {0},
-            1 : {0, 1, 2, 3, 4, 5},
-            2 : {4},
-            3 : {5},
-            }
-    preorder_nodes = (0, 1, 2, 3)
-    preorder_edges = ((0, 1), (1, 2), (1, 3))
-    node_to_part_to_allowed_states = {
-            0 : {0:{1}, 1:{0}, 2:{0,1}},
-            1 : {0:{0,1}, 1:{0,1}, 2:{0,1}},
-            2 : {0:{0,1}, 1:{0,1}, 2:{1}},
-            2 : {0:{0,1}, 1:{0,1}, 2:{1}},
-            }
     pre_Q_primary = np.array([
         [0, 1, 1, 0, 0, 0],
         [1, 0, 0, 1, 0, 0],
@@ -85,6 +80,54 @@ def main():
     Q_primary = pre_Q_primary - np.diag(pre_Q_primary.sum(axis=1))
     rate_on = 1.0
     rate_off = 1.0
+
+    # Define the stationary distribution of the primary process
+    # and the stationary distribution common to all tolerance processes.
+    primary_weights = np.ones(nprimary, dtype=float)
+    tolerance_weights = np.array([rate_off, rate_on], dtype=float)
+    primary_distn = primary_weights / primary_weights.sum()
+    tolerance_distn = tolerance_weights / tolerance_weights.sum()
+
+    # Define the tree.
+    preorder_nodes = (0, 1, 2, 3, 4, 5)
+    preorder_edges = ((0, 1), (1, 2), (2, 3), (2, 4), (1, 5))
+
+    # Define the single branch length, assumed to be common to all branches.
+    # This is given in units of expected number of primary state transitions
+    # when all primary states are tolerated.
+    branch_length = 0.5
+
+    # Specify values analogous to disease data.
+    # All tolerance states are known at the root.
+    # At internal nodes, no tolerance states are known.
+    # At the non-root leaves, only the tolerance state of the observed
+    # primary state is known; this primary state must be tolerated.
+    node_to_part_to_allowed_states = {
+
+            # at the root all tolerance states are known
+            0 : {0:{1}, 1:{0}, 2:{1}},
+
+            # at the two internal nodes all tolerance states are unknown
+            1 : {0:{0,1}, 1:{0,1}, 2:{0,1}},
+            2 : {0:{0,1}, 1:{0,1}, 2:{0,1}},
+
+            # at the three non-root leaves the only thing known about
+            # the tolerance states is that the observed primary state
+            # at the leaf must be tolerated.
+            3 : {0:{0,1}, 1:{0,1}, 2:{1}},
+            4 : {0:{0,1}, 1:{0,1}, 2:{1}},
+            5 : {0:{1}, 1:{0,1}, 2:{0,1}},
+            }
+
+    # Specify values analogous to codon alignment data.
+    node_to_allowed_primary_states = {
+            0 : {0},
+            1 : {0, 1, 2, 3, 4, 5},
+            2 : {0, 1, 2, 3, 4, 5},
+            3 : {4},
+            4 : {5},
+            5 : {1},
+            }
 
     # Define the compound process.
     compound_to_primary = []
