@@ -9,7 +9,8 @@
 \usetikzlibrary{arrows,positioning}
 
 \begin{document}
-\begin{tikzpicture}[<->,>=stealth',shorten >=1pt,auto,node distance=3cm,thick,
+\begin{tikzpicture}[<->,>=stealth',shorten >=1pt,shorten <=1pt,
+  auto,node distance=3cm,thick,
   main node/.style={circle,fill=blue!20,draw,font=\sffamily\Large\bfseries}]
 
   \node[main node] (0) {P0};
@@ -20,13 +21,13 @@
   \node[main node] (5) [below of=4] {P5};
 
   \path[every node/.style={font=\sffamily\small}]
-    (0) edge node [left] {0.5} (1)
-    (2) edge node [right] {0.5} (3)
-    (4) edge node [right] {0.5} (5)
-    (0) edge node [above] {0.5} (2)
-    (2) edge node [above] {0.5} (4)
-    (1) edge node [below] {0.5} (3)
-    (3) edge node [below] {0.5} (5);
+    (0) edge node [left] {1.0} (1)
+    (2) edge node [right] {1.0} (3)
+    (4) edge node [right] {1.0} (5)
+    (0) edge node [above] {1.0} (2)
+    (2) edge node [above] {1.0} (4)
+    (1) edge node [below] {1.0} (3)
+    (3) edge node [below] {1.0} (5);
 
 \end{tikzpicture}
 \end{document}

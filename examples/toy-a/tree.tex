@@ -1,0 +1,30 @@
+% Roughly follows http://www.texample.net/tikz/examples/graph/
+% Requirements are LaTeX (e.g. texlive), TikZ, and rubber.
+% Build using the following command.
+% rubber --pdf ratematrix
+
+\documentclass{article}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows,positioning}
+
+\begin{document}
+\begin{tikzpicture}[-,>=stealth',auto,node distance=3cm,thick,
+  main node/.style={circle,fill=blue!20,draw,font=\sffamily\Large\bfseries}]
+
+  \node[main node] (0) {N0};
+  \node[main node] (1) [below of=0] {N1};
+  \node[main node] (2) [below left of=1] {N2};
+  \node[main node] (3) [below left of=2] {N3};
+  \node[main node] (4) [below right of=2] {N4};
+  \node[main node] (5) [below right of=1] {N5};
+
+  \path[every node/.style={font=\sffamily\small}]
+    (0) edge node [left] {0.5} (1)
+    (1) edge node [left] {0.5} (2)
+    (2) edge node [left] {0.5} (3)
+    (2) edge node [right] {0.5} (4)
+    (1) edge node [right] {0.5} (5);
+
+\end{tikzpicture}
+\end{document}
