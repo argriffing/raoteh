@@ -3,16 +3,41 @@
 
 \begin{document}
 
+\begin{figure}
+\centering
 \begin{tabular}{c c}
-  primary & tolerance \\
-  state & class \\
+       & primary \\
+  node & state \\
   \hline
-  P0 & T0 \\
-  P1 & T0 \\
-  P2 & T1 \\
-  P3 & T1 \\
-  P4 & T2 \\
-  P5 & T2
+  N0 & P0 \\
+  N1 & ? \\
+  N2 & ? \\
+  N3 & P4 \\
+  N4 & P5 \\
+  N5 & P1
 \end{tabular}
+\caption{
+	Some of the nodes have known primary states.
+	This is analogous to alignment data for a single codon site.}
+\end{figure}
+
+\begin{figure}
+\centering
+\begin{tabular}{c c c c}
+  node & T0 & T1 & T2 \\
+  \hline
+  N0 & on & (off) & (on) \\
+  N1 & ? & ? & ? \\
+  N2 & ? & ? & ? \\
+  N3 & ? & ? & on \\
+  N4 & ? & ? & on \\
+  N5 & on & ? & ?
+\end{tabular}
+\caption{
+	For some of the nodes,
+	some of the tolerance classes have known states.
+	The states enclosed by parentheses represent
+	disease data.}
+\end{figure}
 
 \end{document}
