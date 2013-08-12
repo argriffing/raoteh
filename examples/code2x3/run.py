@@ -109,14 +109,14 @@ def do_pure_primary_process(
 
 
 def do_switching_process(
-            Q_primary, primary_distn,
-            preorder_nodes, preorder_edges, branch_length,
-            primary_to_part,
-            tolerance_distn,
-            switching_rate,
-            node_to_allowed_primary_states,
-            node_part_to_allowed_states,
-            ):
+        Q_primary, primary_distn,
+        preorder_nodes, preorder_edges, branch_length,
+        primary_to_part,
+        tolerance_distn,
+        switching_rate,
+        node_to_allowed_primary_states,
+        node_part_to_allowed_states,
+        ):
     """
     Define the switching model with the default and reference processes.
 
@@ -297,28 +297,178 @@ def do_switching_process(
     print()
 
 
-def do_compound_process():
+def do_blinking_process(
+        Q_primary, primary_distn,
+        preorder_nodes, preorder_edges, branch_length,
+        primary_to_part,
+        rate_on, rate_off,
+        node_to_allowed_primary_states,
+        node_part_to_allowed_states,
+        ):
     """
     """
-    compound_to_primary = []
-    compound_to_tolerances = []
-    for primary_state in range(nprimary):
-        for tolerance_states in itertools.product((0, 1), repeat=nparts):
-            compound_to_primary.append(primary_state)
-            compound_to_tolerances.append(tolerance_states)
-    ncompound = len(compound_to_primary)
-    node_to_allowed_compound_states = {}
-    for node in range(nnodes):
-        allowed_compound = set()
-        allowed_primary_states = node_to_allowed_primary_states[node]
-        part_to_allowed_states = node_to_part_to_allowed_states[node]
-        for compound in range(ncompound):
-            if compound_state_is_allowed(
-                    allowed_primary_states, part_to_allowed_states,
-                    primary_to_part,
-                    compound_to_primary, compound_to_tolerances, compound):
-                allowed_compound.add(compound)
-        node_to_allowed_compound_states[node] = allowed_compound
+    nnodes = len(preorder_nodes)
+    nprimary = len(primary_distn)
+    nparts = len(set(primary_to_part.values()))
+    nblocks = 2**nparts
+    nblink = nblocks * nprimary
+
+    # Define the stationary distribution of the primary process
+    # and the stationary distribution common to all tolerance processes.
+    tolerance_weights = np.array([rate_off, rate_on], dtype=float)
+    tolerance_distn = tolerance_weights / tolerance_weights.sum()
+
+    # Decompose the transitions into types.
+    E_primary = np.zeros((nblink, nblink), dtype=float)
+    E_gain = np.zeros((nblink, nblink), dtype=float)
+    E_loss = np.zeros((nblink, nblink), dtype=float)
+
+    # Define the rate matrix
+    # and the masks that distinguish tolerance state transitions
+    # from primary state transitions.
+    # The masks are used to calculate the transition count expectations.
+    Q_blinking = np.zeros((nblink, nblink), dtype=float)
+    tol_tuples = list(itertools.product((0, 1), repeat=nparts))
+    tol_tuple_to_block_index = dict((t, i) for i, t in enumerate(tol_tuples))
+    for block_index, tol_tuple in enumerate(tol_tuples):
+
+        # Construct a within-block mask
+        # that defines which within-block transitions are allowed.
+        within_block_mask = np.zeros((nprimary, nprimary), dtype=float)
+        for c, c_part in primary_to_part.items():
+            for d, d_part in primary_to_part.items():
+                if c == d:
+                    continue
+                if tol_tuple[c_part] and tol_tuple[d_part]:
+                    within_block_mask[c, d] = 1
+
+        # Define the diagonal block of the rate matrix.
+        # The elements of the block that are on the diagonal
+        # will not yet be meaningfully defined.
+        a = block_index * nprimary
+        b = (block_index + 1) * nprimary
+        Q_blinking[a:b, a:b] = Q_primary * within_block_mask
+
+        # Update the primary process transition mask.
+        E_primary[a:b, a:b] = within_block_mask
+
+        # Look at the adjacent tolerance tuples.
+        # If the current primary state state remains tolerated,
+        # then the tolerance transition (loss or gain) is allowed.
+        for part in range(nparts):
+            adj_tol_tuple = tuple(
+                    v if p != part else 1-v for p, v in enumerate(tol_tuple))
+            adj_block_index = tol_tuple_to_block_index[adj_tol_tuple]
+            if adj_tol_tuple[part]:
+                rate = rate_on
+                E = E_gain
+            else:
+                rate = rate_off
+                E = E_loss
+            for c, c_part in primary_to_part.items():
+                if tol_tuple[c_part] and adj_tol_tuple[c_part]:
+                    source_index = a+c
+                    sink_index = adj_block_index * nprimary + c
+
+                    # Update the rate matrix.
+                    Q_blinking[source_index, sink_index] = rate
+
+                    # Update the gain or loss transition mask.
+                    E[source_index, sink_index] = 1
+
+    # Adjust the diagonal entries of the rate matrix.
+    Q_blinking = Q_blinking - np.diag(Q_blinking.sum(axis=1))
+
+    # Get the initial state distribution.
+    blinking_distn = np.zeros(nblink, dtype=float)
+    for block_index, tol_tuple in enumerate(tol_tuples):
+        n_untol = sum(1 for x in tol_tuple if not x)
+        n_tol = sum(1 for x in tol_tuple if x)
+        a = block_index * nprimary
+        b = (block_index + 1) * nprimary
+        for c, c_part in primary_to_part.items():
+            if tol_tuple[c_part]:
+                p_untol = tolerance_distn[0] ** n_untol
+                p_tol = tolerance_distn[1] ** (n_tol - 1)
+                blinking_distn[a+c] = primary_distn[c] * p_untol * p_tol
+    blinking_distn_sum = blinking_distn.sum()
+    if not np.allclose(blinking_distn_sum, 1):
+        raise Exception(
+                'expected initial probabilities to sum to 1'
+                'but found ' + str(blinking_distn_sum))
+
+    # For each node in the tree,
+    # determine the set of allowed compound blinking states.
+    # This uses both alignment-like (primary) and disease-like (tolerance) data.
+    node_to_allowed_blinking_states = {}
+    for na in range(nnodes):
+        allowed_primary_in = node_to_allowed_primary_states[na]
+        part_to_allowed_states = dict(
+                (p, node_part_to_allowed_states[na, p]) for p in range(nparts))
+        allowed_blinking_states = set()
+        for block_index, tol_tuple in enumerate(tol_tuples):
+            a = block_index * nprimary
+            b = (block_index + 1) * nprimary
+            for primary, c_part in primary_to_part.items():
+                blinking_state = a + primary
+
+                # If the compound state is allowed,
+                # then add it to the set.
+                if _compound_state_is_allowed(
+                        allowed_primary_in, part_to_allowed_states,
+                        primary_to_part,
+                        primary, tol_tuple):
+                    allowed_blinking_states.add(blinking_state)
+
+        # Associate the set of allowed blinking states
+        # with the appropriate node of the tree.
+        node_to_allowed_blinking_states[na] = allowed_blinking_states
+
+    # Report some expectations.
+
+    # Construct a rooted tree with branch lengths.
+    root = preorder_nodes[0]
+    T = nx.Graph()
+    for na, nb in preorder_edges:
+        T.add_edge(na, nb, weight=branch_length)
+
+    # Compute the likelihood.
+    # When no data is provided, this should be 1.
+    likelihood = _mjp_dense.get_likelihood(
+            T, node_to_allowed_blinking_states, root, nblink,
+            root_distn=blinking_distn, Q_default=Q_blinking)
+    print('likelihood:', likelihood)
+    print()
+
+    # Get the expected number of within-block transitions on each branch.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_blinking_states, root, nblink,
+            root_distn=blinking_distn, Q_default=Q_blinking,
+            E=E_primary)
+    print('primary state transition edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
+
+    # Get the expected number of tolerance gains on each branch.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_blinking_states, root, nblink,
+            root_distn=blinking_distn, Q_default=Q_blinking,
+            E=E_gain)
+    print('gain-of-tolerance edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
+
+    # Get the expected number of tolerance losses on each branch.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_blinking_states, root, nblink,
+            root_distn=blinking_distn, Q_default=Q_blinking,
+            E=E_loss)
+    print('loss-of-tolerance edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
 
 
 def main():
@@ -470,6 +620,42 @@ def main():
             primary_to_part,
             tolerance_distn,
             switching_rate,
+            L2_node_to_allowed_primary_states,
+            L2_node_part_to_allowed_states,
+            )
+    print()
+
+    # Try the blinking model with three levels of increasing amounts
+    # of observed data (no data, primary only, primary plus tolerance).
+    print('L0 blinking model process expectations:')
+    print()
+    do_blinking_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            primary_to_part,
+            rate_on, rate_off,
+            L0_node_to_allowed_primary_states,
+            L0_node_part_to_allowed_states,
+            )
+    print()
+    print('L1 blinking model process expectations:')
+    print()
+    do_blinking_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            primary_to_part,
+            rate_on, rate_off,
+            L1_node_to_allowed_primary_states,
+            L1_node_part_to_allowed_states,
+            )
+    print()
+    print('L2 blinking model process expectations:')
+    print()
+    do_blinking_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            primary_to_part,
+            rate_on, rate_off,
             L2_node_to_allowed_primary_states,
             L2_node_part_to_allowed_states,
             )
