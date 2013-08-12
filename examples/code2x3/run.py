@@ -69,7 +69,6 @@ import numpy as np
 import extras
 
 
-#TODO for now only get the total expected number of primary transitions
 def do_pure_primary_process(
         Q_primary, primary_distn,
         preorder_nodes, preorder_edges, branch_length,
@@ -99,7 +98,15 @@ def do_pure_primary_process(
     print()
 
 
-def do_switching_process():
+def do_switching_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            primary_to_part,
+            tolerance_distn,
+            switching_rate,
+            node_to_allowed_primary_states,
+            node_part_to_allowed_states,
+            ):
     """
     Define the switching model with the default and reference processes.
 
@@ -110,6 +117,10 @@ def do_switching_process():
     the default model tolerates all tolerance classes.
 
     """
+    nnodes = len(preorder_nodes)
+    nprimary = len(primary_distn)
+    nparts = len(set(primary_to_part.values()))
+
     # Define the number of blocks in the state-switching rate matrix.
     nblocks = 2**nparts + 1
 
@@ -176,7 +187,7 @@ def do_switching_process():
             if tol_tuple[c_part]:
                 p_untol = tolerance_distn[0] ** n_untol
                 p_tol = tolerance_distn[1] ** (n_tol - 1)
-                switching_distn[a+c] = Q_primary[c] * p_untol * p_tol
+                switching_distn[a+c] = primary_distn[c] * p_untol * p_tol
     switching_distn_sum = switching_distn.sum()
     if not np.allclose(switching_distn_sum, 1):
         raise Exception(
@@ -195,6 +206,39 @@ def do_switching_process():
     np.fill_diagonal(E_within_block, 0)
     np.fill_diagonal(E_between_blocks, 0)
 
+    # For each node in the tree,
+    # determine the set of allowed compound switching states.
+    # This uses both alignment-like (primary) and disease-like (tolerance) data.
+    node_to_allowed_switching_states = {}
+    for na in range(nnodes):
+        allowed_switching_states = set()
+        part_to_allowed_states = dict(
+                (p, node_part_to_allowed_states[na, p]) for p in range(nparts))
+        for block_index, tol_tuple in enumerate(tol_tuples):
+            a = block_index * nprimary
+            b = (block_index + 1) * nprimary
+            for primary, c_part in primary_to_part.items():
+                switching_state = a + primary
+                allowed_primary_in = node_to_allowed_primary_states[primary]
+
+                # If the compound state is allowed,
+                # then add it to the set.
+                if _compound_state_is_allowed(
+                        allowed_primary_in, part_to_allowed_states,
+                        primary, tol_tuple):
+                    allowed_switching_states.add(switching_state)
+
+        # The non-root nodes may possibly have switched to the default process.
+        if na > 0:
+            for primary in range(nprimary):
+                default_compound_state = sink_block_offset + primary
+                if primary in allowed_primary_in:
+                    allowed_switching_states.add(default_compound_state)
+
+        # Associate the set of allowed switching states
+        # with the appropriate node of the tree.
+        node_to_allowed_switching_states[na] = allowed_switching_states
+
     # Report some expectations.
     # The expectations should be divided into two parts.
     # One part defines the expected number
@@ -207,23 +251,28 @@ def do_switching_process():
     # on a branch is the same as the probability of a reference-to-default
     # switch on the branch.
 
-    nnodes = len(preorder_nodes)
-    nprimary = len(primary_distn)
-
     # Construct a rooted tree with branch lengths.
     root = preorder_nodes[0]
     T = nx.Graph()
     for na, nb in preorder_edges:
         T.add_edge(na, nb, weight=branch_length)
 
-    # Get the expected number of transitions on each branch.
-    # Count all transitions equally.
+    # Get the expected number of within-block transitions on each branch.
     edge_to_expectations = extras.get_expected_ntransitions(
-            T, node_to_allowed_primary_states, root, nprimary,
-            root_distn=primary_distn, Q_default=Q_primary)
+            T, node_to_allowed_switching_states, root, nswitch,
+            root_distn=switching_distn, Q_default=Q_switching,
+            E=E_within_block)
+    print('primary state transition edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
 
-    # Report the expectations.
-    print('edge expectations:')
+    # Get the expected number of between-block transitions on each branch.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_switching_states, root, nswitch,
+            root_distn=switching_distn, Q_default=Q_switching,
+            E=E_between_blocks)
+    print('reference-to-default edge expectations:')
     for edge, expectation in edge_to_expectations.items():
         print(edge, expectation)
     print()
@@ -279,6 +328,9 @@ def main():
     primary_to_part = {0:0, 1:0, 2:1, 3:1, 4:2, 5:2}
     rate_on = 1.0
     rate_off = 1.0
+
+    # Define the switching rate for the rare-reference process.
+    switching_rate = 1.0
 
     # Define the stationary distribution of the primary process
     # and the stationary distribution common to all tolerance processes.
@@ -349,14 +401,14 @@ def main():
     # compute expectations with and without the alignment data.
     # For these calculations the tolerance process and the disease data
     # do not come into play.
-    print('computing pure primary process expectations without alignment data:')
+    print('L0 pure primary process expectations:')
     do_pure_primary_process(
             Q_primary, primary_distn,
             preorder_nodes, preorder_edges, branch_length,
             L0_node_to_allowed_primary_states,
             )
     print()
-    print('computing pure primary process expectations with alignment data:')
+    print('L1 pure primary process expectations:')
     do_pure_primary_process(
             Q_primary, primary_distn,
             preorder_nodes, preorder_edges, branch_length,
@@ -364,20 +416,51 @@ def main():
             )
     print()
 
+    # Try the switching model with three levels of increasing amounts
+    # of observed data (no data, primary only, primary plus tolerance).
+    print('L0 rare-reference model process expectations:')
+    print()
+    do_switching_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            primary_to_part,
+            tolerance_distn,
+            switching_rate,
+            L0_node_to_allowed_primary_states,
+            L0_node_part_to_allowed_states,
+            )
+    print()
+
+
 
 def compound_state_is_allowed(
         allowed_primary_states, part_to_allowed_states,
         compound_to_primary, compound_to_tolerances,
         candidate_compound_state):
+    """
+    This older interface is for compatibility with the switching model.
 
+    """
+    return _compound_state_is_allowed(
+            allowed_primary_states, part_to_allowed_states,
+            compound_to_primary[candidate_compound_state],
+            compound_to_tolerances[candidate_compound_state])
+
+
+def _compound_state_is_allowed(
+        allowed_primary_states, part_to_allowed_states,
+        candidate_primary, candidate_tolerances,
+        ):
+    """
+    This helper function can be used for both blinking and switching models.
+
+    """
     # check the primary state
-    primary = compound_to_primary[candidate_compound_state]
-    if primary not in allowed_primary_states:
+    if candidate_primary not in allowed_primary_states:
         return False
 
     # check the tolerances
-    tolerances = compound_to_tolerances[candidate_compound_state]
-    for part, tolerance_state in enumerate(tolerances):
+    for part, tolerance_state in enumerate(candidate_tolerances):
         if tolerance_state not in part_to_allowed_states[part]:
             return False
 
