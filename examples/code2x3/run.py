@@ -110,25 +110,123 @@ def do_switching_process():
     the default model tolerates all tolerance classes.
 
     """
-    primary_parts_allowed_in_reference = {0, 2}
-    switch_rate = 1.0
-    Q_default = Q_primary.copy()
-    Q_reference = Q_primary.copy()
-    for pa, pa_part in primary_to_part.items():
-        for pb, pb_part in primary_to_part.items():
-            for part in (pa_part, pb_part):
-                if part not in primary_parts_allowed_in_reference:
-                    Q_reference[pa, pb] = 0
-    nswitching = 2*nprimary
-    switch_diag = np.zero(nswitching, dtype=float)
-    for primary_state, part in primary_to_part.items():
-        if part in primary_parts_allowed_in_reference:
-            switch_diag[primary_state] = switch_rate
-    Q_switching = np.zeros((nswitching, nswitching), dtype=float)
-    Q_switching[:nprimary, :nprimary] = Q_reference
-    Q_switching[nprimary:, nprimary:] = Q_default
-    Q_switching[:nprimary, nprimary:] = np.diag(switch_diag)
+    # Define the number of blocks in the state-switching rate matrix.
+    nblocks = 2**nparts + 1
+
+    # Define the number of states in the state-switching rate matrix.
+    nswitch = nprimary * nblocks
+
+    # Define the first index of the 'sink' block
+    # which represents the default process
+    # where every primary state is tolerated.
+    sink_block_offset = 2**nparts * nprimary
+
+    # Define the rate matrix itself.
+    # Also construct a binary mask
+    # that specifies the within-block transitions
+    # and a separate mask that specifies the between-block transitions.
+    Q_switching = np.zeros((nswitch, nswitch), dtype=float)
+    tol_tuples = list(itertools.product((0, 1), repeat=nparts))
+    for block_index, tol_tuple in enumerate(tol_tuples):
+
+        # Construct a within-block mask
+        # that defines which within-block transitions are allowed.
+        within_block_mask = np.zeros((nprimary, nprimary), dtype=float)
+        for c, c_part in primary_to_part.items():
+            for d, d_part in primary_to_part.items():
+                if c == d:
+                    continue
+                if tol_tuple[c_part] and tol_tuple[d_part]:
+                    within_block_mask = 1
+
+        # Define the diagonal block of the rate matrix.
+        # The elements of the block that are on the diagonal
+        # will not yet be meaningfully defined.
+        a = block_index * nprimary
+        b = (block_index + 1) * nprimary
+        Q_switching[a:b, a:b] = Q_primary * within_block_mask
+
+        # Add the transition rates that are allowed out of the current block.
+        for c, c_part in primary_to_part.items():
+            if tol_tuple[c_part]:
+                Q_switching[a+c, sink_block_offset+c] = switching_rate
+
+    # Add the within-block transition rates
+    # for the block that defines the default process.
+    Q_switching[sink_block_offset:, sink_block_offset:] = Q_primary
+
+    # Define the diagonal of the switching process rate matrix.
     Q_switching = Q_switching - np.diag(Q_switching.sum(axis=1))
+
+    # Get the initial state distribution.
+    # This requires a probability parameter that is greater
+    # when more primary states in the reference process
+    # are likely to be tolerated.
+    # We assume that the process cannot begin in the default process;
+    # it must begin in some tolerated primary state in some
+    # reference process, but the tolerance characteristics
+    # of this initial reference process have some uncertainty.
+    switching_distn = np.zeros(nswitch, dtype=float)
+    for block_index, tol_tuple in enumerate(tol_tuples):
+        n_untol = sum(1 for x in tol_tuple if not x)
+        n_tol = sum(1 for x in tol_tuple if x)
+        a = block_index * nprimary
+        b = (block_index + 1) * nprimary
+        for c, c_part in primary_to_part.items():
+            if tol_tuple[c_part]:
+                p_untol = tolerance_distn[0] ** n_untol
+                p_tol = tolerance_distn[1] ** (n_tol - 1)
+                switching_distn[a+c] = Q_primary[c] * p_untol * p_tol
+    switching_distn_sum = switching_distn.sum()
+    if not np.allclose(switching_distn_sum, 1):
+        raise Exception(
+                'expected initial probabilities to sum to 1'
+                'but found ' + str(switching_distn_sum))
+
+    # Distinguish within-block from between-block transitions
+    # by constructing some indicator matrices.
+    E_within_block = np.zeros_like(Q_switching)
+    E_between_blocks = np.ones_like(Q_switching)
+    for block_index in range(nblocks):
+        a = block_index * nprimary
+        b = (block_index + 1) * nprimary
+        E_within_block[a:b, a:b] = 1
+        E_between_blocks[a:b, a:b] = 0
+    np.fill_diagonal(E_within_block, 0)
+    np.fill_diagonal(E_between_blocks, 0)
+
+    # Report some expectations.
+    # The expectations should be divided into two parts.
+    # One part defines the expected number
+    # of primary transitions on each branch.
+    # The other part defines the expected number of reference-to-default
+    # switches on each branch.
+    # Because the reference-to-default switch can only happen once
+    # on each path directed away from the reference root,
+    # the expected number of reference-to-default switches
+    # on a branch is the same as the probability of a reference-to-default
+    # switch on the branch.
+
+    nnodes = len(preorder_nodes)
+    nprimary = len(primary_distn)
+
+    # Construct a rooted tree with branch lengths.
+    root = preorder_nodes[0]
+    T = nx.Graph()
+    for na, nb in preorder_edges:
+        T.add_edge(na, nb, weight=branch_length)
+
+    # Get the expected number of transitions on each branch.
+    # Count all transitions equally.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_primary_states, root, nprimary,
+            root_distn=primary_distn, Q_default=Q_primary)
+
+    # Report the expectations.
+    print('edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
 
 
 def do_compound_process():
