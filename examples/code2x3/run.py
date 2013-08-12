@@ -59,10 +59,14 @@ N4 : unknown  unknown  on
 N5 : on       unknown  unknown
 
 """
+from __future__ import division, print_function, absolute_import
 
 import itertools
 
+import networkx as nx
 import numpy as np
+
+import extras
 
 
 #TODO for now only get the total expected number of primary transitions
@@ -75,7 +79,24 @@ def do_pure_primary_process(
     """
     nnodes = len(preorder_nodes)
     nprimary = len(primary_distn)
-    pass
+
+    # Construct a rooted tree with branch lengths.
+    root = preorder_nodes[0]
+    T = nx.Graph()
+    for na, nb in preorder_edges:
+        T.add_edge(na, nb, weight=branch_length)
+
+    # Get the expected number of transitions on each branch.
+    # Count all transitions equally.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_primary_states, root, nprimary,
+            root_distn=primary_distn, Q_default=Q_primary)
+
+    # Report the expectations.
+    print('edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
 
 
 def do_switching_process():
@@ -135,10 +156,8 @@ def do_compound_process():
 
 def main():
 
-    # Define the primary process and the tolerance processes.
+    # Define the primary process.
     nprimary = 6
-    nparts = 3
-    primary_to_part = {0:0, 1:0, 2:1, 3:1, 4:2, 5:2}
     pre_Q_primary = np.array([
         [0, 1, 1, 0, 0, 0],
         [1, 0, 0, 1, 0, 0],
@@ -148,14 +167,24 @@ def main():
         [0, 0, 0, 1, 1, 0],
         ], dtype=float)
     Q_primary = pre_Q_primary - np.diag(pre_Q_primary.sum(axis=1))
+
+    # Compute the stationary distribution over the primary states.
+    primary_weights = np.ones(nprimary, dtype=float)
+    primary_distn = primary_weights / primary_weights.sum()
+    
+    # Rescale the primary rate matrix so that the expected rate is 1.0.
+    expected_rate = -np.dot(primary_distn, np.diag(Q_primary))
+    Q_primary /= expected_rate
+
+    # Define the tolerance process.
+    nparts = 3
+    primary_to_part = {0:0, 1:0, 2:1, 3:1, 4:2, 5:2}
     rate_on = 1.0
     rate_off = 1.0
 
     # Define the stationary distribution of the primary process
     # and the stationary distribution common to all tolerance processes.
-    primary_weights = np.ones(nprimary, dtype=float)
     tolerance_weights = np.array([rate_off, rate_on], dtype=float)
-    primary_distn = primary_weights / primary_weights.sum()
     tolerance_distn = tolerance_weights / tolerance_weights.sum()
 
     # Define the tree.
@@ -217,6 +246,25 @@ def main():
             (4,0):{0,1}, (4,1):{0,1}, (4,2):{1},
             (5,0):{1}, (5,1):{0,1}, (5,2):{0,1},
             }
+
+    # For the pure primary process,
+    # compute expectations with and without the alignment data.
+    # For these calculations the tolerance process and the disease data
+    # do not come into play.
+    print('computing pure primary process expectations without alignment data:')
+    do_pure_primary_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            L0_node_to_allowed_primary_states,
+            )
+    print()
+    print('computing pure primary process expectations with alignment data:')
+    do_pure_primary_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            L1_node_to_allowed_primary_states,
+            )
+    print()
 
 
 def compound_state_is_allowed(
