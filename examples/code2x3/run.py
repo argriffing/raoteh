@@ -66,6 +66,8 @@ import itertools
 import networkx as nx
 import numpy as np
 
+from raoteh.sampler import _mjp_dense
+
 import extras
 
 
@@ -90,6 +92,14 @@ def do_pure_primary_process(
     edge_to_expectations = extras.get_expected_ntransitions(
             T, node_to_allowed_primary_states, root, nprimary,
             root_distn=primary_distn, Q_default=Q_primary)
+
+    # Compute the likelihood.
+    # When no data is provided, this should be 1.
+    likelihood = _mjp_dense.get_likelihood(
+            T, node_to_allowed_primary_states, root, nprimary,
+            root_distn=primary_distn, Q_default=Q_primary)
+    print('likelihood:', likelihood)
+    print()
 
     # Report the expectations.
     print('edge expectations:')
@@ -148,7 +158,7 @@ def do_switching_process(
                 if c == d:
                     continue
                 if tol_tuple[c_part] and tol_tuple[d_part]:
-                    within_block_mask = 1
+                    within_block_mask[c, d] = 1
 
         # Define the diagonal block of the rate matrix.
         # The elements of the block that are on the diagonal
@@ -211,20 +221,21 @@ def do_switching_process(
     # This uses both alignment-like (primary) and disease-like (tolerance) data.
     node_to_allowed_switching_states = {}
     for na in range(nnodes):
-        allowed_switching_states = set()
+        allowed_primary_in = node_to_allowed_primary_states[na]
         part_to_allowed_states = dict(
                 (p, node_part_to_allowed_states[na, p]) for p in range(nparts))
+        allowed_switching_states = set()
         for block_index, tol_tuple in enumerate(tol_tuples):
             a = block_index * nprimary
             b = (block_index + 1) * nprimary
             for primary, c_part in primary_to_part.items():
                 switching_state = a + primary
-                allowed_primary_in = node_to_allowed_primary_states[primary]
 
                 # If the compound state is allowed,
                 # then add it to the set.
                 if _compound_state_is_allowed(
                         allowed_primary_in, part_to_allowed_states,
+                        primary_to_part,
                         primary, tol_tuple):
                     allowed_switching_states.add(switching_state)
 
@@ -256,6 +267,14 @@ def do_switching_process(
     T = nx.Graph()
     for na, nb in preorder_edges:
         T.add_edge(na, nb, weight=branch_length)
+
+    # Compute the likelihood.
+    # When no data is provided, this should be 1.
+    likelihood = _mjp_dense.get_likelihood(
+            T, node_to_allowed_switching_states, root, nswitch,
+            root_distn=switching_distn, Q_default=Q_switching)
+    print('likelihood:', likelihood)
+    print()
 
     # Get the expected number of within-block transitions on each branch.
     edge_to_expectations = extras.get_expected_ntransitions(
@@ -296,6 +315,7 @@ def do_compound_process():
         for compound in range(ncompound):
             if compound_state_is_allowed(
                     allowed_primary_states, part_to_allowed_states,
+                    primary_to_part,
                     compound_to_primary, compound_to_tolerances, compound):
                 allowed_compound.add(compound)
         node_to_allowed_compound_states[node] = allowed_compound
@@ -430,11 +450,36 @@ def main():
             L0_node_part_to_allowed_states,
             )
     print()
+    print('L1 rare-reference model process expectations:')
+    print()
+    do_switching_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            primary_to_part,
+            tolerance_distn,
+            switching_rate,
+            L1_node_to_allowed_primary_states,
+            L1_node_part_to_allowed_states,
+            )
+    print()
+    print('L2 rare-reference model process expectations:')
+    print()
+    do_switching_process(
+            Q_primary, primary_distn,
+            preorder_nodes, preorder_edges, branch_length,
+            primary_to_part,
+            tolerance_distn,
+            switching_rate,
+            L2_node_to_allowed_primary_states,
+            L2_node_part_to_allowed_states,
+            )
+    print()
 
 
 
 def compound_state_is_allowed(
         allowed_primary_states, part_to_allowed_states,
+        primary_to_part,
         compound_to_primary, compound_to_tolerances,
         candidate_compound_state):
     """
@@ -443,12 +488,14 @@ def compound_state_is_allowed(
     """
     return _compound_state_is_allowed(
             allowed_primary_states, part_to_allowed_states,
+            primary_to_part,
             compound_to_primary[candidate_compound_state],
             compound_to_tolerances[candidate_compound_state])
 
 
 def _compound_state_is_allowed(
         allowed_primary_states, part_to_allowed_states,
+        primary_to_part,
         candidate_primary, candidate_tolerances,
         ):
     """
@@ -463,6 +510,11 @@ def _compound_state_is_allowed(
     for part, tolerance_state in enumerate(candidate_tolerances):
         if tolerance_state not in part_to_allowed_states[part]:
             return False
+
+    # check the compatibility of the primary state with the tolerances
+    candidate_part = primary_to_part[candidate_primary]
+    if not candidate_tolerances[candidate_part]:
+        return False
 
     return True
 
