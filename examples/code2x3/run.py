@@ -142,6 +142,12 @@ def do_switching_process(
     # where every primary state is tolerated.
     sink_block_offset = 2**nparts * nprimary
 
+    # Construct indicator matrices to distinguish transition types.
+    # These are used only in the calculation of expectations.
+    E_primary_syn = np.zeros((nswitch, nswitch), dtype=float)
+    E_primary_non = np.zeros((nswitch, nswitch), dtype=float)
+    E_between_blocks = np.zeros((nswitch, nswitch), dtype=float)
+
     # Define the rate matrix itself.
     # Also construct a binary mask
     # that specifies the within-block transitions
@@ -152,13 +158,18 @@ def do_switching_process(
 
         # Construct a within-block mask
         # that defines which within-block transitions are allowed.
-        within_block_mask = np.zeros((nprimary, nprimary), dtype=float)
+        syn_mask = np.zeros((nprimary, nprimary))
+        non_mask = np.zeros((nprimary, nprimary))
         for c, c_part in primary_to_part.items():
             for d, d_part in primary_to_part.items():
                 if c == d:
                     continue
                 if tol_tuple[c_part] and tol_tuple[d_part]:
-                    within_block_mask[c, d] = 1
+                    if c_part == d_part:
+                        syn_mask[c, d] = 1
+                    else:
+                        non_mask[c, d] = 1
+        within_block_mask = syn_mask + non_mask
 
         # Define the diagonal block of the rate matrix.
         # The elements of the block that are on the diagonal
@@ -167,14 +178,34 @@ def do_switching_process(
         b = (block_index + 1) * nprimary
         Q_switching[a:b, a:b] = Q_primary * within_block_mask
 
+        # Update the primary process transition mask.
+        E_primary_syn[a:b, a:b] = syn_mask
+        E_primary_non[a:b, a:b] = non_mask
+
         # Add the transition rates that are allowed out of the current block.
         for c, c_part in primary_to_part.items():
             if tol_tuple[c_part]:
-                Q_switching[a+c, sink_block_offset+c] = switching_rate
+                source_index = a + c
+                sink_index = sink_block_offset + c
+                Q_switching[source_index, sink_index] = switching_rate
+                E_between_blocks[source_index, sink_index] = 1
 
     # Add the within-block transition rates
     # for the block that defines the default process.
     Q_switching[sink_block_offset:, sink_block_offset:] = Q_primary
+
+    # Add the within-block default process transition types.
+    syn_mask = np.zeros((nprimary, nprimary))
+    non_mask = np.zeros((nprimary, nprimary))
+    for c, c_part in primary_to_part.items():
+        for d, d_part in primary_to_part.items():
+            if c != d:
+                if c_part == d_part:
+                    syn_mask[c, d] = 1
+                else:
+                    non_mask[c, d] = 1
+    E_primary_syn[sink_block_offset:, sink_block_offset:] = syn_mask
+    E_primary_non[sink_block_offset:, sink_block_offset:] = non_mask
 
     # Define the diagonal of the switching process rate matrix.
     Q_switching = Q_switching - np.diag(Q_switching.sum(axis=1))
@@ -203,18 +234,6 @@ def do_switching_process(
         raise Exception(
                 'expected initial probabilities to sum to 1'
                 'but found ' + str(switching_distn_sum))
-
-    # Distinguish within-block from between-block transitions
-    # by constructing some indicator matrices.
-    E_within_block = np.zeros_like(Q_switching)
-    E_between_blocks = np.ones_like(Q_switching)
-    for block_index in range(nblocks):
-        a = block_index * nprimary
-        b = (block_index + 1) * nprimary
-        E_within_block[a:b, a:b] = 1
-        E_between_blocks[a:b, a:b] = 0
-    np.fill_diagonal(E_within_block, 0)
-    np.fill_diagonal(E_between_blocks, 0)
 
     # For each node in the tree,
     # determine the set of allowed compound switching states.
@@ -276,12 +295,22 @@ def do_switching_process(
     print('likelihood:', likelihood)
     print()
 
-    # Get the expected number of within-block transitions on each branch.
+    # Get the expected number of synonymous transitions on each branch.
     edge_to_expectations = extras.get_expected_ntransitions(
             T, node_to_allowed_switching_states, root, nswitch,
             root_distn=switching_distn, Q_default=Q_switching,
-            E=E_within_block)
-    print('primary state transition edge expectations:')
+            E=E_primary_syn)
+    print('synonymous primary state transition edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
+
+    # Get the expected number of non-synonymous transitions on each branch.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_switching_states, root, nswitch,
+            root_distn=switching_distn, Q_default=Q_switching,
+            E=E_primary_non)
+    print('non-synonymous primary state transition edge expectations:')
     for edge, expectation in edge_to_expectations.items():
         print(edge, expectation)
     print()
@@ -319,7 +348,8 @@ def do_blinking_process(
     tolerance_distn = tolerance_weights / tolerance_weights.sum()
 
     # Decompose the transitions into types.
-    E_primary = np.zeros((nblink, nblink), dtype=float)
+    E_primary_syn = np.zeros((nblink, nblink), dtype=float)
+    E_primary_non = np.zeros((nblink, nblink), dtype=float)
     E_gain = np.zeros((nblink, nblink), dtype=float)
     E_loss = np.zeros((nblink, nblink), dtype=float)
 
@@ -334,13 +364,18 @@ def do_blinking_process(
 
         # Construct a within-block mask
         # that defines which within-block transitions are allowed.
-        within_block_mask = np.zeros((nprimary, nprimary), dtype=float)
+        syn_mask = np.zeros((nprimary, nprimary))
+        non_mask = np.zeros((nprimary, nprimary))
         for c, c_part in primary_to_part.items():
             for d, d_part in primary_to_part.items():
                 if c == d:
                     continue
                 if tol_tuple[c_part] and tol_tuple[d_part]:
-                    within_block_mask[c, d] = 1
+                    if c_part == d_part:
+                        syn_mask[c, d] = 1
+                    else:
+                        non_mask[c, d] = 1
+        within_block_mask = syn_mask + non_mask
 
         # Define the diagonal block of the rate matrix.
         # The elements of the block that are on the diagonal
@@ -350,7 +385,8 @@ def do_blinking_process(
         Q_blinking[a:b, a:b] = Q_primary * within_block_mask
 
         # Update the primary process transition mask.
-        E_primary[a:b, a:b] = within_block_mask
+        E_primary_syn[a:b, a:b] = syn_mask
+        E_primary_non[a:b, a:b] = non_mask
 
         # Look at the adjacent tolerance tuples.
         # If the current primary state state remains tolerated,
@@ -440,12 +476,22 @@ def do_blinking_process(
     print('likelihood:', likelihood)
     print()
 
-    # Get the expected number of within-block transitions on each branch.
+    # Get the expected number of synonymous transitions on each branch.
     edge_to_expectations = extras.get_expected_ntransitions(
             T, node_to_allowed_blinking_states, root, nblink,
             root_distn=blinking_distn, Q_default=Q_blinking,
-            E=E_primary)
-    print('primary state transition edge expectations:')
+            E=E_primary_syn)
+    print('synonymous primary state transition edge expectations:')
+    for edge, expectation in edge_to_expectations.items():
+        print(edge, expectation)
+    print()
+
+    # Get the expected number of non-synonymous transitions on each branch.
+    edge_to_expectations = extras.get_expected_ntransitions(
+            T, node_to_allowed_blinking_states, root, nblink,
+            root_distn=blinking_distn, Q_default=Q_blinking,
+            E=E_primary_non)
+    print('non-synonymous primary state transition edge expectations:')
     for edge, expectation in edge_to_expectations.items():
         print(edge, expectation)
     print()
