@@ -12,7 +12,7 @@
 \begin{document}
 
 
-% This figure copypasted from ratematrix.tex.
+% This rate matrix figure copypasted from ratematrix.tex.
 \begin{figure}
 \centering
 \begin{tikzpicture}[<->,>=stealth',shorten >=1pt,shorten <=1pt,
@@ -43,7 +43,7 @@
 }
 \end{figure}
 
-% This figure is from code.tex.
+% This simplified codon model figure is from code.tex.
 \begin{figure}
 \centering
 \begin{tabular}{c c}
@@ -57,7 +57,46 @@
   P4 & T2 \\
   P5 & T2
 \end{tabular}
-\caption{Tolerance classes associated with each primary state.}
+\caption{
+	Each primary state is associated with a tolerance class.
+	Tolerance classes are like amino acids,
+	and primary states are like codons.
+	Therefore this table is like a toy genetic code.
+}
+\end{figure}
+
+% This tree figure is from tree.tex.
+\begin{figure}
+\centering
+\begin{tikzpicture}[-,>=stealth',auto,node distance=3cm,thick,
+  main node/.style={circle,fill=blue!20,draw,font=\sffamily\Large\bfseries}]
+
+  \node[main node] (0) {N0};
+  \node[main node] (1) [below of=0] {N1};
+  \node[main node] (2) [below left of=1] {N2};
+  \node[main node] (3) [below left of=2] {N3};
+  \node[main node] (4) [below right of=2] {N4};
+  \node[main node] (5) [below right of=1] {N5};
+
+  \path[every node/.style={font=\sffamily\small}]
+    (0) edge node [left] {0.5} (1)
+    (1) edge node [left] {0.5} (2)
+    (2) edge node [left] {0.5} (3)
+    (2) edge node [right] {0.5} (4)
+    (1) edge node [right] {0.5} (5);
+
+\end{tikzpicture}
+\caption{
+	This tree will be used for the toy example.
+	The branch lengths define the expected number of
+	primary state transitions (analogous to codon substitutions)
+	when the primary process is unconstrained by selection.
+	In general, fewer primary state transitions would be expected
+	when selection is at work, for example in the reference process
+	(as opposed to the default process) in the irreversible-switch model,
+	or when some tolerance classes are in the untolerated state
+	in the blinking model.
+}
 \end{figure}
 
 % This figure merges two figures from data.tex.
