@@ -8,9 +8,11 @@ but the actual terminology is 'reference' and the 'default'.
 from __future__ import division, print_function, absolute_import
 
 from collections import defaultdict
+import functools
 
 import networkx as nx
 import numpy as np
+import scipy.linalg
 from scipy import special
 
 import create_mg94
@@ -25,6 +27,225 @@ from raoteh.sampler import (
 from raoteh.sampler._util import (
         StructuralZeroProb,
         )
+
+
+def ndot(*args):
+    M = args[0]
+    for B in args[1:]:
+        M = np.dot(M, B)
+    return M
+
+def build_block_2x2(M):
+    return np.vstack([np.hstack(M[0]), np.hstack(M[1])])
+
+def get_original(
+        S0, S1, D0, D1, L,
+        ):
+    """
+    Return the original matrix given its block form.
+    """
+    Q_original = build_block_2x2([
+        [ndot(S0, np.diag(D0)) - np.diag(L), np.diag(L)],
+        [np.zeros_like(np.diag(L)), ndot(S1, np.diag(D1))],
+        ])
+    return Q_original
+
+def get_reconstructed(
+        D0, D1, L,
+        U0, U1, lam0, lam1, XQ,
+        ):
+    """
+    Return the reconstructed matrix given a spectral form.
+    """
+    R11 = ndot(
+            np.diag(np.reciprocal(np.sqrt(D0))),
+            U0,
+            np.diag(lam0),
+            U0.T,
+            np.diag(np.reciprocal(D0)),
+            )
+    R22 = ndot(
+            np.diag(np.reciprocal(np.sqrt(D1))),
+            U1,
+            np.diag(lam1),
+            U1.T,
+            np.diag(np.reciprocal(D1)),
+            )
+    Q_reconstructed = build_block_2x2([
+        [R11, ndot(R11, XQ) - ndot(XQ, R22)],
+        [np.zeros_like(np.diag(L)), R22],
+        ])
+    return Q_reconstructed
+
+
+def check_decomp(
+        S0, S1, D0, D1, L,
+        U0, U1, lam0, lam1, XQ,
+        ):
+    Q_original = get_original(S0, S1, D0, D1, L)
+    Q_reconstructed = get_reconstructed(
+            D0, D1, L,
+            U0, U1, lam0, lam1, XQ)
+    testing.assert_array_almost_equal(Q_original, Q_reconstructed)
+
+def check_decomp_expm(
+        S0, S1, D0, D1, L,
+        U0, U1, lam0, lam1, XQ,
+        ):
+    t = 0.123
+    Q_original = get_original(S0, S1, D0, D1, L)
+    Q_original_expm = scipy.linalg.expm(t * Q_original)
+    Q_spectral_expm = get_reconstructed(
+            D0, D1, L,
+            U0,
+            U1,
+            np.exp(t * lam0),
+            np.exp(t * lam1),
+            XQ,
+            )
+    testing.assert_array_almost_equal(
+            Q_original_expm,
+            Q_spectral_expm,
+            )
+
+
+def foo(S0, S1, D0, D1, L, t):
+    #FIXME: this code uses slow ways to multiply by diagonal matrices
+
+    # load the input ndarrays
+    #S0 = np.loadtxt(args.S0_in)
+    #S1 = np.loadtxt(args.S1_in)
+    #D0 = np.loadtxt(args.D0_in)
+    #D1 = np.loadtxt(args.D1_in)
+    #L = np.loadtxt(args.L_in)
+
+    # compute the first symmetric eigendecomposition
+    D0_sqrt = np.sqrt(D0)
+    H0 = ndot(np.diag(D0_sqrt), S0, np.diag(D0_sqrt)) - np.diag(L)
+    lam0, U0 = scipy.linalg.eigh(H0)
+
+    # compute the second symmetric eigendecomposition
+    D1_sqrt = np.sqrt(D1)
+    H1 = ndot(np.diag(D1_sqrt), S1, np.diag(D1_sqrt))
+    lam1, U1 = scipy.linalg.eigh(H1)
+
+    # solve_sylvester(A, B, Q) finds a solution of AX + XB = Q
+    A = ndot(S0, np.diag(D0)) - np.diag(L)
+    B = -ndot(S1, np.diag(D1))
+    Q = np.diag(L)
+    XQ = scipy.linalg.solve_sylvester(A, B, Q)
+
+    # check some stuff if debugging
+    if args.debug:
+        check_decomp(
+                S0, S1, D0, D1, L,
+                U0, U1, lam0, lam1, XQ)
+        check_decomp_expm(
+                S0, S1, D0, D1, L,
+                U0, U1, lam0, lam1, XQ)
+
+    # write the output ndarrays
+    #fmt = '%.17g'
+    #np.savetxt(args.U0_out, U0, fmt)
+    #np.savetxt(args.U1_out, U1, fmt)
+    #np.savetxt(args.lam0_out, lam0, fmt)
+    #np.savetxt(args.lam1_out, lam1, fmt)
+    #np.savetxt(args.XQ_out, XQ, fmt)
+
+    Q_spectral_expm = get_reconstructed(
+            D0, D1, L,
+            U0,
+            U1,
+            np.exp(t * lam0),
+            np.exp(t * lam1),
+            XQ,
+            )
+
+
+def bar():
+    """
+    """
+    pass
+
+
+
+def get_likelihood(T, node_to_allowed_states, root, nstates,
+        root_distn=None, P_callback=None):
+    """
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Edges of this tree are annotated with weights and possibly with
+        edge-specific Q rate matrices.
+    node_to_allowed_states : dict
+        Maps each node to a set of allowed states.
+    root : integer
+        Root node.
+    nstates : integer
+        Number of states.
+    root_distn : 2d ndarray, optional
+        Distribution over states at the root.
+    Q_default : 2d ndarray, optional
+        A rate matrix.
+
+    Returns
+    -------
+    likelihood : float
+        A marginal likelihood.
+
+    Notes
+    -----
+    This function is meaningful even when the root_distn is not technically
+    a distribution in the sense of summing to 1.
+    If the root distribution is not specified,
+    then it is treated as all ones; this is different than
+    treating it as a uniform distribution on some set of states.
+
+    """
+    # Do some input validation for this restricted variant.
+    if root not in T:
+        raise ValueError('the specified root is not in the tree')
+
+    # Construct the augmented tree by annotating each edge
+    # with the appropriate state transition probability matrix.
+    T_aug = get_expm_augmented_tree(T, root, Q_default=Q_default)
+
+    # Return the Markov chain likelihood.
+    return _mcy_dense.get_likelihood(T_aug, root, nstates,
+            node_to_allowed_states=node_to_allowed_states,
+            root_distn=root_distn, P_default=None)
+
+
+def get_probability_matrix_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ, t):
+    """
+    This is intended to be called through functools.partial().
+
+    The idea is that when we are given a branch length,
+    we will be able to convert this to a transition probability matrix
+    using the reconstruction from the decomposition,
+    where the reconstruction is treated as a black box.
+
+    """
+    P = get_reconstructed(
+            D0, D1, L, U0, np.exp(t * lam0), np.exp(t * lam1), XQ)
+    return P
+
+def get_probability_matrix_spectral(d, w, U, t):
+    """
+    This is intended to be called through functools.partial().
+
+    The idea is that when we are given a branch length,
+    we will be able to convert this to a transition probability matrix
+    using the reconstruction from the decomposition,
+    where the reconstruction is treated as a black box.
+
+    """
+    pass
+
+
+def pseudo_reciprocal_1d(arr):
+    return np.array([1/x if x else 0 for x in arr], dtype=float)
 
 
 def main():
@@ -94,20 +315,16 @@ def main():
             Q, nodelist=states)
     primary_distn_dense = _density.dict_to_numpy_array(
             primary_distn, nodelist=states)
-    
-    print('genetic code:')
-    for triple in genetic_code:
-        print(triple)
-    print()
-    print('codon distn:')
-    app_helper.print_codon_distn(codon_to_state, primary_distn)
-    print()
-    
-    # read the tree with branch lengths estimated by paml
-    print('reading the newick tree...')
-    with open(tree_filename) as fin:
-        T, root, leaf_name_pairs = app_helper.read_newick(fin)
-    name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
+
+    # Define a decomposition of the default process rate matrix.
+    S1 = ndot(Q_dense, np.diag(pseudo_reciprocal(primary_distn_dense)))
+    D1 = primary_distn_dense
+    M1 = ndot(
+            np.diag(np.sqrt(D1)),
+            S1,
+            np.diag(np.sqrt(D1)),
+            )
+    lam1, U1 = scipy.linalg.eigh(M1)
 
     # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
     root = name_to_leaf['Has']
@@ -124,12 +341,6 @@ def main():
     print('reading the alignment...')
     with open('testseq') as fin:
         name_codons_list = list(app_helper.read_phylip(fin))
-
-    #TODO For each column, compute the log likelihood for both the
-    #TODO default and the reference models.
-    #TODO The reference model will give a log likelihood of -inf
-    #TODO when an amino acid that causes disease in humans
-    #TODO appears in the alignment.
 
     # compute the log likelihood, column by column
     # using _mjp_dense (the dense Markov jump process module).
@@ -169,6 +380,30 @@ def main():
                 Q_reference, nodelist=states)
         reference_distn_dense = _density.dict_to_numpy_array(
                 reference_distn, nodelist=states)
+
+        # Define a decomposition of the reference process.
+        L = np.array(
+                [rho if s in benign_states else 0 for s in range(nstates)],
+                dtype=float)
+        S0 = ndot(Q_dense, np.diag(pseudo_reciprocal(primary_distn_dense)))
+        D0 = reference_distn_dense
+        M0 = ndot(
+                np.diag(np.sqrt(D0)),
+                S0,
+                np.diag(np.sqrt(D0)),
+                )
+        lam0, U0 = scipy.linalg.eigh(M0 - np.diag(L))
+
+        # solve_sylvester(A, B, Q) finds a solution of AX + XB = Q
+        A = ndot(S0, np.diag(D0)) - np.diag(L)
+        B = -ndot(S1, np.diag(D1))
+        Q = np.diag(L)
+        XQ = scipy.linalg.solve_sylvester(A, B, Q)
+
+        # Define the callback that converts branch length to prob matrix.
+        P_callback = functools.partial(
+                sylvester_get_probability_matrix,
+                D0, D1, L, U0, U1, lam0, lam1, XQ)
 
         # Define the compound process.
 
