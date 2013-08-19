@@ -11,6 +11,38 @@
 
 \begin{document}
 
+\section{models and parameter values}
+
+This technical note shows some likelihoods and transition expectations
+for toy variants of some models, using fixed parameter values.
+The evolutionary models consists of jump processes which are continuous in time
+and have at least 6 states which are analogous to the 61 codon states
+in the universal (non-toy) genetic code.
+In the toy genetic code, there are 3 `tolerance classes'
+which are analogous to the 20 amino acids in the universal genetic code.
+
+The first variant models changes only among the 6 states.
+
+The second variant is the model of Liwen, Jeff, and Eric,
+which considers a special reference state
+for which some amino acids are not tolerated.
+In the directions on the tree away from the reference node,
+a one-way transition from the reference state to the `default'
+state is allowed.
+The default state allows all amino acids.
+In this technical note, the switching rate is fixed at 1.0.
+This is the instantaneous rate away from the reference state,
+in units of the expected number of primary state changes
+in the default state.
+
+The third variant is the blinking model.
+In this model, any amino acid may be tolerated or untolerated,
+with the restriction that at any given time the amino acid of the current
+codon must be tolerated.
+In this technical node, the tolerance rates on and off are both fixed at 1.0.
+Again, this is in units of the expected number of primary state changes
+...
+
 
 % This rate matrix figure copypasted from ratematrix.tex.
 \begin{figure}
@@ -59,9 +91,12 @@
 \end{tabular}
 \caption{
 	Each primary state is associated with a tolerance class.
-	Tolerance classes are like amino acids,
-	and primary states are like codons.
-	Therefore this table is like a toy genetic code.
+	In the context of our appliction to molecular biology,
+	tolerance classes are analogous to amino acids
+	and primary states are analogous to codons.
+	In that sense, this table is like a toy genetic code
+	with 6 codons instead of 61,
+	and with 3 amino acids instead of 20.
 }
 \end{figure}
 
@@ -123,6 +158,215 @@
 	disease data.
 }
 \end{figure}
+
+
+\section{pure primary process likelihoods and expectations}
+
+\subsection{no data}
+\begin{verbatim}
+likelihood: 1.0
+
+edge expectations:
+(0, 1) 0.5
+(1, 2) 0.5
+(2, 3) 0.5
+(2, 4) 0.5
+(1, 5) 0.5
+\end{verbatim}
+
+\subsection{alignment data (primary states) only}
+\begin{verbatim}
+likelihood: 9.79116182935e-05
+
+edge expectations:
+(0, 1) 0.813394611574
+(1, 2) 1.75136255298
+(2, 3) 0.813394611574
+(2, 4) 0.813394611574
+(1, 5) 0.813394611574
+\end{verbatim}
+
+\section{reference-to-default switching model likelihoods and expectations}
+
+\subsection{no data}
+\begin{verbatim}
+likelihood: 1.0
+
+synonymous primary state transition edge expectations:
+(0, 1) 0.214285714286
+(1, 2) 0.214285714286
+(2, 3) 0.214285714286
+(2, 4) 0.214285714286
+(1, 5) 0.214285714286
+
+non-synonymous primary state transition edge expectations:
+(0, 1) 0.173294474204
+(1, 2) 0.217528223274
+(2, 3) 0.244357348279
+(2, 4) 0.244357348279
+(1, 5) 0.217528223274
+
+reference-to-default edge expectations:
+(0, 1) 0.393469340287
+(1, 2) 0.238651218541
+(2, 3) 0.144749281023
+(2, 4) 0.144749281023
+(1, 5) 0.238651218541
+\end{verbatim}
+
+\subsection{alignment data (primary states) only}
+\begin{verbatim}
+likelihood: 6.34004488273e-05
+
+synonymous primary state transition edge expectations:
+(0, 1) 0.530243839876
+(1, 2) 0.214285714286
+(2, 3) 0.530243839876
+(2, 4) 0.530243839876
+(1, 5) 0.530243839876
+
+non-synonymous primary state transition edge expectations:
+(0, 1) 0.217796813163
+(1, 2) 1.56369681272
+(2, 3) 0.308748740396
+(2, 4) 0.308748740396
+(1, 5) 0.225869938309
+
+reference-to-default edge expectations:
+(0, 1) 0.599991615587
+(1, 2) 0.255955239807
+(2, 3) 0.0579061398365
+(2, 4) 0.0579061398365
+(1, 5) 0.154937631458
+\end{verbatim}
+
+\subsection{alignment data and disease data}
+\begin{verbatim}
+likelihood: 1.22879715057e-05
+
+synonymous primary state transition edge expectations:
+(0, 1) 0.530243839876
+(1, 2) 0.214285714286
+(2, 3) 0.530243839876
+(2, 4) 0.530243839876
+(1, 5) 0.530243839876
+
+non-synonymous primary state transition edge expectations:
+(0, 1) 0.121658049219
+(1, 2) 1.61969296399
+(2, 3) 0.329160691143
+(2, 4) 0.329160691143
+(1, 5) 0.142258701234
+
+reference-to-default edge expectations:
+(0, 1) 0.762800997859
+(1, 2) 0.236825800216
+(2, 3) 0.000373201924736
+(2, 4) 0.000373201924736
+(1, 5) 0.0873829388166
+\end{verbatim}
+
+
+\section{blinking model likelihoods and expectations}
+
+\subsection{no data}
+\begin{verbatim}
+likelihood: 1.0
+
+synonymous primary state transition edge expectations:
+(0, 1) 0.214285714286
+(1, 2) 0.214285714286
+(2, 3) 0.214285714286
+(2, 4) 0.214285714286
+(1, 5) 0.214285714286
+
+non-synonymous primary state transition edge expectations:
+(0, 1) 0.142857142857
+(1, 2) 0.142857142857
+(2, 3) 0.142857142857
+(2, 4) 0.142857142857
+(1, 5) 0.142857142857
+
+gain-of-tolerance edge expectations:
+(0, 1) 0.5
+(1, 2) 0.5
+(2, 3) 0.5
+(2, 4) 0.5
+(1, 5) 0.5
+
+loss-of-tolerance edge expectations:
+(0, 1) 0.5
+(1, 2) 0.5
+(2, 3) 0.5
+(2, 4) 0.5
+(1, 5) 0.5
+\end{verbatim}
+
+\subsection{alignment data (primary states) only}
+\begin{verbatim}
+likelihood: 2.71488210307e-05
+
+synonymous primary state transition edge expectations:
+(0, 1) 0.530243839876
+(1, 2) 0.214285714286
+(2, 3) 0.530243839876
+(2, 4) 0.530243839876
+(1, 5) 0.530243839876
+
+non-synonymous primary state transition edge expectations:
+(0, 1) 0.214361006829
+(1, 2) 1.63974144573
+(2, 3) 0.214361006829
+(2, 4) 0.214361006829
+(1, 5) 0.214361006829
+
+gain-of-tolerance edge expectations:
+(0, 1) 0.679310052688
+(1, 2) 0.540928083993
+(2, 3) 0.316402335024
+(2, 4) 0.316402335024
+(1, 5) 0.316402335024
+
+loss-of-tolerance edge expectations:
+(0, 1) 0.316402335024
+(1, 2) 0.540928083993
+(2, 3) 0.679310052688
+(2, 4) 0.679310052688
+(1, 5) 0.679310052688
+\end{verbatim}
+
+\subsection{alignment data and disease data}
+\begin{verbatim}
+likelihood: 5.85943537987e-06
+
+synonymous primary state transition edge expectations:
+(0, 1) 0.530243839876
+(1, 2) 0.214285714286
+(2, 3) 0.530243839876
+(2, 4) 0.530243839876
+(1, 5) 0.530243839876
+
+non-synonymous primary state transition edge expectations:
+(0, 1) 0.115905720866
+(1, 2) 1.71225589525
+(2, 3) 0.22303974637
+(2, 4) 0.22303974637
+(1, 5) 0.128868804275
+
+gain-of-tolerance edge expectations:
+(0, 1) 0.880141827661
+(1, 2) 0.563730372337
+(2, 3) 0.307552791569
+(2, 4) 0.307552791569
+(1, 5) 0.315487814895
+
+loss-of-tolerance edge expectations:
+(0, 1) 0.30799029452
+(1, 2) 0.524525848196
+(2, 3) 0.685431320483
+(2, 4) 0.685431320483
+(1, 5) 0.681655127317
+\end{verbatim}
 
 
 
