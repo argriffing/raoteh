@@ -40,7 +40,12 @@ def getp_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ, t):
     """
     exp_lam0 = np.exp(t * lam0)
     exp_lam1 = np.exp(t * lam1)
-    return reconstruct_sylvester(D0, D1, L, U0, exp_lam0, exp_lam1, XQ)
+    P = reconstruct_sylvester(D0, D1, L, U0, U1, exp_lam0, exp_lam1, XQ)
+    D0_off = (D0 == 0)
+    D1_off = (D1 == 0)
+    P[D0_off, D0_off] = 1
+    P[D1_off, D1_off] = 1
+    return P
 
 def getp_spectral(D, U, lam, t):
     """
@@ -53,7 +58,10 @@ def getp_spectral(D, U, lam, t):
 
     """
     exp_lam = np.exp(t * lam)
-    return reconstruct_spectral(D, U, exp_lam)
+    P = reconstruct_spectral(D, U, exp_lam)
+    D_off = (D == 0)
+    P[D_off, D_off] = 1
+    return P
 
 
 ###############################################################################
@@ -282,10 +290,7 @@ def test_spectral_round_trip():
     # Check basic properties of the rate matrix and its
     # symmetric * diagonal decomposition.
     # Also check the detailed balance equations.
-    assert_allclose(Q.sum(axis=1), 0, atol=1e-15)
-    assert_allclose(D.sum(), 1)
-    assert_allclose(S, S.T)
-    assert_allclose(np.dot(np.diag(D), Q), np.dot(Q.T, np.diag(D)))
+    assert_SD_reversible_rate_matrix(S, D)
 
     # Check that the reconstruction from the spectral decomposition
     # gives back the original rate matrix.
@@ -295,17 +300,16 @@ def test_spectral_round_trip():
 
 
 def test_sylvester_round_trip():
-    np.set_printoptions(linewidth=200)
     np.random.seed(1234)
     n = 5
     off_states = [0, 2]
-    #n = 3
-    #off_states = []
 
     # Construct random matrices.
     S0, S1, D0, D1, L = random_for_sylvester(n, off_states)
     assert_SD_reversible_rate_matrix(S0, D0)
     assert_SD_reversible_rate_matrix(S1, D1)
+
+    # Build the compound switching-model rate matrix.
     Q00 = np.dot(S0, np.diag(D0)) - np.diag(L)
     Q01 = np.diag(L)
     Q10 = np.zeros((n, n))
@@ -319,6 +323,62 @@ def test_sylvester_round_trip():
     atol = 1e-14
     #atol = 0
     assert_allclose(Q, Q_reconstruction, atol=atol)
+
+def test_spectral_expm():
+    np.random.seed(1234)
+    n = 4
+    t = 0.23
+
+    # Construct a random reversible rate matrix.
+    S, D = random_reversible_rate_matrix(n)
+    Q = np.dot(S, np.diag(D))
+
+    # Check basic properties of the rate matrix and its
+    # symmetric * diagonal decomposition.
+    # Also check the detailed balance equations.
+    assert_SD_reversible_rate_matrix(S, D)
+
+    D, U, lam = decompose_spectral(S, D)
+
+    # Compute the transition probability matrix in two ways.
+    P = getp_rate_matrix(Q, t)
+    P_spectral = getp_spectral(D, U, lam, t)
+
+    # Check that the transition probability matrices are close.
+    atol = 1e-14
+    #atol = 0
+    assert_allclose(P, P_spectral, atol=atol)
+
+def test_sylvester_expm():
+    np.random.seed(1234)
+    n = 5
+    off_states = [0, 2]
+    t = 0.23
+
+    # Construct random matrices.
+    S0, S1, D0, D1, L = random_for_sylvester(n, off_states)
+    assert_SD_reversible_rate_matrix(S0, D0)
+    assert_SD_reversible_rate_matrix(S1, D1)
+
+    # Build the compound switching-model rate matrix.
+    Q00 = np.dot(S0, np.diag(D0)) - np.diag(L)
+    Q01 = np.diag(L)
+    Q10 = np.zeros((n, n))
+    Q11 = np.dot(S1, np.diag(D1))
+    Q = build_block_2x2([[Q00, Q01], [Q10, Q11]])
+
+    # Get the sylvester-like decomposition.
+    decomp = decompose_sylvester(S0, S1, D0, D1, L)
+    D0, D1, L, U0, U1, lam0, lam1, XQ = decomp
+
+    # Compute the transition probability matrix in two ways.
+    P = getp_rate_matrix(Q, t)
+    P_sylvester = getp_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ, t)
+
+    # Check that the transition probability matrices are close.
+    atol = 1e-14
+    #atol = 0
+    assert_allclose(P, P_sylvester, atol=atol)
 
 
 if __name__ == '__main__':
