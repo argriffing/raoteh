@@ -1,8 +1,5 @@
 """
-Attempt to reproduce log likelihood of the background/reference model.
-
-I've been calling the two models the 'reference' and the 'background',
-but the actual terminology is 'reference' and the 'default'.
+Attempt to reproduce log likelihood of the default/reference switching model.
 
 """
 from __future__ import division, print_function, absolute_import
@@ -248,7 +245,7 @@ def pseudo_reciprocal_1d(arr):
     return np.array([1/x if x else 0 for x in arr], dtype=float)
 
 
-def main():
+def get_jeff_params():
 
     # FINAL LIKELIHOOD IS -10279.111666
     # FINAL ESTIMATE: rho12 =    0.32771
@@ -258,30 +255,82 @@ def main():
     # FINAL ESTIMATE: kappa =    3.38998
     # FINAL ESTIMATE: omega =    0.40198
 
-    # Jeff has estimated these parameters
-    # using the background/reference switching process.
-    # But the estimates are fishy in the sense that the log likelihood
-    # of codeml has not been reproduced, even assuming no switching.
-    #kappa = 3.38998
-    #omega = 0.40198
-    #AG = 0.50781
-    #CT = 1 - AG
-    #A = AG * 0.49542
-    #G = AG - A
-    #T = CT * 0.39194
-    #C = CT - T
-    #tree_filename = 'liwen.estimated.tree'
+    # Jeff has reported these somewhere
+    kappa = 3.38998
+    omega = 0.40198
+    AG = 0.50781
+    CT = 1 - AG
+    A = AG * 0.49542
+    G = AG - A
+    T = CT * 0.39194
+    C = CT - T
     rho = 0.32771
 
-    # Instead, use the estimates that I got from codeml,
+    # Not sure what branch lengths to use for Jeff's estimate...
+    tree_filename = 'liwen.estimated.tree'
+    print('reading the newick tree...')
+    with open(tree_filename) as fin:
+        tree, root, leaf_name_pairs = app_helper.read_newick(fin)
+    return (kappa, omega, A, C, T, G, rho,
+            tree, root, leaf_name_pairs)
+
+
+def get_codeml_estimated_params():
+
+    # Use the estimates that I got from codeml,
     # for the default process.
+    # Rho is from Jeff's estimate because codeml
+    # doesn't do the switching process.
     kappa = 3.17632
     omega = 0.21925
     T = 0.18883
     C = 0.30126
     A = 0.25039
     G = 0.25952
+    rho = 0.32771
     tree_filename = 'codeml.estimated.tree'
+    print('reading the newick tree...')
+    with open(tree_filename) as fin:
+        tree, root, leaf_name_pairs = app_helper.read_newick(fin)
+    return (kappa, omega, A, C, T, G, rho,
+            tree, root, leaf_name_pairs)
+
+
+def get_liwen_toy_params():
+
+    # Parameters reported by Liwen in her email
+    kappa = 1.0
+    omega = 1.0
+    A = 0.25
+    C = 0.25
+    G = 0.25
+    T = 0.25
+    rho = 1.15
+
+    # Branch lengths are all the same,
+    # and they are in units of expected number of codon changes
+    # if the process were the default process (as opposed to reference).
+    branch_length = 0.1
+    tree_filename = 'liwen.estimated.tree'
+
+    # Read the tree, and change the branch lengths
+    # so that they are equal to the universal toy branch length.
+    print('reading the newick tree...')
+    with open(tree_filename) as fin:
+        tree, root, leaf_name_pairs = app_helper.read_newick(fin)
+    for na, nb in tree.edges():
+        tree[na][nb]['weight'] = branch_length
+
+    return (kappa, omega, A, C, T, G, rho,
+            tree, root, leaf_name_pairs)
+
+
+def main():
+
+    # Pick some parameters.
+    info = get_liwen_toy_params()
+    kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
+    name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
     # read the disease data
     print('reading the disease data...')
@@ -316,6 +365,16 @@ def main():
     primary_distn_dense = _density.dict_to_numpy_array(
             primary_distn, nodelist=states)
 
+    # Report the genetic code.
+    print('genetic code:')
+    for triple in genetic_code:
+        print(triple)
+    print()
+    print('codon distn:')
+    app_helper.print_codon_distn(codon_to_state, primary_distn)
+    print()
+
+    """
     # Define a decomposition of the default process rate matrix.
     S1 = ndot(Q_dense, np.diag(pseudo_reciprocal(primary_distn_dense)))
     D1 = primary_distn_dense
@@ -325,16 +384,17 @@ def main():
             np.diag(np.sqrt(D1)),
             )
     lam1, U1 = scipy.linalg.eigh(M1)
+    """
 
     # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
     root = name_to_leaf['Has']
 
     # print a summary of the tree
-    degree = T.degree()
-    print('number of nodes:', len(T))
+    degree = tree.degree()
+    print('number of nodes:', len(tree))
     print('number of leaves:', degree.values().count(1))
-    print('number of branches:', T.size())
-    print('total branch length:', T.size(weight='weight'))
+    print('number of branches:', tree.size())
+    print('total branch length:', tree.size(weight='weight'))
     print()
 
     # read the alignment
@@ -381,6 +441,7 @@ def main():
         reference_distn_dense = _density.dict_to_numpy_array(
                 reference_distn, nodelist=states)
 
+        """
         # Define a decomposition of the reference process.
         L = np.array(
                 [rho if s in benign_states else 0 for s in range(nstates)],
@@ -404,6 +465,7 @@ def main():
         P_callback = functools.partial(
                 sylvester_get_probability_matrix,
                 D0, D1, L, U0, U1, lam0, lam1, XQ)
+        """
 
         # Define the compound process.
 
@@ -428,7 +490,7 @@ def main():
                 Q_compound.add_edge(sa, sb, weight=weight)
 
         # Add off-block-diagonal entries directed from the reference
-        # to the background process.
+        # to the default process.
         for s in range(nstates):
             Q_compound.add_edge(s, nstates + s, weight=rho)
 
@@ -448,7 +510,7 @@ def main():
         # End compound process definition.
 
         # Define the map from node to allowed compound states.
-        node_to_allowed_states = dict((n, set(compound_states)) for n in T)
+        node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
         for name, codon in zip(names, codon_column):
             leaf = name_to_leaf[name]
             codon = codon.upper()
@@ -458,7 +520,7 @@ def main():
         # Get the log likelihood for the reference process.
         try:
             likelihood = _mjp_dense.get_likelihood(
-                    T, node_to_allowed_states, root, nstates,
+                    tree, node_to_allowed_states, root, nstates,
                     root_distn=reference_distn_dense,
                     Q_default=Q_reference_dense)
             ll_reference = np.log(likelihood)
@@ -468,7 +530,7 @@ def main():
         # Get the log likelihood for the default process.
         try:
             likelihood = _mjp_dense.get_likelihood(
-                    T, node_to_allowed_states, root, nstates,
+                    tree, node_to_allowed_states, root, nstates,
                     root_distn=primary_distn_dense,
                     Q_default=Q_dense)
             ll_default = np.log(likelihood)
@@ -478,7 +540,7 @@ def main():
         # Get the log likelihood for the compound process.
         try:
             likelihood = _mjp_dense.get_likelihood(
-                    T, node_to_allowed_states, root, ncompound,
+                    tree, node_to_allowed_states, root, ncompound,
                     root_distn=compound_distn_dense,
                     Q_default=Q_compound_dense)
             ll_compound = np.log(likelihood)
