@@ -42,9 +42,7 @@ def getp_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ, t):
     exp_lam1 = np.exp(t * lam1)
     P = reconstruct_sylvester(D0, D1, L, U0, U1, exp_lam0, exp_lam1, XQ)
     D0_off = (D0 == 0)
-    D1_off = (D1 == 0)
     P[D0_off, D0_off] = 1
-    P[D1_off, D1_off] = 1
     return P
 
 def getp_spectral(D, U, lam, t):
