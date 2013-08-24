@@ -422,6 +422,33 @@ def test_sylvester_round_trip():
     #atol = 0
     assert_allclose(Q, Q_reconstruction, atol=atol)
 
+
+def test_sylvester_v2_round_trip():
+    np.random.seed(1234)
+    n = 5
+    off_states = [0, 2]
+
+    # Construct random matrices.
+    S0, S1, D0, D1, L = random_for_sylvester(n, off_states)
+    assert_SD_reversible_rate_matrix(S0, D0)
+    assert_SD_reversible_rate_matrix(S1, D1)
+
+    # Build the compound switching-model rate matrix.
+    Q00 = np.dot(S0, np.diag(D0)) - np.diag(L)
+    Q01 = np.diag(L)
+    Q10 = np.zeros((n, n))
+    Q11 = np.dot(S1, np.diag(D1))
+    Q = build_block_2x2([[Q00, Q01], [Q10, Q11]])
+
+    # Check that the reconstruction from the spectral decomposition
+    # gives back the original rate matrix.
+    sylvester_decomposition = decompose_sylvester_v2(S0, S1, D0, D1, L)
+    Q_reconstruction = reconstruct_sylvester_v2(*sylvester_decomposition)
+    atol = 1e-13
+    #atol = 1e-14
+    #atol = 0
+    assert_allclose(Q, Q_reconstruction, atol=atol)
+
 def test_spectral_expm():
     np.random.seed(1234)
     n = 4
