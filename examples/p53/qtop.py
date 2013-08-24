@@ -65,20 +65,25 @@ def getp_spectral(D, U, lam, t):
 ###############################################################################
 # Miscellaneous helper functions.
 
-def ndot(*args):
-    M = args[0]
-    for B in args[1:]:
-        M = np.dot(M, B)
-    return M
-
 def build_block_2x2(A):
     return np.vstack([np.hstack(A[0]), np.hstack(A[1])])
 
-def pseudo_reciprocal(A):
-    # Zeros are only ignored when they are exactly zero.
-    A = np.asarray(A)
-    v = [1/x if x else 0 for x in A.flat]
-    return np.array(v, dtype=A.dtype).reshape(A.shape)
+def pseudo_reciprocal(v):
+    with np.errstate(divide='ignore'):
+        v_recip = np.reciprocal(v)
+    return np.where(v==0, v, v_recip)
+
+def dot_diag_square(v, M):
+    return np.multiply(v[:, np.newaxis], M)
+
+def dot_square_diag(M, v):
+    return np.multiply(M, v)
+
+def dot_diag_square_diag(v, M, w):
+    return dot_diag_square(v, dot_square_diag(M, w))
+
+def dot_dsdsd(u, P, v, Q, w):
+    return np.dot(dot_diag_square_diag(u, P, v), dot_square_diag(Q, w))
 
 
 ###############################################################################
@@ -94,7 +99,7 @@ def decompose_spectral(S, D):
 
     """
     D_sqrt = np.sqrt(D)
-    B = ndot(np.diag(D_sqrt), S, np.diag(D_sqrt))
+    B = dot_diag_square_diag(D_sqrt, S, D_sqrt)
     lam, U = scipy.linalg.eigh(B)
     return D, U, lam
 
@@ -113,17 +118,17 @@ def decompose_sylvester(S0, S1, D0, D1, L):
     """
     # compute the first symmetric eigendecomposition
     D0_sqrt = np.sqrt(D0)
-    H0 = ndot(np.diag(D0_sqrt), S0, np.diag(D0_sqrt)) - np.diag(L)
+    H0 = dot_diag_square_diag(D0_sqrt, S0, D0_sqrt) - np.diag(L)
     lam0, U0 = scipy.linalg.eigh(H0)
 
     # compute the second symmetric eigendecomposition
     D1_sqrt = np.sqrt(D1)
-    H1 = ndot(np.diag(D1_sqrt), S1, np.diag(D1_sqrt))
+    H1 = dot_diag_square_diag(D1_sqrt, S1, D1_sqrt)
     lam1, U1 = scipy.linalg.eigh(H1)
 
     # solve_sylvester(A, B, Q) finds a solution of AX + XB = Q
-    A = ndot(S0, np.diag(D0)) - np.diag(L)
-    B = -ndot(S1, np.diag(D1))
+    A = dot_square_diag(S0, D0) - np.diag(L)
+    B = -dot_square_diag(S1, D1)
     Q = np.diag(L)
     XQ = scipy.linalg.solve_sylvester(A, B, Q)
 
@@ -139,12 +144,13 @@ def reconstruct_spectral(D, U, lam):
     Return the reconstructed matrix given a spectral form.
 
     """
-    Q_reconstructed = ndot(
-            np.diag(pseudo_reciprocal(np.sqrt(D))),
+    D_sqrt = np.sqrt(D)
+    Q_reconstructed = dot_dsdsd(
+            pseudo_reciprocal(D_sqrt),
             U,
-            np.diag(lam),
+            lam,
             U.T,
-            np.diag(np.sqrt(D)),
+            D_sqrt,
             )
     return Q_reconstructed
 
@@ -153,22 +159,24 @@ def reconstruct_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ):
     Return the reconstructed matrix given a spectral form.
 
     """
-    R11 = ndot(
-            np.diag(pseudo_reciprocal(np.sqrt(D0))),
+    D0_sqrt = np.sqrt(D0)
+    D1_sqrt = np.sqrt(D1)
+    R11 = dot_dsdsd(
+            pseudo_reciprocal(D0_sqrt),
             U0,
-            np.diag(lam0),
+            lam0,
             U0.T,
-            np.diag(np.sqrt(D0)),
+            D0_sqrt,
             )
-    R22 = ndot(
-            np.diag(pseudo_reciprocal(np.sqrt(D1))),
+    R22 = dot_dsdsd(
+            pseudo_reciprocal(D1_sqrt),
             U1,
-            np.diag(lam1),
+            lam1,
             U1.T,
-            np.diag(np.sqrt(D1)),
+            D1_sqrt,
             )
     Q_reconstructed = build_block_2x2([
-        [R11, ndot(R11, XQ) - ndot(XQ, R22)],
+        [R11, np.dot(R11, XQ) - np.dot(XQ, R22)],
         [np.zeros_like(np.diag(L)), R22],
         ])
     return Q_reconstructed
@@ -318,7 +326,8 @@ def test_sylvester_round_trip():
     # gives back the original rate matrix.
     sylvester_decomposition = decompose_sylvester(S0, S1, D0, D1, L)
     Q_reconstruction = reconstruct_sylvester(*sylvester_decomposition)
-    atol = 1e-14
+    atol = 1e-13
+    #atol = 1e-14
     #atol = 0
     assert_allclose(Q, Q_reconstruction, atol=atol)
 
