@@ -3,46 +3,6 @@
 
 import sys
 
-# Return the git version as a string
-def git_version():
-    def _minimial_ext_cmd(cmd):
-        # construct minimal environment
-        env = {}
-        for k in ['SYSTEMROOT', 'PATH']:
-            v = os.environ.get(k)
-            if v is not None:
-                env[k] = v
-        # LANGUAGE is used on win32
-        env['LANGUAGE'] = 'C'
-        env['LANG'] = 'C'
-        env['LC_ALL'] = 'C'
-        out = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, env=env).communicate()[0]
-        return out
-    try:
-        out = _minimal_ext_cmd(['git', 'rev-parse', 'HEAD'])
-        GIT_REVISION = out.strip().decode('ascii')
-    except OSError:
-        GIT_REVISION = 'Unknown'
-    return GIT_REVISION
-
-"""
-try:
-    from sphinx.setup_command import BuildDoc
-    HAVE_SPHINX = True
-except ImportError:
-    HAVE_SPHINX = False
-
-if HAVE_SPHINX:
-    class RaotehBuildDoc(BuildDoc):
-        # Run in-place build before Raoteh doc build
-        def run(self):
-            ret = subprocess.call(
-                    [sys.executable, sys.argv[0], 'build_ext', '-i'])
-            if ret != 0:
-                raise RuntimeError("Building Raoteh failed!")
-            BuildDoc.run(self)
-"""
 
 def configuration(parent_package='', top_path=None):
     from numpy.distutils.misc_util import Configuration
@@ -61,11 +21,6 @@ def setup_package():
 
     cmdclass = {}
 
-    """
-    if HAVE_SPHINX:
-        cmdclass = {'build_sphinx': RaotehBuildDoc}
-    """
-
     metadata = dict(
             name = 'raoteh',
             maintainer = 'raoteh developers',
@@ -76,20 +31,21 @@ def setup_package():
             license = 'license',
             cmdclass = cmdclass,
             platforms = ['Windows', 'Linux', 'Solaris', 'Maac OS-X', 'Unix'],
-            test_suite = 'nose.collector',
-            #author='author',
-            #author_email='author email',
-            #keywords=['hello', 'keywords'],
-            #packages=['raoteh', 'raoteh.sampler'],
-            #package_data={
-                #'raoteh': ['raoteh/sampler/tests/test_*.py'],
-                #},
+            #test_suite = 'nose.collector',
+            ##author='author',
+            ##author_email='author email',
+            ##keywords=['hello', 'keywords'],
+            ##packages=['raoteh', 'raoteh.sampler'],
+            ##package_data={
+                ##'raoteh': ['raoteh/sampler/tests/test_*.py'],
+                ##},
             )
 
     if len(sys.argv) >= 2 and ('--help' in sys.argv[1:] or
             sys.argv[1] in ('--help-commands', 'egg_info', '--version',
                 'clean')):
         # do things with few dependencies
+        print 'doing things with few dependencies...'
         try:
             from setuptools import setup
         except ImportError:
@@ -97,6 +53,7 @@ def setup_package():
         #FULLVERSION, GIT_REVISION = get_version_info()
         #metadata['version'] = FULLVERSION
     else:
+        print 'doing things with more dependencies...'
         from numpy.distutils.core import setup
         #cwd = os.path.abspath(os.path.dirname(__file__))
         metadata['configuration'] = configuration

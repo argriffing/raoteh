@@ -6,6 +6,7 @@ This module uses dense transition probability matrices.
 """
 from __future__ import division, print_function, absolute_import
 
+import warnings
 import itertools
 from collections import defaultdict
 
@@ -182,8 +183,12 @@ def get_likelihood(root_pmap, root_distn=None):
     # cause the likelihood to be zero.
     if root_pmap is None:
         raise ValueError('root_pmap is None')
-    if root_pmap.min() < 0:
-        raise ValueError('root_pmap should have non-negative entries')
+    root_pmap_min = root_pmap.min()
+    if root_pmap_min < 0:
+        warnings.warn(
+                'root_pmap should have non-negative entries '
+                'but found minimum entry %s' % root_pmap_min)
+        root_pmap = np.maximum(root_pmap, 0)
     if not root_pmap.sum():
         raise StructuralZeroProb(
                 'all root states give a subtree likelihood of zero')
