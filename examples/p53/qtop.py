@@ -45,6 +45,18 @@ def getp_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ, t):
     P[D0_off, D0_off] = 1
     return P
 
+def getp_sylvester_v2(D0, A0, B0, A1, B1, L, lam0, lam1, XQ, t):
+    """
+    Uses a decomposition more efficient for reconstruction.
+
+    """
+    exp_lam0 = np.exp(t * lam0)
+    exp_lam1 = np.exp(t * lam1)
+    P = reconstruct_sylvester_v2(A0, B0, A1, B1, L, exp_lam0, exp_lam1, XQ)
+    D0_off = (D0 == 0)
+    P[D0_off, D0_off] = 1
+    return P
+
 def getp_spectral(D, U, lam, t):
     """
     Get a transition probability matrix using the spectral decomposition.
@@ -57,6 +69,17 @@ def getp_spectral(D, U, lam, t):
     """
     exp_lam = np.exp(t * lam)
     P = reconstruct_spectral(D, U, exp_lam)
+    D_off = (D == 0)
+    P[D_off, D_off] = 1
+    return P
+
+def getp_spectral_v2(D, A, lam, B, t):
+    """
+    Uses a decomposition more efficient for reconstruction.
+
+    """
+    exp_lam = np.exp(t * lam)
+    P = reconstruct_spectral_v2(A, exp_lam, B)
     D_off = (D == 0)
     P[D_off, D_off] = 1
     return P
@@ -75,6 +98,9 @@ def pseudo_reciprocal(v):
 
 def dot_diag_square(v, M):
     return np.multiply(v[:, np.newaxis], M)
+
+def dot_square_diag_square(P, v, Q):
+    return np.dot(dot_square_diag(P, v), Q)
 
 def dot_square_diag(M, v):
     return np.multiply(M, v)
@@ -102,6 +128,17 @@ def decompose_spectral(S, D):
     B = dot_diag_square_diag(D_sqrt, S, D_sqrt)
     lam, U = scipy.linalg.eigh(B)
     return D, U, lam
+
+def decompose_spectral_v2(S, D):
+    """
+    This decomposition is more efficient for fast reconstruction.
+
+    """
+    D, U, lam = decompose_spectral(S, D)
+    D_sqrt = np.sqrt(D)
+    A = dot_diag_square(pseudo_reciprocal(D_sqrt), U)
+    B = dot_square_diag(U.T, D_sqrt)
+    return A, lam, B
 
 def decompose_sylvester(S0, S1, D0, D1, L):
     """
@@ -136,6 +173,21 @@ def decompose_sylvester(S0, S1, D0, D1, L):
     return D0, D1, L, U0, U1, lam0, lam1, XQ
 
 
+def decompose_sylvester_v2(S0, S1, D0, D1, L):
+    """
+    This decomposition is more efficient for reconstruction.
+
+    """
+    D0, D1, L, U0, U1, lam0, lam1, XQ = decompose_sylvester(S0, S1, D0, D1, L)
+    D0_sqrt = np.sqrt(D0)
+    D1_sqrt = np.sqrt(D1)
+    A0 = dot_diag_square(pseudo_reciprocal(D0_sqrt), U0)
+    B0 = dot_square_diag(U0.T, D0_sqrt)
+    A1 = dot_diag_square(pseudo_reciprocal(D1_sqrt), U1)
+    B1 = dot_square_diag(U1.T, D1_sqrt)
+    return A0, B0, A1, B1, L, lam0, lam1, XQ
+
+
 ###############################################################################
 # Reconstruction helper functions.
 
@@ -153,6 +205,13 @@ def reconstruct_spectral(D, U, lam):
             D_sqrt,
             )
     return Q_reconstructed
+
+def reconstruct_spectral_v2(A, lam, B):
+    """
+    This uses a decomposition that is more efficient for reconnstruction.
+    
+    """
+    return dot_square_diag_square(A, lam, B)
 
 def reconstruct_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ):
     """
@@ -181,6 +240,18 @@ def reconstruct_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ):
         ])
     return Q_reconstructed
 
+def reconstruct_sylvester_v2(A0, B0, A1, B1, L, lam0, lam1, XQ):
+    """
+    This uses a decomposition that is more efficient for reconnstruction.
+    
+    """
+    R11 = dot_square_diag_square(A0, lam0, B0)
+    R22 = dot_square_diag_square(A1, lam1, B1)
+    Q_reconstructed = build_block_2x2([
+        [R11, np.dot(R11, XQ) - np.dot(XQ, R22)],
+        [np.zeros_like(np.diag(L)), R22],
+        ])
+    return Q_reconstructed
 
 
 ###############################################################################
@@ -305,6 +376,26 @@ def test_spectral_round_trip():
     assert_allclose(Q, Q_spectral_reconstruction)
 
 
+def test_spectral_v2_round_trip():
+    np.random.seed(1234)
+    n = 4
+
+    # Construct a random reversible rate matrix.
+    S, D = random_reversible_rate_matrix(n)
+    Q = np.dot(S, np.diag(D))
+
+    # Check basic properties of the rate matrix and its
+    # symmetric * diagonal decomposition.
+    # Also check the detailed balance equations.
+    assert_SD_reversible_rate_matrix(S, D)
+
+    # Check that the reconstruction from the spectral decomposition
+    # gives back the original rate matrix.
+    decomp = decompose_spectral_v2(S, D)
+    Q_reconstruction = reconstruct_spectral_v2(*decomp)
+    assert_allclose(Q, Q_reconstruction)
+
+
 def test_sylvester_round_trip():
     np.random.seed(1234)
     n = 5
@@ -356,6 +447,31 @@ def test_spectral_expm():
     #atol = 0
     assert_allclose(P, P_spectral, atol=atol)
 
+def test_spectral_v2_expm():
+    np.random.seed(1234)
+    n = 4
+    t = 0.23
+
+    # Construct a random reversible rate matrix.
+    S, D = random_reversible_rate_matrix(n)
+    Q = np.dot(S, np.diag(D))
+
+    # Check basic properties of the rate matrix and its
+    # symmetric * diagonal decomposition.
+    # Also check the detailed balance equations.
+    assert_SD_reversible_rate_matrix(S, D)
+
+    A, lam, B = decompose_spectral_v2(S, D)
+
+    # Compute the transition probability matrix in two ways.
+    P = getp_rate_matrix(Q, t)
+    P_spectral = getp_spectral_v2(D, A, lam, B, t)
+
+    # Check that the transition probability matrices are close.
+    atol = 1e-14
+    #atol = 0
+    assert_allclose(P, P_spectral, atol=atol)
+
 def test_sylvester_expm():
     np.random.seed(1234)
     n = 5
@@ -381,6 +497,37 @@ def test_sylvester_expm():
     # Compute the transition probability matrix in two ways.
     P = getp_rate_matrix(Q, t)
     P_sylvester = getp_sylvester(D0, D1, L, U0, U1, lam0, lam1, XQ, t)
+
+    # Check that the transition probability matrices are close.
+    atol = 1e-14
+    #atol = 0
+    assert_allclose(P, P_sylvester, atol=atol)
+
+def test_sylvester_v2_expm():
+    np.random.seed(1234)
+    n = 5
+    off_states = [0, 2]
+    t = 0.23
+
+    # Construct random matrices.
+    S0, S1, D0, D1, L = random_for_sylvester(n, off_states)
+    assert_SD_reversible_rate_matrix(S0, D0)
+    assert_SD_reversible_rate_matrix(S1, D1)
+
+    # Build the compound switching-model rate matrix.
+    Q00 = np.dot(S0, np.diag(D0)) - np.diag(L)
+    Q01 = np.diag(L)
+    Q10 = np.zeros((n, n))
+    Q11 = np.dot(S1, np.diag(D1))
+    Q = build_block_2x2([[Q00, Q01], [Q10, Q11]])
+
+    # Get the sylvester-like decomposition.
+    decomp = decompose_sylvester_v2(S0, S1, D0, D1, L)
+    A0, B0, A1, B1, L, lam0, lam1, XQ = decomp
+
+    # Compute the transition probability matrix in two ways.
+    P = getp_rate_matrix(Q, t)
+    P_sylvester = getp_sylvester_v2(D0, A0, B0, A1, B1, L, lam0, lam1, XQ, t)
 
     # Check that the transition probability matrices are close.
     atol = 1e-14

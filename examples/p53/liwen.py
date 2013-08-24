@@ -242,18 +242,20 @@ def main():
                 [rho if s in benign_states else 0 for s in range(nstates)],
                 dtype=float)
         D0 = reference_distn_dense
-        S0 = np.dot(Q_reference_dense, np.diag(qtop.pseudo_reciprocal(D0)))
+        S0 = qtop.dot_square_diag(Q_reference_dense, qtop.pseudo_reciprocal(D0))
 
         # Define the decompositions.
         # Define the callbacks that converts branch length to prob matrix.
-        sylvester_decomp = qtop.decompose_sylvester(S0, S1, D0, D1, L)
-        D0, D1, L, U0, U1, lam0, lam1, XQ = sylvester_decomp
-        P_cb_sylvester = functools.partial(qtop.getp_sylvester,
-                D0, D1, L, U0, U1, lam0, lam1, XQ)
-        D0, U0, lam0 = qtop.decompose_spectral(S0, D0)
-        P_cb_reference = functools.partial(qtop.getp_spectral, D0, U0, lam0)
-        D1, U1, lam1 = qtop.decompose_spectral(S1, D1)
-        P_cb_default = functools.partial(qtop.getp_spectral, D1, U1, lam1)
+        sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
+        A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
+        P_cb_sylvester = functools.partial(qtop.getp_sylvester_v2,
+                D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
+        A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
+        P_cb_reference = functools.partial(
+                qtop.getp_spectral_v2, D0, A0, lam0, B0)
+        A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
+        P_cb_default = functools.partial(
+                qtop.getp_spectral_v2, D1, A1, lam1, B1)
 
         # Define the compound process.
 
