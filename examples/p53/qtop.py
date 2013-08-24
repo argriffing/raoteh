@@ -17,7 +17,7 @@ from numpy.testing import run_module_suite, assert_equal, assert_allclose
 
 
 ###############################################################################
-# The following three functions are meant to be called through
+# These functions are meant to be called through
 # functools.partial() so that the partial function will map a branch length
 # to a probability transition matrix.
 
