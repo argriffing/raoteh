@@ -102,11 +102,15 @@ def read_disease_data(fin):
         codonpos = int(codonpos)
         wres = wres.upper()
         mres = mres.upper()
+        wcodon = wcodon.upper()
+        mcodon = mcodon.upper()
         if wres == mres:
-            raise Exception('synonymous disease: ' + line)
+            # skip synonymous disease
+            #raise Exception('synonymous disease: ' + line)
+            continue
         if len(mcodon) != 3:
             if not ('INS' in mcodon or 'DEL' in mcodon):
-                raise Exception('unrecognized mutant codon')
+                raise Exception('unrecognized mutant codon: ' + mcodon)
             continue
         row = (ntpos, codonpos, exon, wcodon, mcodon, wres, mres)
         rows.append(row)
