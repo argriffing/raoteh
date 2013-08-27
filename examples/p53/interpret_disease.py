@@ -31,6 +31,9 @@ acids (those without evidence of disease-association and which are not
 reachable by a single nucleotide point mutation from the reference
 codon) are assumed to have an unknown (missing) disease state.
 
+4) All amino acids except the reference amino acid
+are considered to be lethal in the reference process.
+
 """
 from __future__ import division, print_function, absolute_import
 
@@ -128,7 +131,7 @@ def interpret_disease_data(
 
     Parameters
     ----------
-    interpretation : one of {1, 2, 3}
+    interpretation : one of {1, 2, 3, 4}
         Interpretation code; see the script docstring.
     code : sequence of triples
         Genetic code.
@@ -145,6 +148,12 @@ def interpret_disease_data(
         (1-based codon position, mutant amino acid, disease state)
 
     """
+    # Get the set of all residues.
+    set_of_all_residues = set(r for s, r, c in code)
+
+    # Define genetic translation according to the genetic code.
+    codon_to_residue = dict((c, r) for s, r, c in code)
+
     # Get a sparse map from the codon position to the lethal residue set.
     pos_to_lethal_residues = defaultdict(set)
     for ntpos, codonpos, exon, wcodon, mcodon, wres, mres in disease_data:
@@ -161,12 +170,21 @@ def interpret_disease_data(
             if wres != mres:
                 if hdist(wcodon, mcodon) == 1:
                     pos_to_lethal_residues[codonpos].add(mres)
+        elif interpretation == 4:
+            # Under this interpretation, the wild type amino acid
+            # at the reference node is considered benign
+            # and all other amino acids are considered lethal.
+            # In this case, we do not even look at the disease data.
+            pass
         else:
             raise ValueError('invalid interpretation code')
+    reference_residues = [codon_to_residue[c] for c in reference_codons]
+    if interpretation == 4:
+        for pos in range(1, npositions+1):
+            for r in set_of_all_residues:
+                if r != reference_residues[pos-1]:
+                    pos_to_lethal_residues[pos].add(r)
     pos_to_lethal_residues = dict(pos_to_lethal_residues)
-
-    # Get the set of all residues.
-    set_of_all_residues = set(r for s, r, c in code)
 
     # For each codon, get the set of amino acids
     # reachable through zero or one point mutations.
@@ -183,7 +201,7 @@ def interpret_disease_data(
         # Partition the residues according to disease state.
         lethal_residues = pos_to_lethal_residues.get(pos, set())
         other_residues = set_of_all_residues - lethal_residues
-        if interpretation in (1, 2):
+        if interpretation in (1, 2, 4):
             # Under these interpretations, if an amino acid is not
             # lethal then it is considered to be benign.
             # All residues have known lethal or benign disease state.
@@ -251,7 +269,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--outfile', default='-',
             help='interpreted disease data output file')
     parser.add_argument('--interpretation',
-            required=True, type=int, default=1, choices=(1, 2, 3),
+            required=True, type=int, default=1, choices=(1, 2, 3, 4),
             help='interpretation number')
     parser.add_argument('--code', required=True,
             help='genetic code input file')

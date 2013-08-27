@@ -258,11 +258,15 @@ def reconstruct_sylvester_v2(A0, B0, A1, B1, L, lam0, lam1, XQ):
 # Tests and test helper functions.
 
 def assert_SD_reversible_rate_matrix(S, D):
-    Q = np.dot(S, np.diag(D))
+    # Reversibility is defined as (d_i Q_ij == d_j Q_ji)
+    # which in matrix notation is (D Q == Q.T D).
+    # Note that this will always be true if (Q == S D) where
+    # S is a symmetric matrix and D is a diagonal matrix.
+    Q = dot_square_diag(S, D)
     assert_allclose(Q.sum(axis=1), 0, atol=1e-15)
     assert_allclose(D.sum(), 1)
     assert_allclose(S, S.T)
-    assert_allclose(np.dot(np.diag(D), Q), np.dot(Q.T, np.diag(D)))
+    assert_allclose(dot_diag_square(D, Q), dot_square_diag(Q.T, D))
 
 
 def random_reversible_rate_matrix(n):

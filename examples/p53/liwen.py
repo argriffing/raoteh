@@ -1,11 +1,17 @@
 """
 Attempt to reproduce log likelihood of the default/reference switching model.
 
+The input disease data file should be a 3-column tsv file with a header.
+The first column should give the 1-indexed codon position.
+The second column should give the amino acid.
+The third column should give the BENIGN/LETHAL/UNKNOWN status.
+
 """
 from __future__ import division, print_function, absolute_import
 
 from collections import defaultdict
 import functools
+import argparse
 
 import networkx as nx
 import numpy as np
@@ -26,6 +32,11 @@ from raoteh.sampler import (
 from raoteh.sampler._util import (
         StructuralZeroProb,
         )
+
+BENIGN = 'BENIGN'
+LETHAL = 'LETHAL'
+UNKNOWN = 'UNKNOWN'
+
 
 def get_expm_augmented_tree(T, root, P_callback=None):
     T_aug = nx.Graph()
@@ -128,26 +139,43 @@ def get_liwen_toy_params():
     return (kappa, omega, A, C, T, G, rho,
             tree, root, leaf_name_pairs)
 
+def read_interpreted_disease_data(fin):
+    """
+    Read some filtered disease data.
 
-def main():
+    The interpretation filters the p53 disease data
+    by assigning a disease state to each of the 20 amino acids,
+    for each codon position in the reference (human) p53 sequence.
+    The possible disease states are BENIGN, LETHAL, or UNKNOWN.
+
+    """
+    interpreted_disease_data = []
+    lines = fin.readlines()[1:]
+    for line in lines:
+        if not line.strip():
+            continue
+        codon_pos, aa_residue, status = line.split()
+        codon_pos = int(codon_pos)
+        row = (codon_pos, aa_residue, status)
+        interpreted_disease_data.append(row)
+    return interpreted_disease_data
+
+
+
+def main(args):
 
     # Pick some parameters.
     info = get_liwen_toy_params()
     kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
-    # read the disease data
-    print('reading the disease data...')
-    with open('p53RRRR.disease') as fin:
-        column_to_disease_residues = app_helper.read_disease_data(fin)
-
-    # read the genetic code
+    # Read the genetic code.
     print('reading the genetic code...')
     with open('universal.code.txt') as fin:
         genetic_code = app_helper.read_genetic_code(fin)
     codon_to_state = dict((c, s) for s, r, c in genetic_code)
 
-    # check that the states are in the right order
+    # Check that the states are in the correct order.
     nstates = len(genetic_code)
     if range(nstates) != [s for s, r, c in genetic_code]:
         raise Exception
@@ -193,10 +221,29 @@ def main():
     print('total branch length:', tree.size(weight='weight'))
     print()
 
-    # read the alignment
+    # Read the alignment.
     print('reading the alignment...')
     with open('testseq') as fin:
         name_codons_list = list(app_helper.read_phylip(fin))
+
+    # Read the interpreted disease data.
+    with open(args.disease) as fin:
+        interpreted_disease_data = read_interpreted_disease_data(fin)
+    pos_to_benign_residues = defaultdict(set)
+    pos_to_lethal_residues = defaultdict(set)
+    for pos, residue, status in interpreted_disease_data:
+        if status == BENIGN:
+            pos_to_benign_residues[pos].add(residue)
+        elif status == LETHAL:
+            pos_to_lethal_residues[pos].add(residue)
+        elif status == UNKNOWN:
+            raise NotImplementedError(
+                    'unknown amino acid status in the reference process '
+                    'requires integrating over too many things')
+        else:
+            raise Exception('invalid disease status: ' + str(status))
+    pos_to_benign_residues = dict(pos_to_benign_residues)
+    pos_to_lethal_residues = dict(pos_to_lethal_residues)
 
     # compute the log likelihood, column by column
     # using _mjp_dense (the dense Markov jump process module).
@@ -210,10 +257,24 @@ def main():
     for i, codon_column in enumerate(codon_columns):
 
         # Define the column-specific disease states and the benign states.
-        disease_residues = column_to_disease_residues.get(i, set())
-        disease_states = set(
-                s for s, r, c in genetic_code if r in disease_residues)
-        benign_states = set(range(nstates)) - disease_states
+        pos = i + 1
+        benign_residues = pos_to_benign_residues.get(pos, set())
+        lethal_residues = pos_to_lethal_residues.get(pos, set())
+        benign_states = set()
+        lethal_states = set()
+        for s, r, c in genetic_code:
+            if r in benign_residues:
+                benign_states.add(s)
+            elif r in lethal_residues:
+                lethal_states.add(s)
+            else:
+                print(benign_residues)
+                print(lethal_residues)
+                raise Exception(
+                        'each amino acid should be considered either '
+                        'benign or lethal in this model, '
+                        'but residue %s at position %s '
+                        'was found to be neither' % (r, pos))
 
         # Define the reference process.
 
@@ -346,7 +407,7 @@ def main():
                 'll_reference:', ll_reference,
                 'll_default:', ll_default,
                 'll_compound:', ll_compound,
-                'disease_residues:', disease_residues)
+                'lethal_residues:', lethal_residues)
     
     # print the total log likelihoods
     print('total reference log likelihood:', total_ll_reference)
@@ -355,5 +416,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--disease', required=True,
+            help='csv file with filtered disease data')
+    main(parser.parse_args())
 
