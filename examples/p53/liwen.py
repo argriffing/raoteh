@@ -43,9 +43,6 @@ def get_expm_augmented_tree(T, root, P_callback=None):
     for na, nb in nx.bfs_edges(T, root):
         edge = T[na][nb]
         weight = edge['weight']
-        #Q = edge.get('Q', Q_default)
-        #_density.check_square_dense(Q)
-        #P = custom_expm(Q, weight)
         P = P_callback(weight)
         T_aug.add_edge(na, nb, weight=weight, P=P)
     return T_aug
@@ -165,7 +162,8 @@ def read_interpreted_disease_data(fin):
 def main(args):
 
     # Pick some parameters.
-    info = get_liwen_toy_params()
+    #info = get_liwen_toy_params()
+    info = get_jeff_params()
     kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
