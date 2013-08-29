@@ -109,7 +109,7 @@ def get_normalized_dict_distn(d, prior=None):
     return dict((k, v / total_weight) for k, v in dpost.items())
 
 
-def get_unnormalized_ndarray_distn(d, prior=None):
+def get_unnormalized_ndarray_distn(d, prior=None, atol=1e-10):
     """
 
     Parameters
@@ -118,6 +118,8 @@ def get_unnormalized_ndarray_distn(d, prior=None):
         first array
     prior : 1d ndarray, optional
         second array
+    atol : float, optional
+        absolute tolerance for small entries
 
     Returns
     -------
@@ -125,13 +127,19 @@ def get_unnormalized_ndarray_distn(d, prior=None):
         output array
 
     """
-    if d.min() < 0:
-        raise ValueError('expected non-negative entries')
+    d_min = d.min()
+    if d_min < -atol:
+        raise ValueError(
+                'expected non-negative entries '
+                'but found ' + str(d_min))
     if prior is None:
         return d
     else:
-        if prior.min() < 0:
-            raise ValueError('expected non-negative prior entries')
+        prior_min = prior.min()
+        if prior_min < -atol:
+            raise ValueError(
+                    'expected non-negative prior entries '
+                    'but found ' + str(prior_min))
         return d * prior
 
 

@@ -27,6 +27,7 @@ from raoteh.sampler import (
         _density,
         _mjp_dense,
         _mcy_dense,
+        _mc0_dense,
         )
 
 from raoteh.sampler._util import (
@@ -46,6 +47,18 @@ def get_expm_augmented_tree(T, root, P_callback=None):
         P = P_callback(weight)
         T_aug.add_edge(na, nb, weight=weight, P=P)
     return T_aug
+
+def get_node_to_distn(tree, node_to_allowed_states, root, nstates,
+        root_distn=None, P_callback=None):
+    if root not in tree:
+        raise ValueError('the specified root is not in the tree')
+    T_aug = get_expm_augmented_tree(tree, root, P_callback=P_callback)
+    node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root, nstates,
+            node_to_allowed_states=node_to_allowed_states)
+    node_to_distn = _mc0_dense.get_node_to_distn(
+            T_aug, root, node_to_pmap, nstates,
+            root_distn=root_distn)
+    return node_to_distn
 
 def get_likelihood(tree, node_to_allowed_states, root, nstates,
         root_distn=None, P_callback=None):
@@ -209,6 +222,7 @@ def main(args):
     S1 = np.dot(Q_dense, np.diag(qtop.pseudo_reciprocal(D1)))
 
     # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
+    original_root = root
     root = name_to_leaf['Has']
 
     # print a summary of the tree
@@ -266,8 +280,6 @@ def main(args):
             elif r in lethal_residues:
                 lethal_states.add(s)
             else:
-                print(benign_residues)
-                print(lethal_residues)
                 raise Exception(
                         'each amino acid should be considered either '
                         'benign or lethal in this model, '
@@ -387,12 +399,20 @@ def main(args):
             ll_default = -np.inf
 
         # Get the log likelihood for the compound process.
+        # Also get the distributions at each node,
+        # and reduce this to the probability that the original root
+        # is in the reference process.
         try:
             likelihood = get_likelihood(
                     tree, node_to_allowed_states, root, ncompound,
                     root_distn=compound_distn_dense,
                     P_callback=P_cb_sylvester)
             ll_compound = np.log(likelihood)
+            node_to_distn = get_node_to_distn(
+                    tree, node_to_allowed_states, root, ncompound,
+                    root_distn=compound_distn_dense,
+                    P_callback=P_cb_sylvester)
+            p_reference = node_to_distn[original_root][:nstates].sum()
         except StructuralZeroProb as e:
             ll_compound = -np.inf
 
@@ -405,6 +425,7 @@ def main(args):
                 'll_reference:', ll_reference,
                 'll_default:', ll_default,
                 'll_compound:', ll_compound,
+                'p_root_ref:', p_reference,
                 'lethal_residues:', lethal_residues)
     
     # print the total log likelihoods
