@@ -217,6 +217,17 @@ def main(args):
     app_helper.print_codon_distn(codon_to_state, primary_distn)
     print()
 
+    # Report the default process rate matrix.
+    print('normalized default process rate matrix:')
+    for triple_a in genetic_code:
+        for triple_b in genetic_code:
+            sa, ra, ca = triple_a
+            sb, rb, cb = triple_b
+            if sa != sb:
+                rate = Q_dense[sa, sb]
+                print(ca, ra, '->', cb, rb, ':', rate)
+    print()
+
     # Define an SD decomposition of the default process rate matrix.
     D1 = primary_distn_dense
     S1 = np.dot(Q_dense, np.diag(qtop.pseudo_reciprocal(D1)))
