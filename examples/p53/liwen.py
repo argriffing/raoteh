@@ -9,6 +9,7 @@ The third column should give the BENIGN/LETHAL/UNKNOWN status.
 """
 from __future__ import division, print_function, absolute_import
 
+from StringIO import StringIO
 from collections import defaultdict
 import functools
 import argparse
@@ -100,6 +101,31 @@ def get_jeff_params():
             tree, root, leaf_name_pairs)
 
 
+def get_jeff_params_b():
+    # FINAL ESTIMATE: rho12 =    0.61343
+    # FINAL ESTIMATE: for frequency of purines is    0.50759
+    # FINAL ESTIMATE: for freq. of A among purines is    0.49489
+    # FINAL ESTIMATE: for freq. of T among pyrimidines is    0.39140
+    # FINAL ESTIMATE: kappa =    3.35879
+    # FINAL ESTIMATE: omega =    0.37953
+
+    kappa = 3.35879
+    omega = 0.37953
+    AG = 0.50759
+    CT = 1 - AG
+    A = AG * 0.49489
+    G = AG - A
+    T = CT * 0.39140
+    C = CT - T
+    rho = 0.61343
+
+    tree_string = """((((((Has:  0.00750,Ptr:  0.00750):  0.06478,Ppy:  0.07228):  0.05425,(((Mmu:  0.00256,Mfu:  0.00256):  0.00000,Mfa:  0.00256):  0.03202,Cae:  0.03458):  0.09195):  0.20038,(Mim:  0.32691,Tgl:  0.32691):  0.00000):  0.22356,((((((Mum:  0.18000,Rno:  0.18000):  0.15514,Mun:  0.33514):  0.01932,(Cgr:  0.10721,Mau:  0.10721):  0.24724):  0.04431,Sju:  0.39876):  0.10020,(Cpo:  0.41556,Mmo:  0.41556):  0.08341):  0.02586,(Ocu:  0.41458,Opr:  0.41458):  0.11024):  0.02565):  0.00000,(Sar:  0.45268,((Fca:  0.28000,Cfa:  0.28000):  0.13266,((Bta:  0.09038,Oar:  0.09038):  0.15438,Dle:  0.24476):  0.16790):  0.04002):  0.09779);"""
+    fin = StringIO(tree_string)
+    tree, root, leaf_name_pairs = app_helper.read_newick(fin)
+    return (kappa, omega, A, C, T, G, rho,
+            tree, root, leaf_name_pairs)
+
+
 def get_codeml_estimated_params():
 
     # Use the estimates that I got from codeml,
@@ -176,7 +202,8 @@ def main(args):
 
     # Pick some parameters.
     #info = get_liwen_toy_params()
-    info = get_jeff_params()
+    #info = get_jeff_params()
+    info = get_jeff_params_b()
     kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
