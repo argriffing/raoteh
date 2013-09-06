@@ -109,7 +109,7 @@ def get_normalized_dict_distn(d, prior=None):
     return dict((k, v / total_weight) for k, v in dpost.items())
 
 
-def get_unnormalized_ndarray_distn(d, prior=None, atol=1e-10):
+def get_unnormalized_ndarray_distn(d, prior=None, atol=1e-6):
     """
 
     Parameters

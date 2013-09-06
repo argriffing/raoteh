@@ -66,7 +66,7 @@ def getp_lb(Q, t):
                     ra = -Q[sa, sa]
                     rb = -Q[sb, sb]
                     if ra == rb:
-                        p = rab * t * np.exp(-rb*T)
+                        p = rab * t * np.exp(-rb*t)
                     else:
                         num = np.exp(-ra*t) - np.exp(-rb*t)
                         den = rb - ra
@@ -74,15 +74,29 @@ def getp_lb(Q, t):
                 else:
                     p = 0
             P[sa, sb] = p
-    print('min entry of P:', np.min(P))
-    print('row sums of P:', P.sum(axis=1))
+    #print('min entry of P:', np.min(P))
+    #print('row sums of P:', P.sum(axis=1))
     return P
+
+def getp_bigt_lb(Q, dt, t):
+    n = max(1, int(np.ceil(t / dt)))
+    psmall = getp_lb(Q, t/n)
+    return np.linalg.matrix_power(psmall, n)
 
 def getp_approx(Q, t):
     """
     Approximate the transition matrix over a small time interval.
     """
-    return np.eye(*Q.shape) + Q*t
+    ident = np.eye(*Q.shape)
+    return ident + Q*t
+
+def getp_bigt_approx(Q, dt, t):
+    """
+    Approximate exp(x) = exp(x/n)^n ~= (1 + x/n)^n.
+    """
+    n = max(1, int(np.ceil(t / dt)))
+    psmall = getp_approx(Q, t/n)
+    return np.linalg.matrix_power(psmall, n)
 
 def get_tree_refinement(T, root, dt):
     """
@@ -186,6 +200,29 @@ def get_jeff_params_b():
     return (kappa, omega, A, C, T, G, rho,
             tree, root, leaf_name_pairs)
 
+def get_jeff_params_c():
+    # with kappa = 2.0,
+    # omega = 0.5,
+    # freq of A = 0.12,
+    # freq of G = 0.18,
+    # freq of C = 0.35,
+    # freq of T = 0.35
+    # and (for switching model) switching parameter = 0.5 ?
+
+    kappa = 2.0
+    omega = 0.5
+    A = 0.12
+    G = 0.18
+    C = 0.35
+    T = 0.35
+    rho = 0.5
+
+    tree_string = """((((((Has:  0.0156250000,Ptr:  0.0156250000):  0.0156250000,Ppy:  0.0312500000):  0.0312500000,(((Mmu:  0.0078125000,Mfu:  0.0078125000):  0.0078125000,Mfa:  0.0156250000):  0.0156250000,Cae:  0.0312500000):  0.0312500000):  0.0625000000,(Mim:  0.0625000000,Tgl:  0.0625000000):  0.0625000000):  0.1250000000,((((((Mum:  0.0039062500,Rno:  0.0039062500):  0.0039062500,Mun:  0.0078125000):  0.0078125000,(Cgr:  0.0078125000,Mau:  0.0078125000):  0.0078125000):  0.0156250000,Sju:  0.0312500000):  0.0312500000,(Cpo:  0.0312500000,Mmo:  0.0312500000):  0.0312500000):  0.0625000000,(Ocu:  0.0625000000,Opr:  0.0625000000):  0.0625000000):  0.1250000000):  0.2500000000,(Sar:  0.2500000000,((Fca:  0.0625000000,Cfa:  0.0625000000):  0.0625000000,((Bta:  0.0312500000,Oar:  0.0312500000):  0.0312500000,Dle:  0.0625000000):  0.0625000000):  0.1250000000):  0.2500000000);"""
+    fin = StringIO(tree_string)
+    tree, root, leaf_name_pairs = app_helper.read_newick(fin)
+    return (kappa, omega, A, C, T, G, rho,
+            tree, root, leaf_name_pairs)
+
 
 def get_codeml_estimated_params():
 
@@ -261,10 +298,15 @@ def read_interpreted_disease_data(fin):
 
 def main(args):
 
+    if args.lb and (args.dt is None):
+        raise argparse.ArgumentError(
+                'lb only makes sense when a dt discretization is specified')
+
     # Pick some parameters.
     #info = get_liwen_toy_params()
     #info = get_jeff_params()
-    info = get_jeff_params_b()
+    #info = get_jeff_params_b()
+    info = get_jeff_params_c()
     kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
@@ -478,22 +520,23 @@ def main(args):
 
         else:
 
-            tree = get_tree_refinement(tree, root, args.dt)
-            degree = tree.degree()
-            print('discretized tree summary:')
-            print('number of nodes:', len(tree))
-            print('number of leaves:', degree.values().count(1))
-            print('number of branches:', tree.size())
-            print('total branch length:', tree.size(weight='weight'))
-            print()
+            #tree = get_tree_refinement(tree, root, args.dt)
+            #degree = tree.degree()
+            #print('discretized tree summary:')
+            #print('number of nodes:', len(tree))
+            #print('number of leaves:', degree.values().count(1))
+            #print('number of branches:', tree.size())
+            #print('total branch length:', tree.size(weight='weight'))
+            #print()
 
-            #P_cb_sylvester = functools.partial(getp_approx, Q_compound_dense)
-            #P_cb_reference = functools.partial(getp_approx, Q_reference_dense)
-            #P_cb_default = functools.partial(getp_approx, Q_dense)
+            if args.lb:
+                f = getp_bigt_lb
+            else:
+                f = getp_bigt_approx
 
-            P_cb_sylvester = functools.partial(getp_lb, Q_compound_dense)
-            P_cb_reference = functools.partial(getp_lb, Q_reference_dense)
-            P_cb_default = functools.partial(getp_lb, Q_dense)
+            P_cb_sylvester = functools.partial(f, Q_compound_dense, args.dt)
+            P_cb_reference = functools.partial(f, Q_reference_dense, args.dt)
+            P_cb_default = functools.partial(f, Q_dense, args.dt)
 
 
         # Define the map from node to allowed compound states.
@@ -566,5 +609,7 @@ if __name__ == '__main__':
             help='csv file with filtered disease data')
     parser.add_argument('--dt', type=float,
             help='discretize the tree with this maximum branchlet length')
+    parser.add_argument('--lb', action='store_true',
+            help='compute a lower bound instead of an approximation')
     main(parser.parse_args())
 
