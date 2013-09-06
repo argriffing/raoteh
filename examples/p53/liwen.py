@@ -39,6 +39,28 @@ BENIGN = 'BENIGN'
 LETHAL = 'LETHAL'
 UNKNOWN = 'UNKNOWN'
 
+def getp_approx(Q, t):
+    """
+    Approximate the transition matrix over a small time interval.
+    """
+    return np.eye(*Q.shape) + Q*t
+
+def get_tree_refinement(T, root, dt):
+    """
+    @param T: weighted undirected nx graph representing the tree
+    @param dt: requested maximum branchlet length
+    """
+    next_node = max(T.nodes()) + 1
+    T_aug = nx.Graph()
+    for na, nb in nx.bfs_edges(T, root):
+        branch_weight = T[na][nb]['weight']
+        nbranchlets = max(1, int(np.ceil(branch_weight / dt)))
+        branchlet_weight = branch_weight / nbranchlets
+        path = [na] + range(next_node, next_node + nbranchlets - 1) + [nb]
+        for nc, nd in zip(path[:-1], path[1:]):
+            T_aug.add_edge(nc, nd, weight=branchlet_weight)
+        next_node += nbranchlets - 1
+    return T_aug
 
 def get_expm_augmented_tree(T, root, P_callback=None):
     T_aug = nx.Graph()
@@ -346,25 +368,10 @@ def main(args):
         reference_distn_dense = _density.dict_to_numpy_array(
                 reference_distn, nodelist=states)
 
-        # Define an SD decomposition of the reference process.
+        # Define the diagonal associated with switching processes.
         L = np.array(
                 [rho if s in benign_states else 0 for s in range(nstates)],
                 dtype=float)
-        D0 = reference_distn_dense
-        S0 = qtop.dot_square_diag(Q_reference_dense, qtop.pseudo_reciprocal(D0))
-
-        # Define the decompositions.
-        # Define the callbacks that converts branch length to prob matrix.
-        sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
-        A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
-        P_cb_sylvester = functools.partial(qtop.getp_sylvester_v2,
-                D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
-        A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
-        P_cb_reference = functools.partial(
-                qtop.getp_spectral_v2, D0, A0, lam0, B0)
-        A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
-        P_cb_default = functools.partial(
-                qtop.getp_spectral_v2, D1, A1, lam1, B1)
 
         # Define the compound process.
 
@@ -407,6 +414,44 @@ def main(args):
                 compound_distn, nodelist=compound_states)
 
         # End compound process definition.
+
+        # Define the t -> P callbacks for the true process
+        # or for a time-discretized process, depending on cmdline flags.
+
+        if args.dt is None:
+
+            # Define an SD decomposition of the reference process.
+            D0 = reference_distn_dense
+            S0 = qtop.dot_square_diag(Q_reference_dense, qtop.pseudo_reciprocal(D0))
+
+            # Define the decompositions.
+            # Define the callbacks that converts branch length to prob matrix.
+            sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
+            A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
+            P_cb_sylvester = functools.partial(qtop.getp_sylvester_v2,
+                    D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
+            A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
+            P_cb_reference = functools.partial(
+                    qtop.getp_spectral_v2, D0, A0, lam0, B0)
+            A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
+            P_cb_default = functools.partial(
+                    qtop.getp_spectral_v2, D1, A1, lam1, B1)
+
+        else:
+
+            tree = get_tree_refinement(tree, root, args.dt)
+            degree = tree.degree()
+            print('discretized tree summary:')
+            print('number of nodes:', len(tree))
+            print('number of leaves:', degree.values().count(1))
+            print('number of branches:', tree.size())
+            print('total branch length:', tree.size(weight='weight'))
+            print()
+
+            P_cb_sylvester = functools.partial(getp_approx, Q_compound_dense)
+            P_cb_reference = functools.partial(getp_approx, Q_reference_dense)
+            P_cb_default = functools.partial(getp_approx, Q_dense)
+
 
         # Define the map from node to allowed compound states.
         node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
@@ -476,5 +521,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--disease', required=True,
             help='csv file with filtered disease data')
+    parser.add_argument('--dt', type=float,
+            help='discretize the tree with this maximum branchlet length')
     main(parser.parse_args())
 
