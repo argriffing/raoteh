@@ -45,3 +45,15 @@ three stages:
 The last of these three stages is essentially
 the setup that is standard for hidden Markov models.
 
+
+installation
+------------
+
+Personally I install this module by changing the working directory
+to the checked out git source directory and running the following command.
+
+    $ python setup.py install --user
+
+I've had trouble installing with `pip` so maybe something is wrong with
+my setup.py files.
+
