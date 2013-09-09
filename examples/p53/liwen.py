@@ -459,6 +459,8 @@ def main(args):
     print('preparing to compute log likelihood...')
     names, codon_sequences = zip(*name_codons_list)
     codon_columns = zip(*codon_sequences)
+    # Get the row index of the homo sapiens name.
+    reference_codon_row_index = names.index('Has')
     print('computing log likelihood...')
     total_ll_default_cont = 0
     total_ll_reference_cont = 0
@@ -466,6 +468,7 @@ def main(args):
     total_ll_default_disc = 0
     total_ll_reference_disc = 0
     total_ll_compound_disc = 0
+    cond_adj_total = 0
     for i, codon_column in enumerate(codon_columns):
 
         # Define the column-specific disease states and the benign states.
@@ -636,13 +639,20 @@ def main(args):
         total_ll_reference_disc += ll_reference_disc
         total_ll_compound_disc += ll_compound_disc
 
-        # define the conditioning adjustment
+        # Define the conditioning adjustment
+        # related to how much we take for granted (prior)
+        # about the set of allowed reference amino acids.
+        reference_codon = codon_column[reference_codon_row_index]
+        reference_codon_state = codon_to_state[reference_codon]
         cond_adj = 0
-        #cond_adj += np.log(
+        cond_adj += np.log(reference_distn_dense[reference_codon_state])
+        cond_adj -= np.log(primary_distn_dense[reference_codon_state])
+        cond_adj_total += cond_adj
 
         print('column', i + 1, 'of', len(codon_columns))
+        print('reference codon:', reference_codon)
         print('lethal_residues:', lethal_residues)
-        #print('ll conditioning adjustment:', np.log(x) - np.log(y)()
+        print('ll conditioning adjustment:', cond_adj)
         print('continuous time:')
         print('  ll_default:', ll_default_cont)
         print('  ll_reference:', ll_reference_cont)
@@ -657,6 +667,7 @@ def main(args):
     
     # print the total log likelihoods
     print('alignment summary:')
+    print('ll conditioning adjustment total:', cond_adj_total)
     print('continuous time:')
     print('  ll_default:', total_ll_default_cont)
     print('  ll_reference:', total_ll_reference_cont)
