@@ -18,6 +18,7 @@ import networkx as nx
 import numpy as np
 import scipy.linalg
 from scipy import special
+import pyfelscore
 
 import create_mg94
 import app_helper
@@ -38,6 +39,11 @@ from raoteh.sampler._util import (
 BENIGN = 'BENIGN'
 LETHAL = 'LETHAL'
 UNKNOWN = 'UNKNOWN'
+
+def getp_lb_fast(Q, t):
+    P = np.empty_like(Q)
+    pyfelscore.get_lb_transition_matrix(t, Q, P)
+    return P
 
 def getp_lb(Q, t):
     """
@@ -81,6 +87,11 @@ def getp_lb(Q, t):
 def getp_bigt_lb(Q, dt, t):
     n = max(1, int(np.ceil(t / dt)))
     psmall = getp_lb(Q, t/n)
+    return np.linalg.matrix_power(psmall, n)
+
+def getp_bigt_lb_fast(Q, dt, t):
+    n = max(1, int(np.ceil(t / dt)))
+    psmall = getp_lb_fast(Q, t/n)
     return np.linalg.matrix_power(psmall, n)
 
 def getp_approx(Q, t):
@@ -591,7 +602,7 @@ def main(args):
         #print()
 
         if args.lb:
-            f = getp_bigt_lb
+            f = getp_bigt_lb_fast
         else:
             f = getp_bigt_approx
 
