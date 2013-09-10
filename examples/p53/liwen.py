@@ -142,7 +142,7 @@ def get_node_to_distn(tree, node_to_allowed_states, root, nstates,
     T_aug = get_expm_augmented_tree(tree, root, P_callback=P_callback)
     node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root, nstates,
             node_to_allowed_states=node_to_allowed_states)
-    node_to_distn = _mc0_dense.get_node_to_distn(
+    node_to_distn = _mc0_dense.get_node_to_distn_esd(
             T_aug, root, node_to_pmap, nstates,
             root_distn=root_distn)
     return node_to_distn
