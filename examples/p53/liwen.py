@@ -516,6 +516,12 @@ def main(args):
                 reference_weights[s] = primary_distn[s]
         reference_distn = _util.get_normalized_dict_distn(reference_weights)
 
+        if i in (158-1, 245-1):
+            for s, r, c in genetic_code:
+                if s in reference_distn:
+                    print(c, r, reference_distn[s], sep='\t')
+            print('sum of probs:', sum(reference_distn.values()))
+
         # Convert to dense representations of the reference process.
         Q_reference_dense = _density.rate_matrix_to_numpy_array(
                 Q_reference, nodelist=states)
