@@ -660,21 +660,24 @@ def main(args):
         cond_adj -= np.log(primary_distn_dense[reference_codon_state])
         cond_adj_total += cond_adj
 
-        print('column', i + 1, 'of', len(codon_columns))
-        print('reference codon:', reference_codon)
-        print('lethal_residues:', lethal_residues)
-        print('ll conditioning adjustment:', cond_adj)
-        print('continuous time:')
-        print('  ll_default:', ll_default_cont)
-        print('  ll_reference:', ll_reference_cont)
-        print('  ll_compound:', ll_compound_cont)
-        print('  p_root_ref:', p_reference_cont)
-        print('discretized time dt=%f:' % args.dt)
-        print('  ll_default:', ll_default_disc)
-        print('  ll_reference:', ll_reference_disc)
-        print('  ll_compound:', ll_compound_disc)
-        print('  p_root_ref:', p_reference_disc)
-        print()
+        if args.verbose:
+            print('column', i + 1, 'of', len(codon_columns))
+            print('reference codon:', reference_codon)
+            print('lethal_residues:', lethal_residues)
+            print('ll conditioning adjustment:', cond_adj)
+            print('continuous time:')
+            print('  ll_default:', ll_default_cont)
+            print('  ll_reference:', ll_reference_cont)
+            print('  ll_compound:', ll_compound_cont)
+            print('  p_root_ref:', p_reference_cont)
+            print('discretized time dt=%f:' % args.dt)
+            print('  ll_default:', ll_default_disc)
+            print('  ll_reference:', ll_reference_disc)
+            print('  ll_compound:', ll_compound_disc)
+            print('  p_root_ref:', p_reference_disc)
+            print()
+        else:
+            print(i+1, ll_compound_disc, sep='\t')
     
     # print the total log likelihoods
     print('alignment summary:')
@@ -692,6 +695,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--disease', required=True,
             help='csv file with filtered disease data')
     parser.add_argument('--dt', type=float,
