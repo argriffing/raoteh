@@ -234,6 +234,30 @@ def get_jeff_params_c():
     return (kappa, omega, A, C, T, G, rho,
             tree, root, leaf_name_pairs)
 
+def get_jeff_params_d():
+
+    # For a switching parameter ("rho12") of  0.61722
+    # and a frequency of A =0.2510499,
+    # and frequency of G = 0.2575601
+    # and frequency of T= 0.1910328
+    # and a frequency of C= 0.3003572
+    # and kappa = 3.37974
+    # and omega = 0.37909, 
+
+    rho = 0.61722
+    A = 0.2510499
+    G = 0.2575601
+    T = 0.1910328
+    C = 0.3003572
+    kappa = 3.37974
+    omega = 0.37909
+
+    tree_string = """((((((Has:  0.0074779683,Ptr:  0.0074779683):  0.0641133869,Ppy:  0.0715913552):  0.0528930002,(((Mmu:  0.0025454709,Mfu:  0.0025454709):  0.0000000000,Mfa:  0.0025454709):  0.0316473714,Cae:  0.0341928422):  0.0902915132):  0.2000000000,(Mim:  0.3244843555,Tgl:  0.3244843555):  0.0000000000):  0.2263110411,((((((Mum:  0.1800278298,Rno:  0.1800278298):  0.1555625764,Mun:  0.3355904062):  0.0193382786,(Cgr:  0.1072076461,Mau:  0.1072076461):  0.2477210386):  0.0443655865,Sju:  0.3992942713):  0.1003356885,(Cpo:  0.4161439495,Mmo:  0.4161439495):  0.0834860102):  0.0253874887,(Ocu:  0.4146179996,Opr:  0.4146179996):  0.1103994489):  0.0257779481):  0.0000000005,(Sar:  0.4513150990,((Fca:  0.2785610161,Cfa:  0.2785610161):  0.1327540821,((Bta:  0.0900858971,Oar:  0.0900858971):  0.1538774271,Dle:  0.2439633242):  0.1673517740):  0.0400000008):  0.0994802981);"""
+    fin = StringIO(tree_string)
+    tree, root, leaf_name_pairs = app_helper.read_newick(fin)
+    return (kappa, omega, A, C, T, G, rho,
+            tree, root, leaf_name_pairs)
+
 
 def get_codeml_estimated_params():
 
@@ -373,7 +397,8 @@ def main(args):
     #info = get_liwen_toy_params()
     #info = get_jeff_params()
     #info = get_jeff_params_b()
-    info = get_jeff_params_c()
+    #info = get_jeff_params_c()
+    info = get_jeff_params_d()
     kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 

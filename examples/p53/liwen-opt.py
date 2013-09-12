@@ -42,6 +42,13 @@ LETHAL = 'LETHAL'
 UNKNOWN = 'UNKNOWN'
 
 
+
+#TODO why am I getting negative inf for dt=0.01
+#     for the initial parameter values when I use the optimization script,
+#     but I get a finite log likelihood
+#     when I use the script dedicated to log likelihood calculation?
+
+
 def pack_params(
         blen_props, root_depth, 
         rho12, A, C, G, T, kappa, omega):
@@ -346,43 +353,51 @@ def get_codon_site_inferences(
     (as opposed to the default process).
 
     """
+    ll_default = None
+    ll_reference = None
+    ll_compound = None
+    p_reference = None
+
     # Get the log likelihood for the default process.
-    try:
-        likelihood = get_likelihood(
-                tree, node_to_allowed_states, root, nstates,
-                root_distn=default_root_distn,
-                P_callback=P_cb_default)
-        ll_default = np.log(likelihood)
-    except StructuralZeroProb as e:
-        ll_default = -np.inf
+    if P_cb_default is not None:
+        try:
+            likelihood = get_likelihood(
+                    tree, node_to_allowed_states, root, nstates,
+                    root_distn=default_root_distn,
+                    P_callback=P_cb_default)
+            ll_default = np.log(likelihood)
+        except StructuralZeroProb as e:
+            ll_default = -np.inf
 
     # Get the log likelihood for the reference process.
-    try:
-        likelihood = get_likelihood(
-                tree, node_to_allowed_states, root, nstates,
-                root_distn=reference_root_distn,
-                P_callback=P_cb_reference)
-        ll_reference = np.log(likelihood)
-    except StructuralZeroProb as e:
-        ll_reference = -np.inf
+    if P_cb_reference is not None:
+        try:
+            likelihood = get_likelihood(
+                    tree, node_to_allowed_states, root, nstates,
+                    root_distn=reference_root_distn,
+                    P_callback=P_cb_reference)
+            ll_reference = np.log(likelihood)
+        except StructuralZeroProb as e:
+            ll_reference = -np.inf
 
     # Get the log likelihood for the compound process.
     # Also get the distributions at each node,
     # and reduce this to the probability that the original root
     # is in the reference process.
-    try:
-        likelihood = get_likelihood(
-                tree, node_to_allowed_states, root, ncompound,
-                root_distn=compound_root_distn,
-                P_callback=P_cb_compound)
-        ll_compound = np.log(likelihood)
-        node_to_distn = get_node_to_distn(
-                tree, node_to_allowed_states, root, ncompound,
-                root_distn=compound_root_distn,
-                P_callback=P_cb_compound)
-        p_reference = node_to_distn[original_root][:nstates].sum()
-    except StructuralZeroProb as e:
-        ll_compound = -np.inf
+    if P_cb_compound is not None:
+        try:
+            likelihood = get_likelihood(
+                    tree, node_to_allowed_states, root, ncompound,
+                    root_distn=compound_root_distn,
+                    P_callback=P_cb_compound)
+            ll_compound = np.log(likelihood)
+            #node_to_distn = get_node_to_distn(
+                    #tree, node_to_allowed_states, root, ncompound,
+                    #root_distn=compound_root_distn,
+                    #P_callback=P_cb_compound)
+            #p_reference = node_to_distn[original_root][:nstates].sum()
+        except StructuralZeroProb as e:
+            ll_compound = -np.inf
 
     return ll_default, ll_reference, ll_compound, p_reference
 
@@ -478,7 +493,8 @@ def get_log_likelihood(
         v_packed):
 
     #
-    print('computing log likelihood...')
+    print('computing log likelihood for packed parameter values')
+    print(v_packed)
 
     # Preprocessing.
     codon_to_state = dict((c, s) for s, r, c in genetic_code)
@@ -509,36 +525,12 @@ def get_log_likelihood(
     primary_distn_dense = _density.dict_to_numpy_array(
             primary_distn, nodelist=states)
 
-    #print('codon distn:')
-    #app_helper.print_codon_distn(codon_to_state, primary_distn)
-    #print()
-
-    # Report the default process rate matrix.
-    #print('normalized default process rate matrix:')
-    #for triple_a in genetic_code:
-        #for triple_b in genetic_code:
-            #sa, ra, ca = triple_a
-            #sb, rb, cb = triple_b
-            #if sa != sb:
-                #rate = Q_dense[sa, sb]
-                #print(ca, ra, '->', cb, rb, ':', rate)
-    #print()
-
     # Define an SD decomposition of the default process rate matrix.
     D1 = primary_distn_dense
     S1 = np.dot(Q_dense, np.diag(qtop.pseudo_reciprocal(D1)))
 
     # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
     root = name_to_leaf['Has']
-
-    # print a summary of the tree
-    #degree = tree.degree()
-    #print('number of nodes:', len(tree))
-    #print('number of leaves:', degree.values().count(1))
-    #print('number of branches:', tree.size())
-    #print('total branch length:', tree.size(weight='weight'))
-    #print()
-
 
     # compute the log likelihood, column by column
     # using _mjp_dense (the dense Markov jump process module).
@@ -547,17 +539,16 @@ def get_log_likelihood(
     codon_columns = zip(*codon_sequences)
     # Get the row index of the homo sapiens name.
     reference_codon_row_index = names.index('Has')
-    #print('computing log likelihood...')
-    total_ll_default_cont = 0
-    total_ll_reference_cont = 0
-    total_ll_compound_cont = 0
-    total_ll_default_disc = 0
-    total_ll_reference_disc = 0
-    total_ll_compound_disc = 0
-    cond_adj_total = 0
+    #total_ll_default_cont = 0
+    #total_ll_reference_cont = 0
+    #total_ll_compound_cont = 0
+    #total_ll_default_disc = 0
+    #total_ll_reference_disc = 0
+    total_ll_compound = 0
+    #cond_adj_total = 0
     for i, codon_column in enumerate(codon_columns):
 
-        #print('column', i+1)
+        print('column', i+1)
 
         # Define the column-specific disease states and the benign states.
         pos = i + 1
@@ -593,22 +584,11 @@ def get_log_likelihood(
                 reference_weights[s] = primary_distn[s]
         reference_distn = _util.get_normalized_dict_distn(reference_weights)
 
-        #if i in (158-1, 245-1):
-            #for s, r, c in genetic_code:
-                #if s in reference_distn:
-                    #print(c, r, reference_distn[s], sep='\t')
-            #print('sum of probs:', sum(reference_distn.values()))
-
         # Convert to dense representations of the reference process.
         Q_reference_dense = _density.rate_matrix_to_numpy_array(
                 Q_reference, nodelist=states)
         reference_distn_dense = _density.dict_to_numpy_array(
                 reference_distn, nodelist=states)
-
-        # Define the diagonal associated with switching processes.
-        L = np.array(
-                [rho12 if s in benign_states else 0 for s in range(nstates)],
-                dtype=float)
 
         # Define the compound process.
 
@@ -655,31 +635,45 @@ def get_log_likelihood(
         # Define the t -> P callbacks for the true process
         # or for a time-discretized process, depending on cmdline flags.
 
+        P_cb_default = None
+        P_cb_reference = None
+        P_cb_compound = None
+
         if dt is None:
-            raise argparse.ArgumentError('for now, require dt...')
 
-        # Define an SD decomposition of the reference process.
-        D0 = reference_distn_dense
-        S0 = qtop.dot_square_diag(Q_reference_dense, qtop.pseudo_reciprocal(D0))
+            # Define the diagonal associated with switching processes.
+            L = np.zeros(nstates, dtype=float)
+            for s in range(nstates):
+                if s in benign_states:
+                    L[s] = rho12
 
-        # Define the decompositions.
-        # Define the callbacks that converts branch length to prob matrix.
-        sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
-        A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
-        P_cb_compound_cont = functools.partial(qtop.getp_sylvester_v2,
-                D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
-        A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
-        P_cb_reference_cont = functools.partial(
-                qtop.getp_spectral_v2, D0, A0, lam0, B0)
-        A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
-        P_cb_default_cont = functools.partial(
-                qtop.getp_spectral_v2, D1, A1, lam1, B1)
+            # Define an SD decomposition of the reference process.
+            D0 = reference_distn_dense
+            S0 = qtop.dot_square_diag(
+                    Q_reference_dense, qtop.pseudo_reciprocal(D0))
 
-        f = getp_bigt_approx
+            # Define the decompositions.
+            # Define the callbacks that converts branch length to prob matrix.
+            sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
+            A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
+            P_cb_compound = functools.partial(qtop.getp_sylvester_v2,
+                    D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
+            #A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
+            #P_cb_reference = functools.partial(
+                    #qtop.getp_spectral_v2, D0, A0, lam0, B0)
+            #A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
+            #P_cb_default = functools.partial(
+                    #qtop.getp_spectral_v2, D1, A1, lam1, B1)
 
-        P_cb_compound_disc = functools.partial(f, Q_compound_dense, dt)
-        P_cb_reference_disc = functools.partial(f, Q_reference_dense, dt)
-        P_cb_default_disc = functools.partial(f, Q_dense, dt)
+        else:
+
+            # Define a discretization.
+            f = getp_bigt_approx
+
+            # Define the callbacks.
+            P_cb_compound = functools.partial(f, Q_compound_dense, dt)
+            #P_cb_reference = functools.partial(f, Q_reference_dense, dt)
+            #P_cb_default = functools.partial(f, Q_dense, dt)
 
         # Define the map from node to allowed compound states.
         node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
@@ -689,83 +683,22 @@ def get_log_likelihood(
             codon_state = codon_to_state[codon]
             node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
 
-        site_info_cont = get_codon_site_inferences(
+        site_info = get_codon_site_inferences(
                 tree, node_to_allowed_states, root, original_root,
                 nstates, ncompound,
                 primary_distn_dense,
                 reference_distn_dense,
                 compound_distn_dense,
-                P_cb_default_cont, P_cb_reference_cont, P_cb_compound_cont,
+                P_cb_default, P_cb_reference, P_cb_compound,
                 )
 
-        site_info_disc = get_codon_site_inferences(
-                tree, node_to_allowed_states, root, original_root,
-                nstates, ncompound,
-                primary_distn_dense,
-                reference_distn_dense,
-                compound_distn_dense,
-                P_cb_default_disc, P_cb_reference_disc, P_cb_compound_disc,
-                )
+        ll_default, ll_reference, ll_compound, p_reference = site_info
 
-        (ll_default_cont, ll_reference_cont, ll_compound_cont,
-                p_reference_cont) = site_info_cont
+        total_ll_compound += ll_compound
 
-        (ll_default_disc, ll_reference_disc, ll_compound_disc,
-                p_reference_disc) = site_info_disc
+    print('log likelihood:', total_ll_compound)
 
-        total_ll_default_cont += ll_default_cont
-        total_ll_reference_cont += ll_reference_cont
-        total_ll_compound_cont += ll_compound_cont
-
-        total_ll_default_disc += ll_default_disc
-        total_ll_reference_disc += ll_reference_disc
-        total_ll_compound_disc += ll_compound_disc
-
-        # Define the conditioning adjustment
-        # related to how much we take for granted (prior)
-        # about the set of allowed reference amino acids.
-        #reference_codon = codon_column[reference_codon_row_index]
-        #reference_codon_state = codon_to_state[reference_codon]
-        #cond_adj = 0
-        #cond_adj += np.log(reference_distn_dense[reference_codon_state])
-        #cond_adj -= np.log(primary_distn_dense[reference_codon_state])
-        #cond_adj_total += cond_adj
-
-        #if args.verbose:
-            #print('column', i + 1, 'of', len(codon_columns))
-            #print('reference codon:', reference_codon)
-            #print('lethal_residues:', lethal_residues)
-            #print('ll conditioning adjustment:', cond_adj)
-            #print('continuous time:')
-            #print('  ll_default:', ll_default_cont)
-            #print('  ll_reference:', ll_reference_cont)
-            #print('  ll_compound:', ll_compound_cont)
-            #print('  p_root_ref:', p_reference_cont)
-            #print('discretized time dt=%f:' % args.dt)
-            #print('  ll_default:', ll_default_disc)
-            #print('  ll_reference:', ll_reference_disc)
-            #print('  ll_compound:', ll_compound_disc)
-            #print('  p_root_ref:', p_reference_disc)
-            #print()
-        #else:
-            #print(i+1, ll_compound_disc, sep='\t')
-    
-    # print the total log likelihoods
-    #print('alignment summary:')
-    #print('ll conditioning adjustment total:', cond_adj_total)
-    #print('continuous time:')
-    #print('  ll_default:', total_ll_default_cont)
-    #print('  ll_reference:', total_ll_reference_cont)
-    #print('  ll_compound:', total_ll_compound_cont)
-    #print('discretized time dt=%f:' % args.dt)
-    #print('  ll_default:', total_ll_default_disc)
-    #print('  ll_reference:', total_ll_reference_disc)
-    #print('  ll_compound:', total_ll_compound_disc)
-    #print()
-
-    print('log likelihood (discrete time approx):', total_ll_compound_disc)
-
-    return total_ll_compound_disc
+    return total_ll_compound
 
 
 
