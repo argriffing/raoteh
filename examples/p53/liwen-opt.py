@@ -23,6 +23,7 @@ import pyfelscore
 import create_mg94
 import app_helper
 import qtop
+import jeffopt
 
 from raoteh.sampler import (
         _util,
@@ -40,9 +41,43 @@ BENIGN = 'BENIGN'
 LETHAL = 'LETHAL'
 UNKNOWN = 'UNKNOWN'
 
+
+def pack_params(
+        blen_props, root_depth, 
+        rho12, A, C, G, T, kappa, omega):
+    """
+    A helper function for maximum likelihood search.
+
+    The first two params (blen_props and root_depth) are already
+    in a packed format.
+
+    """
+    if len(blen_props) != 23:
+        raise Exception
+
+    AG = A + G
+    CT = C + T
+    kappa_d10 = kappa / 10
+    omega_d10 = omega / 10
+    v = np.empty(30)
+
+    v[:23] = blen_props
+    v[23] = root_depth
+    v[24] = rho12
+    v[25] = AG
+    v[26] = A / AG
+    v[27] = T / CT
+    v[28] = kappa_d10
+    v[29] = omega_d10
+
+    return v
+
+
 def unpack_params(v, tree, original_root):
     """
     A helper function for maximum likelihood search.
+
+    The tree will be annotated with branch lengths (networkx 'weights').
 
     """
     if len(v) != 30:
@@ -52,12 +87,15 @@ def unpack_params(v, tree, original_root):
     # Unpack the parameters.
     blen_props = v[:23]
     root_depth = v[23]
-    rho12 = v[25]
+    rho12 = v[24]
     prop_AG_of_all = v[25]
     prop_A_of_AG = v[26]
     prop_T_of_CT = v[27]
-    kappa = v[28]
-    omega = v[29]
+    kappa_d10 = v[28]
+    omega_d10 = v[29]
+
+    kappa = kappa_d10 * 10
+    omega = omega_d10 * 10
 
     # Further unpacking of mutational process nucleotide proportions.
     prop_CT_of_all = 1 - prop_AG_of_all
@@ -98,11 +136,6 @@ def unpack_params(v, tree, original_root):
     return rho12, A, C, G, T, kappa, omega
 
 
-def getp_lb_fast(Q, t):
-    P = np.empty_like(Q)
-    pyfelscore.get_lb_transition_matrix(t, Q, P)
-    return P
-
 def getp_approx(Q, t):
     """
     Approximate the transition matrix over a small time interval.
@@ -117,23 +150,6 @@ def getp_bigt_approx(Q, dt, t):
     n = max(1, int(np.ceil(t / dt)))
     psmall = getp_approx(Q, t/n)
     return np.linalg.matrix_power(psmall, n)
-
-def get_tree_refinement(T, root, dt):
-    """
-    @param T: weighted undirected nx graph representing the tree
-    @param dt: requested maximum branchlet length
-    """
-    next_node = max(T.nodes()) + 1
-    T_aug = nx.Graph()
-    for na, nb in nx.bfs_edges(T, root):
-        branch_weight = T[na][nb]['weight']
-        nbranchlets = max(1, int(np.ceil(branch_weight / dt)))
-        branchlet_weight = branch_weight / nbranchlets
-        path = [na] + range(next_node, next_node + nbranchlets - 1) + [nb]
-        for nc, nd in zip(path[:-1], path[1:]):
-            T_aug.add_edge(nc, nd, weight=branchlet_weight)
-        next_node += nbranchlets - 1
-    return T_aug
 
 def get_expm_augmented_tree(T, root, P_callback=None):
     T_aug = nx.Graph()
@@ -374,80 +390,34 @@ def get_codon_site_inferences(
 
 def main(args):
 
-    if args.lb and (args.dt is None):
-        raise argparse.ArgumentError(
-                'lb only makes sense when a dt discretization is specified')
-
-    # Pick some parameters.
-    #info = get_liwen_toy_params()
-    #info = get_jeff_params()
-    #info = get_jeff_params_b()
+    # Use a function to read the tree plus other things we will not use.
     info = get_jeff_params_c()
-    kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
+    kappa, omega, A, C, T, G, rho, tree, original_root, leaf_name_pairs = info
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
+
+    # Define initial parameter guesses.
+    blen_props = np.array([0.5]*23)
+    root_depth = 0.5
+    rho12 = 0.5
+    A = 0.12
+    C = 0.35
+    G = 0.18
+    T = 0.35
+    kappa = 2.0
+    omega = 0.5
+    v_initial = pack_params(
+            blen_props, root_depth,
+            rho12, A, C, G, T, kappa, omega)
 
     # Read the genetic code.
     print('reading the genetic code...')
     with open('universal.code.txt') as fin:
         genetic_code = app_helper.read_genetic_code(fin)
-    codon_to_state = dict((c, s) for s, r, c in genetic_code)
-
-    # Check that the states are in the correct order.
-    nstates = len(genetic_code)
-    if range(nstates) != [s for s, r, c in genetic_code]:
-        raise Exception
-    states = range(nstates)
-
-    # Define the default process codon rate matrix
-    # and distribution and tolerance classes.
-    info = create_mg94.create_mg94(
-            A, C, G, T,
-            kappa, omega, genetic_code,
-            target_expected_rate=1.0)
-    Q, primary_distn, state_to_residue, residue_to_part = info
-    primary_to_part = dict(
-            (i, residue_to_part[r]) for i, r in state_to_residue.items())
-
-    # Define the dense default process codon rate matrix and distribution.
-    Q_dense = _density.rate_matrix_to_numpy_array(
-            Q, nodelist=states)
-    primary_distn_dense = _density.dict_to_numpy_array(
-            primary_distn, nodelist=states)
 
     # Report the genetic code.
     print('genetic code:')
     for triple in genetic_code:
         print(triple)
-    print()
-    print('codon distn:')
-    app_helper.print_codon_distn(codon_to_state, primary_distn)
-    print()
-
-    # Report the default process rate matrix.
-    print('normalized default process rate matrix:')
-    for triple_a in genetic_code:
-        for triple_b in genetic_code:
-            sa, ra, ca = triple_a
-            sb, rb, cb = triple_b
-            if sa != sb:
-                rate = Q_dense[sa, sb]
-                print(ca, ra, '->', cb, rb, ':', rate)
-    print()
-
-    # Define an SD decomposition of the default process rate matrix.
-    D1 = primary_distn_dense
-    S1 = np.dot(Q_dense, np.diag(qtop.pseudo_reciprocal(D1)))
-
-    # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
-    original_root = root
-    root = name_to_leaf['Has']
-
-    # print a summary of the tree
-    degree = tree.degree()
-    print('number of nodes:', len(tree))
-    print('number of leaves:', degree.values().count(1))
-    print('number of branches:', tree.size())
-    print('total branch length:', tree.size(weight='weight'))
     print()
 
     # Read the alignment.
@@ -474,14 +444,110 @@ def main(args):
     pos_to_benign_residues = dict(pos_to_benign_residues)
     pos_to_lethal_residues = dict(pos_to_lethal_residues)
 
+    # This numerical optimization search is designed for robustness.
+    f = functools.partial(get_log_likelihood,
+            genetic_code, tree, original_root, name_to_leaf,
+            name_codons_list,
+            pos_to_benign_residues, pos_to_lethal_residues,
+            args.dt,
+            )
+    v_opt, value_opt = jeffopt.fmax_jeff(f, v_initial)
+
+    # Unpack the optimal parameter values.
+    rho12, A, C, G, T, kappa, omega = unpack_params(
+            v_opt, tree, original_root)
+
+    # Report the optimal parameter values.
+    print('optimal value:', value_opt)
+    print('packed optimal parameter array:', v_opt)
+    print('optimal parameter values:')
+    print('  rho12:', rho12)
+    print('  A:', A)
+    print('  C:', C)
+    print('  G:', G)
+    print('  T:', T)
+    print('  kappa:', kappa)
+    print('  omega:', omega)
+
+
+def get_log_likelihood(
+        genetic_code, tree, original_root, name_to_leaf,
+        name_codons_list,
+        pos_to_benign_residues, pos_to_lethal_residues,
+        dt,
+        v_packed):
+
+    #
+    print('computing log likelihood...')
+
+    # Preprocessing.
+    codon_to_state = dict((c, s) for s, r, c in genetic_code)
+
+    # Check that the states are in the correct order.
+    nstates = len(genetic_code)
+    if range(nstates) != [s for s, r, c in genetic_code]:
+        raise Exception
+    states = range(nstates)
+
+    # Unpack the parameter values.
+    rho12, A, C, G, T, kappa, omega = unpack_params(
+            v_packed, tree, original_root)
+
+    # Define the default process codon rate matrix
+    # and distribution and tolerance classes.
+    info = create_mg94.create_mg94(
+            A, C, G, T,
+            kappa, omega, genetic_code,
+            target_expected_rate=1.0)
+    Q, primary_distn, state_to_residue, residue_to_part = info
+    primary_to_part = dict(
+            (i, residue_to_part[r]) for i, r in state_to_residue.items())
+
+    # Define the dense default process codon rate matrix and distribution.
+    Q_dense = _density.rate_matrix_to_numpy_array(
+            Q, nodelist=states)
+    primary_distn_dense = _density.dict_to_numpy_array(
+            primary_distn, nodelist=states)
+
+    #print('codon distn:')
+    #app_helper.print_codon_distn(codon_to_state, primary_distn)
+    #print()
+
+    # Report the default process rate matrix.
+    #print('normalized default process rate matrix:')
+    #for triple_a in genetic_code:
+        #for triple_b in genetic_code:
+            #sa, ra, ca = triple_a
+            #sb, rb, cb = triple_b
+            #if sa != sb:
+                #rate = Q_dense[sa, sb]
+                #print(ca, ra, '->', cb, rb, ':', rate)
+    #print()
+
+    # Define an SD decomposition of the default process rate matrix.
+    D1 = primary_distn_dense
+    S1 = np.dot(Q_dense, np.diag(qtop.pseudo_reciprocal(D1)))
+
+    # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
+    root = name_to_leaf['Has']
+
+    # print a summary of the tree
+    #degree = tree.degree()
+    #print('number of nodes:', len(tree))
+    #print('number of leaves:', degree.values().count(1))
+    #print('number of branches:', tree.size())
+    #print('total branch length:', tree.size(weight='weight'))
+    #print()
+
+
     # compute the log likelihood, column by column
     # using _mjp_dense (the dense Markov jump process module).
-    print('preparing to compute log likelihood...')
+    #print('preparing to compute log likelihood...')
     names, codon_sequences = zip(*name_codons_list)
     codon_columns = zip(*codon_sequences)
     # Get the row index of the homo sapiens name.
     reference_codon_row_index = names.index('Has')
-    print('computing log likelihood...')
+    #print('computing log likelihood...')
     total_ll_default_cont = 0
     total_ll_reference_cont = 0
     total_ll_compound_cont = 0
@@ -490,6 +556,8 @@ def main(args):
     total_ll_compound_disc = 0
     cond_adj_total = 0
     for i, codon_column in enumerate(codon_columns):
+
+        #print('column', i+1)
 
         # Define the column-specific disease states and the benign states.
         pos = i + 1
@@ -525,11 +593,11 @@ def main(args):
                 reference_weights[s] = primary_distn[s]
         reference_distn = _util.get_normalized_dict_distn(reference_weights)
 
-        if i in (158-1, 245-1):
-            for s, r, c in genetic_code:
-                if s in reference_distn:
-                    print(c, r, reference_distn[s], sep='\t')
-            print('sum of probs:', sum(reference_distn.values()))
+        #if i in (158-1, 245-1):
+            #for s, r, c in genetic_code:
+                #if s in reference_distn:
+                    #print(c, r, reference_distn[s], sep='\t')
+            #print('sum of probs:', sum(reference_distn.values()))
 
         # Convert to dense representations of the reference process.
         Q_reference_dense = _density.rate_matrix_to_numpy_array(
@@ -539,7 +607,7 @@ def main(args):
 
         # Define the diagonal associated with switching processes.
         L = np.array(
-                [rho if s in benign_states else 0 for s in range(nstates)],
+                [rho12 if s in benign_states else 0 for s in range(nstates)],
                 dtype=float)
 
         # Define the compound process.
@@ -567,7 +635,7 @@ def main(args):
         # Add off-block-diagonal entries directed from the reference
         # to the default process.
         for s in range(nstates):
-            Q_compound.add_edge(s, nstates + s, weight=rho)
+            Q_compound.add_edge(s, nstates + s, weight=rho12)
 
         # Define the column-specific initial state distribution.
         compound_weights = {}
@@ -587,7 +655,7 @@ def main(args):
         # Define the t -> P callbacks for the true process
         # or for a time-discretized process, depending on cmdline flags.
 
-        if args.dt is None:
+        if dt is None:
             raise argparse.ArgumentError('for now, require dt...')
 
         # Define an SD decomposition of the reference process.
@@ -607,23 +675,11 @@ def main(args):
         P_cb_default_cont = functools.partial(
                 qtop.getp_spectral_v2, D1, A1, lam1, B1)
 
-        #tree = get_tree_refinement(tree, root, args.dt)
-        #degree = tree.degree()
-        #print('discretized tree summary:')
-        #print('number of nodes:', len(tree))
-        #print('number of leaves:', degree.values().count(1))
-        #print('number of branches:', tree.size())
-        #print('total branch length:', tree.size(weight='weight'))
-        #print()
+        f = getp_bigt_approx
 
-        if args.lb:
-            f = getp_bigt_lb_fast
-        else:
-            f = getp_bigt_approx
-
-        P_cb_compound_disc = functools.partial(f, Q_compound_dense, args.dt)
-        P_cb_reference_disc = functools.partial(f, Q_reference_dense, args.dt)
-        P_cb_default_disc = functools.partial(f, Q_dense, args.dt)
+        P_cb_compound_disc = functools.partial(f, Q_compound_dense, dt)
+        P_cb_reference_disc = functools.partial(f, Q_reference_dense, dt)
+        P_cb_default_disc = functools.partial(f, Q_dense, dt)
 
         # Define the map from node to allowed compound states.
         node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
@@ -668,44 +724,49 @@ def main(args):
         # Define the conditioning adjustment
         # related to how much we take for granted (prior)
         # about the set of allowed reference amino acids.
-        reference_codon = codon_column[reference_codon_row_index]
-        reference_codon_state = codon_to_state[reference_codon]
-        cond_adj = 0
-        cond_adj += np.log(reference_distn_dense[reference_codon_state])
-        cond_adj -= np.log(primary_distn_dense[reference_codon_state])
-        cond_adj_total += cond_adj
+        #reference_codon = codon_column[reference_codon_row_index]
+        #reference_codon_state = codon_to_state[reference_codon]
+        #cond_adj = 0
+        #cond_adj += np.log(reference_distn_dense[reference_codon_state])
+        #cond_adj -= np.log(primary_distn_dense[reference_codon_state])
+        #cond_adj_total += cond_adj
 
-        if args.verbose:
-            print('column', i + 1, 'of', len(codon_columns))
-            print('reference codon:', reference_codon)
-            print('lethal_residues:', lethal_residues)
-            print('ll conditioning adjustment:', cond_adj)
-            print('continuous time:')
-            print('  ll_default:', ll_default_cont)
-            print('  ll_reference:', ll_reference_cont)
-            print('  ll_compound:', ll_compound_cont)
-            print('  p_root_ref:', p_reference_cont)
-            print('discretized time dt=%f:' % args.dt)
-            print('  ll_default:', ll_default_disc)
-            print('  ll_reference:', ll_reference_disc)
-            print('  ll_compound:', ll_compound_disc)
-            print('  p_root_ref:', p_reference_disc)
-            print()
-        else:
-            print(i+1, ll_compound_disc, sep='\t')
+        #if args.verbose:
+            #print('column', i + 1, 'of', len(codon_columns))
+            #print('reference codon:', reference_codon)
+            #print('lethal_residues:', lethal_residues)
+            #print('ll conditioning adjustment:', cond_adj)
+            #print('continuous time:')
+            #print('  ll_default:', ll_default_cont)
+            #print('  ll_reference:', ll_reference_cont)
+            #print('  ll_compound:', ll_compound_cont)
+            #print('  p_root_ref:', p_reference_cont)
+            #print('discretized time dt=%f:' % args.dt)
+            #print('  ll_default:', ll_default_disc)
+            #print('  ll_reference:', ll_reference_disc)
+            #print('  ll_compound:', ll_compound_disc)
+            #print('  p_root_ref:', p_reference_disc)
+            #print()
+        #else:
+            #print(i+1, ll_compound_disc, sep='\t')
     
     # print the total log likelihoods
-    print('alignment summary:')
-    print('ll conditioning adjustment total:', cond_adj_total)
-    print('continuous time:')
-    print('  ll_default:', total_ll_default_cont)
-    print('  ll_reference:', total_ll_reference_cont)
-    print('  ll_compound:', total_ll_compound_cont)
-    print('discretized time dt=%f:' % args.dt)
-    print('  ll_default:', total_ll_default_disc)
-    print('  ll_reference:', total_ll_reference_disc)
-    print('  ll_compound:', total_ll_compound_disc)
-    print()
+    #print('alignment summary:')
+    #print('ll conditioning adjustment total:', cond_adj_total)
+    #print('continuous time:')
+    #print('  ll_default:', total_ll_default_cont)
+    #print('  ll_reference:', total_ll_reference_cont)
+    #print('  ll_compound:', total_ll_compound_cont)
+    #print('discretized time dt=%f:' % args.dt)
+    #print('  ll_default:', total_ll_default_disc)
+    #print('  ll_reference:', total_ll_reference_disc)
+    #print('  ll_compound:', total_ll_compound_disc)
+    #print()
+
+    print('log likelihood (discrete time approx):', total_ll_compound_disc)
+
+    return total_ll_compound_disc
+
 
 
 if __name__ == '__main__':
@@ -715,7 +776,5 @@ if __name__ == '__main__':
             help='csv file with filtered disease data')
     parser.add_argument('--dt', type=float,
             help='discretize the tree with this maximum branchlet length')
-    parser.add_argument('--lb', action='store_true',
-            help='compute a lower bound instead of an approximation')
     main(parser.parse_args())
 

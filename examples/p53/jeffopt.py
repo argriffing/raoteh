@@ -4,9 +4,9 @@ This module has a maximization function implemented by Jeff Thorne.
 The maximization function has been extracted from its context by Liwen Zou.
 Speed is not really important in this function, or rather the slowness
 is dominated by the evaluation of the objective function.
-Test using
-$ python -m unittest jeffopt
+
 """
+from __future__ import division, print_function, absolute_import
 
 import unittest
 
@@ -31,6 +31,7 @@ def _fmax_jeff(f, X, args, i, oldparam, incstep, lasthood):
     @return: objective function value lhood
     """
     while True:
+        print('wat')
         if oldparam + incstep > 1 or oldparam + incstep < 0:
             incstep /= 2
         else:
@@ -98,6 +99,7 @@ def fmax_jeff(
                 # little slope step
                 incstep = stepfrac * (plushood - nowhood) / inc
             lhood = _fmax_jeff(f, X, args, i, oldparam, incstep, lasthood)
+            print(lhood)
     return X, lhood
 
 class NegWrap:
@@ -134,13 +136,13 @@ class TestOpt(unittest.TestCase):
 
     def test_fmax_jeff(self):
         X_guess = np.array([0.123])
-        print 'fmax'
-        print X_guess
-        print fmax_jeff(_ftest, X_guess)
+        print('fmax')
+        print(X_guess)
+        print(fmax_jeff(_ftest, X_guess))
 
     def test_fmin_jeff(self):
         X_guess = np.array([0.123])
-        print 'fmin'
-        print X_guess
-        print fmin_jeff(_ftest, X_guess)
+        print('fmin')
+        print(X_guess)
+        print(fmin_jeff(_ftest, X_guess))
 
