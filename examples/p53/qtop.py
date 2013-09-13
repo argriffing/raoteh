@@ -189,6 +189,70 @@ def decompose_sylvester_v2(S0, S1, D0, D1, L):
 
 
 ###############################################################################
+# Two-stage decomposition helper functions.
+
+def partial_syl_decomp_v3(S1, D1):
+    """
+    Prepare for multiple full sylvester decompositions with const S1 and D1.
+
+    """
+    # Compute an eigendecomposition.
+    D1_sqrt = np.sqrt(D1)
+    H1 = dot_diag_square_diag(D1_sqrt, S1, D1_sqrt)
+    lam1, U1 = scipy.linalg.eigh(H1)
+
+    # Post-processing of the decomposition, for faster reconstruction.
+    A1 = dot_diag_square(pseudo_reciprocal(D1_sqrt), U1)
+    B1 = dot_square_diag(U1.T, D1_sqrt)
+
+    # Compute a Schur decomposition,
+    # preparing to solve a sylvester equation.
+    B = -dot_square_diag(S1, D1)
+    schur_S1, schur_V1 = scipy.linalg.schur(B.T, output='real')
+
+    return A1, B1, lam1, schur_S1, schur_V1
+
+
+def full_syl_decomp_v3(S0, D0, L, A1, B1, lam1, schur_S1, schur_V1):
+    """
+    Full decomposition.
+
+    Reconstruct using reconstruct_sylvester_v2().
+
+    """
+    # compute the first symmetric eigendecomposition
+    D0_sqrt = np.sqrt(D0)
+    H0 = dot_diag_square_diag(D0_sqrt, S0, D0_sqrt) - np.diag(L)
+    lam0, U0 = scipy.linalg.eigh(H0)
+
+    # Post-process the eigendecomposition, for faster reconstruction.
+    A0 = dot_diag_square(pseudo_reciprocal(D0_sqrt), U0)
+    B0 = dot_square_diag(U0.T, D0_sqrt)
+
+    # Compute a Schur decomposition,
+    # preparing to solve a sylvester equation.
+    A = dot_square_diag(S0, D0) - np.diag(L)
+    schur_R0, schur_U0 = scipy.linalg.schur(A, output='real')
+
+    # Solve the sylvester equation.
+    # solve_sylvester(A, B, Q) finds a solution of AX + XB = Q
+    schur_F = dot_square_diag_square(schur_U0.T, L, schur_V1)
+    trsyl, = scipy.linalg.get_lapack_funcs(
+            ('trsyl',), (schur_R0, schur_S1, schur_F))
+    if trsyl is None:
+        raise Exception('lapack fail')
+    schur_Y, schur_scale, schur_info = trsyl(
+            schur_R0, schur_S1, schur_F, tranb='C')
+    schur_Y = schur_scale * schur_Y
+    if schur_info < 0:
+        raise Exception('lapack trsyl fail')
+    XQ = np.dot(np.dot(schur_U0, schur_Y), schur_V1.T)
+
+    # Return the same decomposition as the v2 sylvester decomposition function.
+    return A0, B0, A1, B1, L, lam0, lam1, XQ
+
+
+###############################################################################
 # Reconstruction helper functions.
 
 def reconstruct_spectral(D, U, lam):
@@ -453,6 +517,38 @@ def test_sylvester_v2_round_trip():
     #atol = 0
     assert_allclose(Q, Q_reconstruction, atol=atol)
 
+def test_two_stage_sylvester_round_trip():
+    np.random.seed(1234)
+    n = 5
+    off_states = [0, 2]
+
+    # Construct random matrices.
+    S0, S1, D0, D1, L = random_for_sylvester(n, off_states)
+    assert_SD_reversible_rate_matrix(S0, D0)
+    assert_SD_reversible_rate_matrix(S1, D1)
+
+    # Build the compound switching-model rate matrix.
+    Q00 = np.dot(S0, np.diag(D0)) - np.diag(L)
+    Q01 = np.diag(L)
+    Q10 = np.zeros((n, n))
+    Q11 = np.dot(S1, np.diag(D1))
+    Q = build_block_2x2([[Q00, Q01], [Q10, Q11]])
+
+    # First stage decomposition
+    A1, B1, lam1, schur_S1, schur_V1 = partial_syl_decomp_v3(S1, D1)
+
+    # Second stage decomposition
+    sylvester_decomposition = full_syl_decomp_v3(
+            S0, D0, L, A1, B1, lam1, schur_S1, schur_V1)
+
+    # Check that the reconstruction from the spectral decomposition
+    # gives back the original rate matrix.
+    Q_reconstruction = reconstruct_sylvester_v2(*sylvester_decomposition)
+    atol = 1e-13
+    #atol = 1e-14
+    #atol = 0
+    assert_allclose(Q, Q_reconstruction, atol=atol)
+
 def test_spectral_expm():
     np.random.seed(1234)
     n = 4
@@ -565,6 +661,39 @@ def test_sylvester_v2_expm():
     #atol = 0
     assert_allclose(P, P_sylvester, atol=atol)
 
+def test_two_stage_sylvester_expm():
+    np.random.seed(1234)
+    n = 5
+    off_states = [0, 2]
+    t = 0.23
+
+    # Construct random matrices.
+    S0, S1, D0, D1, L = random_for_sylvester(n, off_states)
+    assert_SD_reversible_rate_matrix(S0, D0)
+    assert_SD_reversible_rate_matrix(S1, D1)
+
+    # Build the compound switching-model rate matrix.
+    Q00 = np.dot(S0, np.diag(D0)) - np.diag(L)
+    Q01 = np.diag(L)
+    Q10 = np.zeros((n, n))
+    Q11 = np.dot(S1, np.diag(D1))
+    Q = build_block_2x2([[Q00, Q01], [Q10, Q11]])
+
+    # First stage decomposition
+    A1, B1, lam1, schur_S1, schur_V1 = partial_syl_decomp_v3(S1, D1)
+
+    # Second stage decomposition
+    A0, B0, A1, B1, L, lam0, lam1, XQ = full_syl_decomp_v3(
+            S0, D0, L, A1, B1, lam1, schur_S1, schur_V1)
+
+    # Compute the transition probability matrix in two ways.
+    P = getp_rate_matrix(Q, t)
+    P_sylvester = getp_sylvester_v2(D0, A0, B0, A1, B1, L, lam0, lam1, XQ, t)
+
+    # Check that the transition probability matrices are close.
+    atol = 1e-14
+    #atol = 0
+    assert_allclose(P, P_sylvester, atol=atol)
 
 if __name__ == '__main__':
     run_module_suite()
