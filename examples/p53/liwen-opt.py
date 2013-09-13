@@ -412,15 +412,27 @@ def main(args):
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
 
     # Define initial parameter guesses.
-    blen_props = np.array([0.5]*23)
-    root_depth = 0.5
-    rho12 = 0.5
-    A = 0.12
-    C = 0.35
-    G = 0.18
-    T = 0.35
-    kappa = 2.0
-    omega = 0.5
+    #blen_props = np.array([0.5]*23)
+    #root_depth = 0.5
+    #rho12 = 0.5
+    #A = 0.12
+    #C = 0.35
+    #G = 0.18
+    #T = 0.35
+    #kappa = 2.0
+    #omega = 0.5
+
+    # Define initial parameter guesses.
+    blen_props = np.array([0.4]*23)
+    root_depth = 0.3
+    rho12 = 0.2
+    A = 0.1
+    C = 0.2
+    G = 0.3
+    T = 0.4
+    kappa = 1.1
+    omega = 0.1
+
     v_initial = pack_params(
             blen_props, root_depth,
             rho12, A, C, G, T, kappa, omega)
