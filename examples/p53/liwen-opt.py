@@ -13,6 +13,7 @@ from StringIO import StringIO
 from collections import defaultdict
 import functools
 import argparse
+import time
 
 import networkx as nx
 import numpy as np
@@ -529,6 +530,11 @@ def get_log_likelihood(
     D1 = primary_distn_dense
     S1 = np.dot(Q_dense, np.diag(qtop.pseudo_reciprocal(D1)))
 
+    # Unless we are using a discretized approximation,
+    # do the first stage of the decomposition for solving the sylvester eqn.
+    if dt is None:
+        A1, B1, lam1, schur_S1, schur_V1 = qtop.partial_syl_decomp_v3(S1, D1)
+
     # Change the root to 'Has' which is typoed from 'H'omo 'sa'piens.
     root = name_to_leaf['Has']
 
@@ -546,9 +552,8 @@ def get_log_likelihood(
     #total_ll_reference_disc = 0
     total_ll_compound = 0
     #cond_adj_total = 0
+    tm_initial = time.time()
     for i, codon_column in enumerate(codon_columns):
-
-        print('column', i+1)
 
         # Define the column-specific disease states and the benign states.
         pos = i + 1
@@ -641,29 +646,40 @@ def get_log_likelihood(
 
         if dt is None:
 
-            # Define the diagonal associated with switching processes.
-            L = np.zeros(nstates, dtype=float)
-            for s in range(nstates):
-                if s in benign_states:
-                    L[s] = rho12
+            if lethal_residues:
 
-            # Define an SD decomposition of the reference process.
-            D0 = reference_distn_dense
-            S0 = qtop.dot_square_diag(
-                    Q_reference_dense, qtop.pseudo_reciprocal(D0))
+                # Define the diagonal associated with switching processes.
+                L = np.zeros(nstates, dtype=float)
+                for s in range(nstates):
+                    if s in benign_states:
+                        L[s] = rho12
 
-            # Define the decompositions.
-            # Define the callbacks that converts branch length to prob matrix.
-            sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
-            A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
-            P_cb_compound = functools.partial(qtop.getp_sylvester_v2,
-                    D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
-            #A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
-            #P_cb_reference = functools.partial(
-                    #qtop.getp_spectral_v2, D0, A0, lam0, B0)
-            #A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
-            #P_cb_default = functools.partial(
-                    #qtop.getp_spectral_v2, D1, A1, lam1, B1)
+                # Define an SD decomposition of the reference process.
+                D0 = reference_distn_dense
+                S0 = qtop.dot_square_diag(
+                        Q_reference_dense, qtop.pseudo_reciprocal(D0))
+
+                # Second stage decomposition.
+                A0, B0, A1, B1, L, lam0, lam1, XQ = qtop.full_syl_decomp_v3(
+                        S0, D0, L, A1, B1, lam1, schur_S1, schur_V1)
+
+                # Define the callbacks that converts branch lengths
+                # to probability matrices.
+                P_cb_compound = functools.partial(qtop.getp_sylvester_v2,
+                        D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
+                #A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
+                #P_cb_reference = functools.partial(
+                        #qtop.getp_spectral_v2, D0, A0, lam0, B0)
+                #A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
+                #P_cb_default = functools.partial(
+                        #qtop.getp_spectral_v2, D1, A1, lam1, B1)
+
+            else:
+
+                # In this case, we can use the default process
+                # instead of the compound process.
+                P_cb_default = functools.partial(qtop.getp_spectral_v2,
+                        D1, A1, lam1, B1)
 
         else:
 
@@ -694,9 +710,14 @@ def get_log_likelihood(
 
         ll_default, ll_reference, ll_compound, p_reference = site_info
 
-        total_ll_compound += ll_compound
+        if lethal_residues:
+            total_ll_compound += ll_compound
+        else:
+            total_ll_compound += ll_default
 
-    print('log likelihood:', total_ll_compound)
+    tm_final = time.time()
+    print('alignment log likelihood:', total_ll_compound)
+    print('seconds to compute log likelihood:', tm_final - tm_initial)
 
     return total_ll_compound
 

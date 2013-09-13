@@ -88,8 +88,18 @@ def getp_spectral_v2(D, A, lam, B, t):
 ###############################################################################
 # Miscellaneous helper functions.
 
-def build_block_2x2(A):
+def build_block_2x2_old(A):
     return np.vstack([np.hstack(A[0]), np.hstack(A[1])])
+
+def build_block_2x2(A):
+    (M11, M12), (M21, M22) = A
+    n = M11.shape[0]
+    M = np.empty((2*n, 2*n))
+    M[:n, :n] = M11
+    M[:n, n:] = M12
+    M[n:, :n] = M21
+    M[n:, n:] = M22
+    return M
 
 def pseudo_reciprocal(v):
     with np.errstate(divide='ignore'):
