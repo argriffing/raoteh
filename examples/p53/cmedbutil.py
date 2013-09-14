@@ -87,8 +87,11 @@ def assert_stochastic_vector(v):
                 'entries of a finite distribution vector should sum to 1')
 
 def assert_rate_matrix(Q):
-    if not np.allclose(np.sum(Q, axis=1), 0):
-        raise Exception('expected rate matrix rows to sum to zero')
+    row_sums = np.sum(Q, axis=1)
+    if not np.allclose(row_sums, 0):
+        raise Exception(
+                'expected rate matrix rows to sum to zero '
+                'min: %s  max: %s' % (min(row_sums), max(row_sums)))
     if np.any(np.diag(Q) > 0):
         raise Exception('expected rate matrix diagonals to be non-positive')
     if np.any(Q - np.diag(np.diag(Q)) < 0):

@@ -18,7 +18,7 @@ import time
 import networkx as nx
 import numpy as np
 import scipy.linalg
-from scipy import special
+from scipy import special, optimize
 import pyfelscore
 
 import create_mg94
@@ -479,7 +479,14 @@ def main(args):
             pos_to_benign_residues, pos_to_lethal_residues,
             args.dt,
             )
-    v_opt, value_opt = jeffopt.fmax_jeff(f, v_initial)
+    #v_opt, value_opt = jeffopt.fmax_jeff(f, v_initial)
+    def neg_f(*args):
+        return -f(*args)
+    bounds = [(0.0, 1.0)]*30
+    bounds[-1] = (0.0, 10.0)
+    bounds[-2] = (0.0, 10.0)
+    v_opt = optimize.fmin_l_bfgs_b(
+            neg_f, v_initial, approx_grad=True, bounds=bounds)
 
     # Unpack the optimal parameter values.
     rho12, A, C, G, T, kappa, omega = unpack_params(
