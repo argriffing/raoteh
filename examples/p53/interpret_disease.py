@@ -55,7 +55,7 @@ def open_in(filename):
     if filename == '-':
         yield sys.stdin
     else:
-        with open(filename, 'r') as fin:
+        with open(filename, 'rU') as fin:
             yield fin
 
 @contextlib.contextmanager
@@ -93,12 +93,69 @@ def read_genetic_code(fin):
                 genetic_code.append(triple)
     return genetic_code
 
-def read_disease_data(fin):
+def read_raw_disease_data(fin, genetic_code):
+    """
+    Read disease data that comes directly from the p53 website.
+
+    """
+    states, residues, codons = zip(*genetic_code)
+    codons = set(codons)
+    outrows = []
+
+    codon_offset_index = 3
+    wild_codon_index = 4
+    mutant_codon_index = 5
+    wild_aa_index = 6
+    mutant_aa_index = 7
+
+    reader = csv.reader(fin, dialect=csv.excel_tab)
+    headers = reader.next()
+    for row_index, row in enumerate(reader):
+
+        # filter out mutations that are clearly not amino acid changes
+        wild_aa = row[wild_aa_index]
+        mutant_aa = row[mutant_aa_index]
+        if mutant_aa in ('Stop', 'Fs.'):
+            continue
+        if wild_aa == mutant_aa:
+            continue
+
+        # get the wild codon state
+        wild_codon = row[wild_codon_index]
+        if wild_codon not in codons:
+            continue
+
+        # attempt to add the mutation to the list
+        mutant_codon = row[mutant_codon_index]
+        if mutant_codon not in codons:
+            continue
+
+        codon_offset = int(row[codon_offset_index])
+
+        # put the row into disease data output format
+        ntpos = -1
+        codonpos = codon_offset
+        exon = -1
+        wcodon = wild_codon
+        mcodon = mutant_codon
+        wres = wild_aa.upper()
+        mres = mutant_aa.upper()
+        outrow = (ntpos, codonpos, exon, wcodon, mcodon, wres, mres)
+        outrows.append(outrow)
+
+    return outrows
+
+
+def read_pre_processed_disease_data(fin):
+    """
+    Read disease data which has been pre-processed.
+
+    """
     # NOTE nt_pos and codon_pos begin at 1 not 0
     # nt_pos, codon_pos, exon(???), wild_codon, mut_codon, wild_res, mut_res
     # 467 135 5 TGC TAC Cys Tyr
     rows = []
-    for line in fin:
+    for line_index, line in enumerate(fin):
         line = line.strip()
         ntpos, codonpos, exon, wcodon, mcodon, wres, mres  = line.split()
         ntpos = int(ntpos)
@@ -238,11 +295,10 @@ def interpret_disease_data(
 
 
 def main(args):
-    args.interpretation
-    with open_in(args.infile) as fin:
-        disease_data = read_disease_data(fin)
     with open(args.code, 'r') as fin:
         code = read_genetic_code(fin)
+    with open_in(args.infile) as fin:
+        disease_data = read_raw_disease_data(fin, code)
     with open(args.sequence, 'r') as fin:
         reference_nucleotides = ''.join(fin.read().split()).upper()
         n = len(reference_nucleotides)
