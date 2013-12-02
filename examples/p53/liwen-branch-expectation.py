@@ -171,37 +171,17 @@ def get_jeff_params_e():
 def get_codon_site_inferences(
         tree, node_to_allowed_states, root, original_root,
         nstates, ncompound,
-        default_root_distn, reference_root_distn, compound_root_distn,
-        P_cb_default, P_cb_reference, P_cb_compound,
+        compound_root_distn,
+        P_cb_compound,
         ):
     """
-    Return posterior info for a single codon site under various models.
+    Return posterior info for a single codon site.
 
     This info includes log likelihoods and also the posterior
     probability that the original root of the tree is in the reference process
     (as opposed to the default process).
 
     """
-    # Get the log likelihood for the default process.
-    try:
-        likelihood = get_likelihood(
-                tree, node_to_allowed_states, root, nstates,
-                root_distn=default_root_distn,
-                P_callback=P_cb_default)
-        ll_default = np.log(likelihood)
-    except StructuralZeroProb as e:
-        ll_default = -np.inf
-
-    # Get the log likelihood for the reference process.
-    try:
-        likelihood = get_likelihood(
-                tree, node_to_allowed_states, root, nstates,
-                root_distn=reference_root_distn,
-                P_callback=P_cb_reference)
-        ll_reference = np.log(likelihood)
-    except StructuralZeroProb as e:
-        ll_reference = -np.inf
-
     # Get the log likelihood for the compound process.
     # Also get the distributions at each node,
     # and reduce this to the probability that the original root
@@ -220,8 +200,7 @@ def get_codon_site_inferences(
     except StructuralZeroProb as e:
         ll_compound = -np.inf
 
-    return ll_default, ll_reference, ll_compound, p_reference
-
+    return ll_compound, p_reference
 
 
 def main(args):
@@ -327,11 +306,7 @@ def main(args):
     # Get the row index of the homo sapiens name.
     reference_codon_row_index = names.index('Has')
     print('computing log likelihood...')
-    total_ll_default_cont = 0
-    total_ll_reference_cont = 0
     total_ll_compound_cont = 0
-    total_ll_default_disc = 0
-    total_ll_reference_disc = 0
     total_ll_compound_disc = 0
     cond_adj_total = 0
     for i, codon_column in enumerate(codon_columns):
@@ -466,33 +441,21 @@ def main(args):
         site_info_cont = get_codon_site_inferences(
                 tree, node_to_allowed_states, root, original_root,
                 nstates, ncompound,
-                primary_distn_dense,
-                reference_distn_dense,
                 compound_distn_dense,
-                P_cb_default_cont, P_cb_reference_cont, P_cb_compound_cont,
+                P_cb_compound_cont,
                 )
 
         site_info_disc = get_codon_site_inferences(
                 tree, node_to_allowed_states, root, original_root,
                 nstates, ncompound,
-                primary_distn_dense,
-                reference_distn_dense,
                 compound_distn_dense,
-                P_cb_default_disc, P_cb_reference_disc, P_cb_compound_disc,
+                P_cb_compound_disc,
                 )
 
-        (ll_default_cont, ll_reference_cont, ll_compound_cont,
-                p_reference_cont) = site_info_cont
+        ll_compound_cont, p_reference_cont = site_info_cont
+        ll_compound_disc, p_reference_disc = site_info_disc
 
-        (ll_default_disc, ll_reference_disc, ll_compound_disc,
-                p_reference_disc) = site_info_disc
-
-        total_ll_default_cont += ll_default_cont
-        total_ll_reference_cont += ll_reference_cont
         total_ll_compound_cont += ll_compound_cont
-
-        total_ll_default_disc += ll_default_disc
-        total_ll_reference_disc += ll_reference_disc
         total_ll_compound_disc += ll_compound_disc
 
         # Define the conditioning adjustment
@@ -511,13 +474,9 @@ def main(args):
             print('lethal_residues:', lethal_residues)
             print('ll conditioning adjustment:', cond_adj)
             print('continuous time:')
-            print('  ll_default:', ll_default_cont)
-            print('  ll_reference:', ll_reference_cont)
             print('  ll_compound:', ll_compound_cont)
             print('  p_root_ref:', p_reference_cont)
             print('discretized time dt=%f:' % args.dt)
-            print('  ll_default:', ll_default_disc)
-            print('  ll_reference:', ll_reference_disc)
             print('  ll_compound:', ll_compound_disc)
             print('  p_root_ref:', p_reference_disc)
             print()
@@ -528,12 +487,8 @@ def main(args):
     print('alignment summary:')
     print('ll conditioning adjustment total:', cond_adj_total)
     print('continuous time:')
-    print('  ll_default:', total_ll_default_cont)
-    print('  ll_reference:', total_ll_reference_cont)
     print('  ll_compound:', total_ll_compound_cont)
     print('discretized time dt=%f:' % args.dt)
-    print('  ll_default:', total_ll_default_disc)
-    print('  ll_reference:', total_ll_reference_disc)
     print('  ll_compound:', total_ll_compound_disc)
     print()
 
@@ -544,7 +499,6 @@ if __name__ == '__main__':
     parser.add_argument('--disease', required=True,
             help='csv file with filtered disease data')
     parser.add_argument('--dt', type=float,
-            required=True, # for now require dt
             help='discretize the tree with this maximum branchlet length')
     main(parser.parse_args())
 
