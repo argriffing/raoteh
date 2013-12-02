@@ -41,6 +41,28 @@ def read_disease_data(fin):
     return dict(column_to_disease_residues)
 
 
+def read_interpreted_disease_data(fin):
+    """
+    Read some filtered disease data.
+
+    The interpretation filters the p53 disease data
+    by assigning a disease state to each of the 20 amino acids,
+    for each codon position in the reference (human) p53 sequence.
+    The possible disease states are BENIGN, LETHAL, or UNKNOWN.
+
+    """
+    interpreted_disease_data = []
+    lines = fin.readlines()[1:]
+    for line in lines:
+        if not line.strip():
+            continue
+        codon_pos, aa_residue, status = line.split()
+        codon_pos = int(codon_pos)
+        row = (codon_pos, aa_residue, status)
+        interpreted_disease_data.append(row)
+    return interpreted_disease_data
+
+
 def gen_paragraphs(lines):
     para = []
     for line in lines:

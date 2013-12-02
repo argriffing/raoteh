@@ -168,28 +168,6 @@ def get_jeff_params_e():
             tree, root, leaf_name_pairs)
 
 
-def read_interpreted_disease_data(fin):
-    """
-    Read some filtered disease data.
-
-    The interpretation filters the p53 disease data
-    by assigning a disease state to each of the 20 amino acids,
-    for each codon position in the reference (human) p53 sequence.
-    The possible disease states are BENIGN, LETHAL, or UNKNOWN.
-
-    """
-    interpreted_disease_data = []
-    lines = fin.readlines()[1:]
-    for line in lines:
-        if not line.strip():
-            continue
-        codon_pos, aa_residue, status = line.split()
-        codon_pos = int(codon_pos)
-        row = (codon_pos, aa_residue, status)
-        interpreted_disease_data.append(row)
-    return interpreted_disease_data
-
-
 def get_codon_site_inferences(
         tree, node_to_allowed_states, root, original_root,
         nstates, ncompound,
@@ -324,7 +302,7 @@ def main(args):
 
     # Read the interpreted disease data.
     with open(args.disease) as fin:
-        interpreted_disease_data = read_interpreted_disease_data(fin)
+        interpreted_disease_data = app_halper.read_interpreted_disease_data(fin)
     pos_to_benign_residues = defaultdict(set)
     pos_to_lethal_residues = defaultdict(set)
     for pos, residue, status in interpreted_disease_data:
