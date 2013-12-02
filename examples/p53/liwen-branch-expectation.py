@@ -67,9 +67,7 @@ import argparse
 
 import networkx as nx
 import numpy as np
-import scipy.linalg
 from scipy import special
-import pyfelscore
 
 import create_mg94
 import app_helper
@@ -250,10 +248,6 @@ def get_codon_site_inferences(
 
 
 def main(args):
-
-    if args.lb and (args.dt is None):
-        raise argparse.ArgumentError(
-                'lb only makes sense when a dt discretization is specified')
 
     # Pick some parameters.
     info = get_jeff_params_e()
