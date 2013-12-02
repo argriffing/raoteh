@@ -81,6 +81,12 @@ BENIGN = 'BENIGN'
 LETHAL = 'LETHAL'
 UNKNOWN = 'UNKNOWN'
 
+def sorted_pair(a, b):
+    """
+    Utility function.
+    """
+    return tuple(sorted((a, b)))
+
 def getp_approx(Q, t):
     """
     Approximate the transition matrix over a small time interval.
@@ -300,6 +306,42 @@ def accumulate_codon_site_summary(
     # Add the site log likelihood into the bucket.
     builder.add_site_log_likelihood(site, ll)
 
+def rsummary(tree, leaf_to_name, edge_to_prob_sum, v, parent):
+    """
+    Parameters
+    ----------
+    tree : networkx tree
+        original tree
+    leaf_to_name : map from int to str
+        maps a leaf node to its name
+    edge_to_prob_sum : map from sorted node pair to float
+        posterior probability sum for each node
+    v : int
+        root of the subtree under current consideration
+    parent : int or None, optional
+        parent node of the root of the current subtree
+
+    Returns
+    -------
+    s : str
+        newick-like string
+
+    """
+    prob_sum = None
+    if parent is not None:
+        prob_sum = edge_to_prob_sum[sorted_pair(v, parent)]
+    children = [w for w in tree[v] if w != parent]
+    if children:
+        summaries = [rsummary(
+            tree, leaf_to_name, edge_to_prob_sum, w, v) for w in children]
+        s = '(' + ', '.join(summaries) + ')'
+    else:
+        s = leaf_to_name[v]
+    if parent is None:
+        return s + ';'
+    else:
+        return s + ':' + str(prob_sum)
+
 
 def main(args):
 
@@ -515,7 +557,7 @@ def main(args):
         # NOTE only the continuous non-discretized time model is used.
         P_cb_compound = P_cb_compound_cont
         accumulate_codon_site_summary(
-                tree, node_to_allowed_states, root,
+                tree, node_to_allowed_states, original_root,
                 nstates, ncompound,
                 compound_distn_dense, P_cb_compound,
                 pos, builder)
@@ -523,16 +565,25 @@ def main(args):
         print(pos)
         sys.stdout.flush()
 
-    # Extract the information from the builder.
-    print('edge summary bucket:')
-    for row in builder.edge_bucket:
-        print(row)
-    print('node summary bucket:')
-    for row in builder.node_bucket:
-        print(row)
-    print('log likelihood summary bucket:')
-    for row in builder.ll_bucket:
-        print(row)
+    # Optionally report information from the builder.
+    if args.verbose:
+        print('edge summary bucket:')
+        for row in builder.edge_bucket:
+            print(row)
+        print('node summary bucket:')
+        for row in builder.node_bucket:
+            print(row)
+        print('log likelihood summary bucket:')
+        for row in builder.ll_bucket:
+            print(row)
+
+    # Write the newick-like string with the branch summary.
+    leaf_to_name = dict(leaf_name_pairs)
+    edge_to_prob_sum = defaultdict(float)
+    for site, na, nb, edge_switch_prob in builder.edge_bucket:
+        edge_to_prob_sum[sorted_pair(na, nb)] += edge_switch_prob
+    s = rsummary(tree, leaf_to_name, edge_to_prob_sum, original_root, None)
+    print(s)
 
 
 if __name__ == '__main__':
