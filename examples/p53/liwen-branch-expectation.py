@@ -64,6 +64,7 @@ from StringIO import StringIO
 from collections import defaultdict
 import functools
 import argparse
+import sys
 
 import networkx as nx
 import numpy as np
@@ -168,39 +169,173 @@ def get_jeff_params_e():
             tree, root, leaf_name_pairs)
 
 
-def get_codon_site_inferences(
-        tree, node_to_allowed_states, root, original_root,
+def get_joint_endpoint_distn_tree(
+        T, node_to_allowed_states, root, nstates,
+        root_distn=None, P_callback=None):
+    """
+
+    Parameters
+    ----------
+    T : weighted undirected acyclic networkx graph
+        Edges of this tree are annotated with weights.
+    node_to_allowed_states : dict
+        Maps each node to a set of allowed states.
+    root : integer
+        Root node.
+    nstates : integer
+        Number of states.
+    root_distn : 1d ndarray, optional
+        Distribution over states at the root.
+    P_callback : callback function
+        Computes a transition matrix given an amount of elapsed time.
+
+    Returns
+    -------
+    T_joint : tree as a networkx graph
+        Each edge is annotated with joint endpoint
+        probability distribution J.
+
+    """
+    # Do some input validation for this restricted variant.
+    if root not in T:
+        raise ValueError('the specified root is not in the tree')
+
+    # Construct the augmented tree by annotating each edge
+    # with the appropriate state transition probability matrix.
+    T_aug = get_expm_augmented_tree(T, root, P_callback)
+
+    # Construct the node to pmap dict.
+    node_to_pmap = _mcy_dense.get_node_to_pmap(T_aug, root, nstates,
+            node_to_allowed_states=node_to_allowed_states)
+
+    # Get the marginal state distribution for each node in the tree,
+    # conditional on the known states.
+    node_to_distn = _mc0_dense.get_node_to_distn(
+            T_aug, root, node_to_pmap, nstates,
+            root_distn=root_distn)
+
+    # For each edge in the tree, get the joint distribution
+    # over the states at the endpoints of the edge.
+    T_joint = _mc0_dense.get_joint_endpoint_distn(
+            T_aug, root, node_to_pmap, node_to_distn, nstates)
+
+    return T_joint
+
+
+    #XXX
+    T_aug = nx.Graph()
+    for na, nb in nx.bfs_edges(T, root):
+        pmap = node_to_pmap[nb]
+        P = T[na][nb]['P']
+        _density.check_square_dense(P)
+        J = np.zeros_like(P)
+        distn = node_to_distn[na]
+        if distn.shape[0] != nstates:
+            raise Exception('nstates inconsistency')
+        for sa in range(nstates):
+            pa = distn[sa]
+            if pa:
+
+                # Construct the conditional transition probabilities.
+                sb_weights = P[sa] * pmap
+                sb_distn = get_normalized_ndarray_distn(sb_weights)
+
+                # Add to the joint distn.
+                for sb, pb in enumerate(sb_distn):
+                    J[sa, sb] = pa * pb
+
+        # Add the joint distribution.
+        T_aug.add_edge(na, nb, J=J)
+
+    # Return the augmented tree.
+    return T_aug
+
+
+class Builder(object):
+    def __init__(self):
+        self.edge_bucket = []
+        self.node_bucket = []
+        self.ll_bucket = []
+
+    def add_site_log_likelihood(self, site, ll):
+        self.ll_bucket.append((site, ll))
+
+    def add_edge_summary(self, site, na, nb, switch_prob):
+        """
+        Parameters
+        ----------
+        site : int
+            codon site
+        na : int
+            first endpoint node
+        nb : int
+            second endpoint node
+        switch_prob : float
+            Posterior probability that a process switch
+            has occurred along the edge.
+        """
+        self.edge_bucket.append((site, na, nb, switch_prob))
+
+    def add_node_summary(self, site, node, reference_process_prob):
+        """
+        Parameters
+        ----------
+        site : int
+            codon site
+        node : int
+            node
+        reference_process_prob : float
+            Posterior probability that the state of the node
+            is in the reference process.
+
+        """
+        self.node_bucket.append((site, node, reference_process_prob))
+
+
+def accumulate_codon_site_summary(
+        tree, node_to_allowed_states, root,
         nstates, ncompound,
-        compound_root_distn,
-        P_cb_compound,
+        compound_root_distn, P_cb_compound,
+        site, builder,
         ):
     """
-    Return posterior info for a single codon site.
-
-    This info includes log likelihoods and also the posterior
-    probability that the original root of the tree is in the reference process
-    (as opposed to the default process).
+    Compute posterior info for a single codon site.
 
     """
-    # Get the log likelihood for the compound process.
-    # Also get the distributions at each node,
-    # and reduce this to the probability that the original root
-    # is in the reference process.
-    try:
-        likelihood = get_likelihood(
-                tree, node_to_allowed_states, root, ncompound,
-                root_distn=compound_root_distn,
-                P_callback=P_cb_compound)
-        ll_compound = np.log(likelihood)
-        node_to_distn = get_node_to_distn(
-                tree, node_to_allowed_states, root, ncompound,
-                root_distn=compound_root_distn,
-                P_callback=P_cb_compound)
-        p_reference = node_to_distn[original_root][:nstates].sum()
-    except StructuralZeroProb as e:
-        ll_compound = -np.inf
+    # Construct a tree whose branches are annotated
+    # with joint endpoint distributions.
+    T_joint = get_joint_endpoint_distn_tree(
+            tree, node_to_allowed_states, root, ncompound,
+            root_distn=compound_root_distn,
+            P_callback=P_cb_compound)
 
-    return ll_compound, p_reference
+    # For each edge,
+    # compute the probability that a switch occurred along the edge.
+    for na, nb in nx.bfs_edges(T_joint, root):
+        J = T_joint[na][nb]['J']
+        switch_prob = J[:nstates, nstates:].sum()
+        builder.add_edge_summary(site, na, nb, switch_prob)
+
+    # Get the state distribution at each node.
+    node_to_distn = get_node_to_distn(
+            tree, node_to_allowed_states, root, ncompound,
+            root_distn=compound_root_distn,
+            P_callback=P_cb_compound)
+
+    # For each node add the summary into the bucket.
+    for node, node_compound_distn in node_to_distn.items():
+        reference_process_prob = node_compound_distn[:nstates].sum()
+        builder.add_node_summary(site, node, reference_process_prob)
+
+    # Compute the log likelihood for the site.
+    likelihood = get_likelihood(
+            tree, node_to_allowed_states, root, ncompound,
+            root_distn=compound_root_distn,
+            P_callback=P_cb_compound)
+    ll = np.log(likelihood)
+
+    # Add the site log likelihood into the bucket.
+    builder.add_site_log_likelihood(site, ll)
 
 
 def main(args):
@@ -298,6 +433,7 @@ def main(args):
     total_ll_compound_cont = 0
     total_ll_compound_disc = 0
     cond_adj_total = 0
+    builder = Builder()
     for i, codon_column in enumerate(codon_columns):
 
         # Define the column-specific disease states and the benign states.
@@ -412,59 +548,28 @@ def main(args):
             codon_state = codon_to_state[codon]
             node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
 
-        site_info_cont = get_codon_site_inferences(
-                tree, node_to_allowed_states, root, original_root,
+        # Accumulate posterior information about the site.
+        # NOTE only the continuous non-discretized time model is used.
+        P_cb_compound = P_cb_compound_cont
+        accumulate_codon_site_summary(
+                tree, node_to_allowed_states, root,
                 nstates, ncompound,
-                compound_distn_dense,
-                P_cb_compound_cont,
-                )
+                compound_distn_dense, P_cb_compound,
+                pos, builder)
 
-        site_info_disc = get_codon_site_inferences(
-                tree, node_to_allowed_states, root, original_root,
-                nstates, ncompound,
-                compound_distn_dense,
-                P_cb_compound_disc,
-                )
+        print(pos)
+        sys.stdout.flush()
 
-        ll_compound_cont, p_reference_cont = site_info_cont
-        ll_compound_disc, p_reference_disc = site_info_disc
-
-        total_ll_compound_cont += ll_compound_cont
-        total_ll_compound_disc += ll_compound_disc
-
-        # Define the conditioning adjustment
-        # related to how much we take for granted (prior)
-        # about the set of allowed reference amino acids.
-        reference_codon = codon_column[reference_codon_row_index]
-        reference_codon_state = codon_to_state[reference_codon]
-        cond_adj = 0
-        cond_adj += np.log(reference_distn_dense[reference_codon_state])
-        cond_adj -= np.log(primary_distn_dense[reference_codon_state])
-        cond_adj_total += cond_adj
-
-        if args.verbose:
-            print('column', i + 1, 'of', len(codon_columns))
-            print('reference codon:', reference_codon)
-            print('lethal_residues:', lethal_residues)
-            print('ll conditioning adjustment:', cond_adj)
-            print('continuous time:')
-            print('  ll_compound:', ll_compound_cont)
-            print('  p_root_ref:', p_reference_cont)
-            print('discretized time dt=%f:' % args.dt)
-            print('  ll_compound:', ll_compound_disc)
-            print('  p_root_ref:', p_reference_disc)
-            print()
-        else:
-            print(i+1, ll_compound_disc, sep='\t')
-    
-    # print the total log likelihoods
-    print('alignment summary:')
-    print('ll conditioning adjustment total:', cond_adj_total)
-    print('continuous time:')
-    print('  ll_compound:', total_ll_compound_cont)
-    print('discretized time dt=%f:' % args.dt)
-    print('  ll_compound:', total_ll_compound_disc)
-    print()
+    # Extract the information from the builder.
+    print('edge summary bucket:')
+    for row in builder.edge_bucket:
+        print(row)
+    print('node summary bucket:')
+    for row in builder.node_bucket:
+        print(row)
+    print('log likelihood summary bucket:')
+    for row in builder.ll_bucket:
+        print(row)
 
 
 if __name__ == '__main__':
