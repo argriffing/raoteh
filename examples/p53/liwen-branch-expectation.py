@@ -56,10 +56,6 @@ and the site-specific switching probability on each branch.
 """
 from __future__ import division, print_function, absolute_import
 
-#XXX
-#TODO everything after here has just been copypasted
-#XXX
-
 from StringIO import StringIO
 from collections import defaultdict
 import functools
@@ -79,10 +75,6 @@ from raoteh.sampler import (
         _mjp_dense,
         _mcy_dense,
         _mc0_dense,
-        )
-
-from raoteh.sampler._util import (
-        StructuralZeroProb,
         )
 
 BENIGN = 'BENIGN'
