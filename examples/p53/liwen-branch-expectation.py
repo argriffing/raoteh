@@ -67,7 +67,6 @@ import argparse
 
 import networkx as nx
 import numpy as np
-from scipy import special
 
 import create_mg94
 import app_helper
