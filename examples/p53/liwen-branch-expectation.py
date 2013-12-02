@@ -91,60 +91,6 @@ BENIGN = 'BENIGN'
 LETHAL = 'LETHAL'
 UNKNOWN = 'UNKNOWN'
 
-def getp_lb_fast(Q, t):
-    P = np.empty_like(Q)
-    pyfelscore.get_lb_transition_matrix(t, Q, P)
-    return P
-
-def getp_lb(Q, t):
-    """
-    Lower-bound the transition probabilities over a small time interval.
-    """
-    nstates = Q.shape[0]
-    P = np.zeros_like(Q)
-    for sa in range(nstates):
-        for sb in range(nstates):
-            if sa == sb:
-                # Probability of no change in the interval.
-                p = np.exp(t*Q[sa, sb])
-            else:
-                # Probability of a single change in the interval,
-                # and that the change is of the specific type.
-                # This is the integral from 0 to t of
-                # exp(-ra*x) * rab * exp(-rb * (t-x)) dx
-                # where x is the unknown time of the substitution event,
-                # the first term is the probability of no change
-                # between the initial endpoint of the interval and the event,
-                # the second term is the instantaneous rate of the event,
-                # and the third term is the probability of no change
-                # between the event and the final endpoint of the interval.
-                rab = Q[sa, sb]
-                if rab:
-                    ra = -Q[sa, sa]
-                    rb = -Q[sb, sb]
-                    if ra == rb:
-                        p = rab * t * np.exp(-rb*t)
-                    else:
-                        num = np.exp(-ra*t) - np.exp(-rb*t)
-                        den = rb - ra
-                        p = rab * (num / den)
-                else:
-                    p = 0
-            P[sa, sb] = p
-    #print('min entry of P:', np.min(P))
-    #print('row sums of P:', P.sum(axis=1))
-    return P
-
-def getp_bigt_lb(Q, dt, t):
-    n = max(1, int(np.ceil(t / dt)))
-    psmall = getp_lb(Q, t/n)
-    return np.linalg.matrix_power(psmall, n)
-
-def getp_bigt_lb_fast(Q, dt, t):
-    n = max(1, int(np.ceil(t / dt)))
-    psmall = getp_lb_fast(Q, t/n)
-    return np.linalg.matrix_power(psmall, n)
-
 def getp_approx(Q, t):
     """
     Approximate the transition matrix over a small time interval.
@@ -715,10 +661,7 @@ def main(args):
         #print('total branch length:', tree.size(weight='weight'))
         #print()
 
-        if args.lb:
-            f = getp_bigt_lb_fast
-        else:
-            f = getp_bigt_approx
+        f = getp_bigt_approx
 
         P_cb_compound_disc = functools.partial(f, Q_compound_dense, args.dt)
         P_cb_reference_disc = functools.partial(f, Q_reference_dense, args.dt)
@@ -815,7 +758,5 @@ if __name__ == '__main__':
     parser.add_argument('--dt', type=float,
             required=True, # for now require dt
             help='discretize the tree with this maximum branchlet length')
-    parser.add_argument('--lb', action='store_true',
-            help='compute a lower bound instead of an approximation')
     main(parser.parse_args())
 
