@@ -417,18 +417,9 @@ def main(args):
         A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
         P_cb_compound_cont = functools.partial(qtop.getp_sylvester_v2,
                 D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
-        A0, lam0, B0 = qtop.decompose_spectral_v2(S0, D0)
-        P_cb_reference_cont = functools.partial(
-                qtop.getp_spectral_v2, D0, A0, lam0, B0)
-        A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
-        P_cb_default_cont = functools.partial(
-                qtop.getp_spectral_v2, D1, A1, lam1, B1)
 
-        f = getp_bigt_approx
-
-        P_cb_compound_disc = functools.partial(f, Q_compound_dense, args.dt)
-        P_cb_reference_disc = functools.partial(f, Q_reference_dense, args.dt)
-        P_cb_default_disc = functools.partial(f, Q_dense, args.dt)
+        P_cb_compound_disc = functools.partial(
+                getp_bigt_approx, Q_compound_dense, args.dt)
 
         # Define the map from node to allowed compound states.
         node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
