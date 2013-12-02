@@ -281,7 +281,7 @@ def main(args):
 
     # Read the interpreted disease data.
     with open(args.disease) as fin:
-        interpreted_disease_data = app_halper.read_interpreted_disease_data(fin)
+        interpreted_disease_data = app_helper.read_interpreted_disease_data(fin)
     pos_to_benign_residues = defaultdict(set)
     pos_to_lethal_residues = defaultdict(set)
     for pos, residue, status in interpreted_disease_data:
