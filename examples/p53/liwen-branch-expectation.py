@@ -171,27 +171,6 @@ def get_jeff_params_e():
             tree, root, leaf_name_pairs)
 
 
-def get_codeml_estimated_params():
-
-    # Use the estimates that I got from codeml,
-    # for the default process.
-    # Rho is from Jeff's estimate because codeml
-    # doesn't do the switching process.
-    kappa = 3.17632
-    omega = 0.21925
-    T = 0.18883
-    C = 0.30126
-    A = 0.25039
-    G = 0.25952
-    rho = 0.32771
-    tree_filename = 'codeml.estimated.tree'
-    print('reading the newick tree...')
-    with open(tree_filename) as fin:
-        tree, root, leaf_name_pairs = app_helper.read_newick(fin)
-    return (kappa, omega, A, C, T, G, rho,
-            tree, root, leaf_name_pairs)
-
-
 def read_interpreted_disease_data(fin):
     """
     Read some filtered disease data.
@@ -212,7 +191,6 @@ def read_interpreted_disease_data(fin):
         row = (codon_pos, aa_residue, status)
         interpreted_disease_data.append(row)
     return interpreted_disease_data
-
 
 
 def get_codon_site_inferences(
