@@ -192,34 +192,6 @@ def get_codeml_estimated_params():
             tree, root, leaf_name_pairs)
 
 
-def get_liwen_toy_params():
-
-    # Parameters reported by Liwen in her email
-    kappa = 1.0
-    omega = 1.0
-    A = 0.25
-    C = 0.25
-    G = 0.25
-    T = 0.25
-    rho = 1.15
-
-    # Branch lengths are all the same,
-    # and they are in units of expected number of codon changes
-    # if the process were the default process (as opposed to reference).
-    branch_length = 0.1
-    tree_filename = 'liwen.estimated.tree'
-
-    # Read the tree, and change the branch lengths
-    # so that they are equal to the universal toy branch length.
-    print('reading the newick tree...')
-    with open(tree_filename) as fin:
-        tree, root, leaf_name_pairs = app_helper.read_newick(fin)
-    for na, nb in tree.edges():
-        tree[na][nb]['weight'] = branch_length
-
-    return (kappa, omega, A, C, T, G, rho,
-            tree, root, leaf_name_pairs)
-
 def read_interpreted_disease_data(fin):
     """
     Read some filtered disease data.
@@ -306,11 +278,6 @@ def main(args):
                 'lb only makes sense when a dt discretization is specified')
 
     # Pick some parameters.
-    #info = get_liwen_toy_params()
-    #info = get_jeff_params()
-    #info = get_jeff_params_b()
-    #info = get_jeff_params_c()
-    #info = get_jeff_params_d()
     info = get_jeff_params_e()
     kappa, omega, A, C, T, G, rho, tree, root, leaf_name_pairs = info
     name_to_leaf = dict((name, leaf) for leaf, name in leaf_name_pairs)
