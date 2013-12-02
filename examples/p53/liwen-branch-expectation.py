@@ -106,23 +106,6 @@ def getp_bigt_approx(Q, dt, t):
     psmall = getp_approx(Q, t/n)
     return np.linalg.matrix_power(psmall, n)
 
-def get_tree_refinement(T, root, dt):
-    """
-    @param T: weighted undirected nx graph representing the tree
-    @param dt: requested maximum branchlet length
-    """
-    next_node = max(T.nodes()) + 1
-    T_aug = nx.Graph()
-    for na, nb in nx.bfs_edges(T, root):
-        branch_weight = T[na][nb]['weight']
-        nbranchlets = max(1, int(np.ceil(branch_weight / dt)))
-        branchlet_weight = branch_weight / nbranchlets
-        path = [na] + range(next_node, next_node + nbranchlets - 1) + [nb]
-        for nc, nd in zip(path[:-1], path[1:]):
-            T_aug.add_edge(nc, nd, weight=branchlet_weight)
-        next_node += nbranchlets - 1
-    return T_aug
-
 def get_expm_augmented_tree(T, root, P_callback=None):
     T_aug = nx.Graph()
     for na, nb in nx.bfs_edges(T, root):
@@ -651,15 +634,6 @@ def main(args):
         A1, lam1, B1 = qtop.decompose_spectral_v2(S1, D1)
         P_cb_default_cont = functools.partial(
                 qtop.getp_spectral_v2, D1, A1, lam1, B1)
-
-        #tree = get_tree_refinement(tree, root, args.dt)
-        #degree = tree.degree()
-        #print('discretized tree summary:')
-        #print('number of nodes:', len(tree))
-        #print('number of leaves:', degree.values().count(1))
-        #print('number of branches:', tree.size())
-        #print('total branch length:', tree.size(weight='weight'))
-        #print()
 
         f = getp_bigt_approx
 
