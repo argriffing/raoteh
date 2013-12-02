@@ -214,35 +214,6 @@ def get_joint_endpoint_distn_tree(
     return T_joint
 
 
-    #XXX
-    T_aug = nx.Graph()
-    for na, nb in nx.bfs_edges(T, root):
-        pmap = node_to_pmap[nb]
-        P = T[na][nb]['P']
-        _density.check_square_dense(P)
-        J = np.zeros_like(P)
-        distn = node_to_distn[na]
-        if distn.shape[0] != nstates:
-            raise Exception('nstates inconsistency')
-        for sa in range(nstates):
-            pa = distn[sa]
-            if pa:
-
-                # Construct the conditional transition probabilities.
-                sb_weights = P[sa] * pmap
-                sb_distn = get_normalized_ndarray_distn(sb_weights)
-
-                # Add to the joint distn.
-                for sb, pb in enumerate(sb_distn):
-                    J[sa, sb] = pa * pb
-
-        # Add the joint distribution.
-        T_aug.add_edge(na, nb, J=J)
-
-    # Return the augmented tree.
-    return T_aug
-
-
 class Builder(object):
     def __init__(self):
         self.edge_bucket = []
