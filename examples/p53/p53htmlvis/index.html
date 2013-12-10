@@ -1,3 +1,175 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+ 
+</style>
+<body>
+<script src="http://d3js.org/d3.v2.min.js?2.10.0"></script>
+<script>
 
-hello p53
+// This size is used by default.
+var px_total_width = 960;
+var px_total_height = 500;
 
+// Put a bit of a border around the area we will be using.
+// This can be useful for things like selected rectangle stroke thickness.
+var px_svg_border = 10;
+var px_usable_width = px_total_width - 2 * px_svg_border;
+var px_usable_height = px_total_height - 2 * px_svg_border;
+
+
+// Define the number of codons
+// and define the organization of codons into a grid.
+var ncodons = 393;
+var nrows = 20;
+var ncols = 20;
+
+
+// Define the logical grid size.
+var logical_grid_width = ncols + 1;
+var logical_grid_height = nrows + 1;
+var px_cell_width = px_usable_width / logical_grid_width;
+var px_cell_height = px_usable_height / logical_grid_height;
+
+// Define some functions to get the pixel offset
+// to the center of the cell, given cell row and column.
+function col_to_cx(col) {
+	// Leave space for a row label at the beginning of the row.
+	return (col + 1 + 0.5) * px_cell_width;
+}
+function row_to_cy(row) {
+	// Leave space for the current codon position
+	// to be displayed above the grid.
+	return (row + 1 + 0.5) * px_cell_height;
+}
+
+// Make the svg with a given width and height in pixels.
+var svg = d3.select("body").append("svg")
+	.attr("width", px_total_width)
+	.attr("height", px_total_height)
+	.append("g")
+	.attr("transform",
+		"translate(" + px_svg_border + "," + px_svg_border + ")");
+ 
+// Draw the row labels.
+svg.selectAll(".row_labels")
+	.data(d3.range(0, nrows))
+	.enter()
+	.append('text')
+	.attr("class", "row_label")
+	.text(function(d) {return d*ncols + 1;})
+	.attr("x", function(d) {return col_to_cx(0);})
+	.attr("y", function(d) {return row_to_cy(d);})
+	.attr("pointer-events", "none")
+	.attr("font-family", "sans-serif")
+	.attr("font-size", "12px")
+	.attr("text-anchor", "end")
+	.attr("fill", "black")
+	.append("tspan")
+	.attr("dy", "6px");
+
+
+/*
+d3.json("sol.json", function(data) {
+ 
+
+	// The grouping and the mouse handling seems to work well.
+
+	groups = svg.selectAll(".cellgroup").data(data).enter().append("g")
+		.attr("class", "cellgroup")
+		.attr("pointer-events", "all")
+		.on("mouseover", function(d) {
+	
+		// Do complicated things here!
+
+		// add the primary interaction lines.
+		svg.selectAll(".primaryInteraction").data(d.primaryEdges)
+		.enter()
+		.append("line")
+		.attr("class", "primaryInteraction")
+		.attr("x1", function(dnode) {return w_to_cx(wo + dnode.x1);})
+		.attr("y1", function(dnode) {return k_to_cy(ko + dnode.y1);})
+		.attr("x2", function(dnode) {return w_to_cx(wo + dnode.x2);})
+		.attr("y2", function(dnode) {return k_to_cy(ko + dnode.y2);})
+		.attr("stroke-width", 4)
+		.attr("stroke", "black");
+
+		// add the spatial interaction lines
+		svg.selectAll(".spatialInteraction").data(d.spatialEdges)
+		.enter()
+		.append("line")
+		.attr("class", "spatialInteraction")
+		.attr("x1", function(dnode) {return w_to_cx(wo + dnode.x1);})
+		.attr("y1", function(dnode) {return k_to_cy(ko + dnode.y1);})
+		.attr("x2", function(dnode) {return w_to_cx(wo + dnode.x2);})
+		.attr("y2", function(dnode) {return k_to_cy(ko + dnode.y2);})
+		.attr("stroke-width", 1)
+		.attr("stroke", "red");
+
+		// add the nodes
+		svg.selectAll(".minifig").data(d.nodes)
+		.enter()
+		.append("circle")
+		.attr("class", "minifig")
+		.attr("r", 5)
+		.attr("cx", function(dnode) {return w_to_cx(wo + dnode.x);})
+		.attr("cy", function(dnode) {return k_to_cy(ko + dnode.y);})
+		.attr("stroke-width", 2)
+		.attr("stroke", "black")
+		.attr("fill", function(dnode) {
+			if (dnode.value == 0) {
+				return "white";
+			} else if ((dnode.x + dnode.y) % 2 == 0) {
+				return "darkblue";
+			} else {
+				return "darkred";
+			}});
+
+		// indicate the selection by changing the rect style
+		d3.select(this).select(".mainrect")
+		.attr("stroke", "black")
+		.attr("stroke-width", 1);
+	
+		}) // end mouseover.
+
+		.on("mouseout", function(d) {
+		svg.selectAll(".minifig").data([]).exit().remove();
+		svg.selectAll(".spatialInteraction").data([]).exit().remove();
+		svg.selectAll(".primaryInteraction").data([]).exit().remove();
+
+		// indicate the de-selection by changing the rect style
+		d3.select(this).select(".mainrect")
+		.attr("stroke", "none");
+
+		}); // end on mouseout
+
+	groups.append("rect")
+		.attr("class", "mainrect")
+		.attr("x", function(d) {return w_to_cx(d.n - d.k - 0.5);})
+		.attr("y", function(d) {return k_to_cy(d.k - 0.5);})
+		.attr("width", px_cell_width)
+		.attr("height", px_cell_height)
+		.attr("stroke", "none")
+		.attr("fill", function(d) {
+			var colors = ['lightblue', 'lightgreen', 'lightcoral'];
+			var color_index = d.score % 3;
+			return colors[color_index];
+			});
+
+	groups.append("text")
+		.text( function(d) {return d.score;})
+		.attr("x", function(d) {return w_to_cx(d.n - d.k);})
+		.attr("y", function(d) {return k_to_cy(d.k);})
+		.attr("pointer-events", "none")
+		.attr("font-family", "sans-serif")
+		.attr("font-size", "12px")
+		.attr("text-anchor", "middle")
+		.attr("fill", "black")
+		.append("tspan")
+		.attr("dy", "6px");
+ 
+
+}); // end data
+*/
+ 
+</script>
