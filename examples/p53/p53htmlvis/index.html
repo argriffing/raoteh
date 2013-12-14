@@ -42,13 +42,21 @@ var px_cell_height = px_usable_height / logical_grid_height;
 // Define some functions to get the pixel offset
 // to the center of the cell, given cell row and column.
 function col_to_cx(col) {
-	// Leave space for a row label at the beginning of the row.
-	return (col + 1 + 0.5) * px_cell_width;
+	return (col + 0.5) * px_cell_width;
 }
 function row_to_cy(row) {
+	return (row + 0.5) * px_cell_height;
+}
+
+// Helper functions to draw the alignment.
+function align_col_to_cx(col) {
+	// Leave space for a row label at the beginning of the row.
+	return col_to_cx(1 + col);
+}
+function align_row_to_cy(row) {
 	// Leave space for the current codon position
 	// to be displayed above the grid.
-	return (row + 1 + 0.5) * px_cell_height;
+	return row_to_cy(1 + row);
 }
 
 
@@ -61,36 +69,35 @@ var svg = d3.select("body").append("svg")
 		"translate(" + px_svg_border + "," + px_svg_border + ")");
  
 // Draw the row labels.
-svg.selectAll(".row_labels")
+svg.selectAll(".row_label")
 	.data(d3.range(0, nrows))
 	.enter()
 	.append('text')
 	.attr("class", "row_label")
-	.text(function(d) {return d*ncols + 1;})
-	.attr("x", function(d) {return col_to_cx(-1);})
-	.attr("y", function(d) {return row_to_cy(d);})
+	.attr("x", function(d) {return col_to_cx(0);})
+	.attr("y", function(d) {return align_row_to_cy(d);})
 	.attr("pointer-events", "none")
 	.attr("font-family", "sans-serif")
 	.attr("font-size", "12px")
 	.attr("text-anchor", "end")
 	.attr("fill", "black")
 	.append("tspan")
-	.attr("dy", "6px");
+	.attr("dy", "4px")
+	.text(function(d) {return d*ncols + 1;});
 
 // Draw the codon site position header.
 svg.append("text")
-	.text("")
 	.attr("class", "site_position_header")
-	.attr("x", col_to_cx(ncols/2.0))
-	.attr("y", row_to_cy(-1))
+	.attr("x", align_col_to_cx(ncols/2.0))
+	.attr("y", row_to_cy(0))
 	.attr("pointer-events", "none")
 	.attr("font-family", "sans-serif")
 	.attr("font-size", "20px")
 	.attr("text-anchor", "middle")
 	.attr("fill", "black")
 	.append("tspan")
-	.attr("dy", "6px");
-
+	.attr("dy", "4px")
+	.text("");
 
 // Use json data instead of using the demo grid.
 d3.json("data.json", function(data) {
@@ -114,9 +121,49 @@ groups = svg.selectAll(".cellgroup")
 		//.text(function(d) {return "" + (d+1);});
 		//.text("hello mouse");
 
+		// change the leaf background colors
+		svg.selectAll(".leaf_background_rect")
+		.data(d.leaf_info)
+		.enter()
+		.append("rect")
+		.attr("class", "leaf_background_rect")
+		.attr("x", function(leaf) {
+			return col_to_cx(logical_grid_width - 1 - 3);})
+		.attr("y", function(leaf) {
+			return align_row_to_cy(leaf.idx - 0.5);})
+		.attr("width", 3*px_cell_width)
+		.attr("height", px_cell_height)
+		.attr("stroke", "none")
+		.attr("fill", function(leaf) {
+			return leaf.disease ? 'lightcoral' : 'lightblue';})
+
+		// change the leaf headers
+		svg.selectAll(".leaf_label")
+		.data(d.leaf_info)
+		.enter()
+		.append("text")
+		.attr("class", "leaf_label")
+		.attr("x", col_to_cx(logical_grid_width - 1 - 3))
+		.attr("y", function(leaf) {return align_row_to_cy(leaf.idx);})
+		.attr("pointer-events", "none")
+		.attr("font-family", "monospace")
+		.attr("font-size", "12px")
+		.attr("text-anchor", "start")
+		.attr("fill", "black")
+		.append("tspan")
+		.attr("dy", "4px")
+		.text(function(leaf) {
+			return (
+				leaf.codon + " " +
+				leaf.residue + " " + leaf.name);});
+
 
 	}) // end mouseover
 	.on("mouseout", function(d) {
+
+		// Remove the leaf background rects and leaf labels.
+		svg.selectAll(".leaf_background_rect").data([]).exit().remove();
+		svg.selectAll(".leaf_label").data([]).exit().remove();
 
 		// indicate the de-selection by changing the rect style
 		d3.select(this).select(".mainrect")
@@ -133,11 +180,11 @@ groups.append("rect")
 	.attr("x", function(d) {
 			var row = Math.floor((d.pos-1) / ncols);
 			var col = (d.pos-1) % ncols;
-			return col_to_cx(col - 0.5);})
+			return align_col_to_cx(col - 0.5);})
 	.attr("y", function(d) {
 			var row = Math.floor((d.pos-1) / ncols);
 			var col = (d.pos-1) % ncols;
-			return row_to_cy(row - 0.5);})
+			return align_row_to_cy(row - 0.5);})
 	.attr("width", px_cell_width)
 	.attr("height", px_cell_height)
 	.attr("stroke", "none")
@@ -149,22 +196,22 @@ groups.append("rect")
 		});
 
 groups.append("text")
-	.text( function(d) {return d.nconflicts;})
 	.attr("x", function(d) {
 			var row = Math.floor((d.pos-1) / ncols);
 			var col = (d.pos-1) % ncols;
-			return col_to_cx(col);})
+			return align_col_to_cx(col);})
 	.attr("y", function(d) {
 			var row = Math.floor((d.pos-1) / ncols);
 			var col = (d.pos-1) % ncols;
-			return row_to_cy(row);})
+			return align_row_to_cy(row);})
 	.attr("pointer-events", "none")
 	.attr("font-family", "sans-serif")
 	.attr("font-size", "12px")
 	.attr("text-anchor", "middle")
 	.attr("fill", "black")
 	.append("tspan")
-	.attr("dy", "6px");
+	.attr("dy", "4px")
+	.text(function(d) {return d.nconflicts;});
 
 }); // end json data
 
@@ -268,7 +315,7 @@ d3.json("sol.json", function(data) {
 		.attr("text-anchor", "middle")
 		.attr("fill", "black")
 		.append("tspan")
-		.attr("dy", "6px");
+		.attr("dy", "4px");
  
 
 }); // end data
