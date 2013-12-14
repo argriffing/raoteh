@@ -82,9 +82,13 @@ svg.append("text")
 	.append("tspan")
 	.attr("dy", "6px");
 
-// A demo grid.
+
+// Use json data instead of using the demo grid.
+d3.json("data.json", function(data) {
+
 groups = svg.selectAll(".cellgroup")
-	.data(d3.range(0, ncodons))
+	//.data(d3.range(0, ncodons))
+	.data(data)
 	.enter()
 	.append("g")
 	.attr("class", "cellgroup")
@@ -97,7 +101,7 @@ groups = svg.selectAll(".cellgroup")
 
 		// change codon site position header
 		svg.select(".site_position_header")
-		.text("position " + (d + 1));
+		.text("position " + (d.pos));
 		//.text(function(d) {return "" + (d+1);});
 		//.text("hello mouse");
 
@@ -118,31 +122,32 @@ groups = svg.selectAll(".cellgroup")
 groups.append("rect")
 	.attr("class", "mainrect")
 	.attr("x", function(d) {
-			var row = Math.floor(d / ncols);
-			var col = d % ncols;
+			var row = Math.floor((d.pos-1) / ncols);
+			var col = (d.pos-1) % ncols;
 			return col_to_cx(col - 0.5);})
 	.attr("y", function(d) {
-			var row = Math.floor(d / ncols);
-			var col = d % ncols;
+			var row = Math.floor((d.pos-1) / ncols);
+			var col = (d.pos-1) % ncols;
 			return row_to_cy(row - 0.5);})
 	.attr("width", px_cell_width)
 	.attr("height", px_cell_height)
 	.attr("stroke", "none")
 	.attr("fill", function(d) {
-		var colors = ['lightblue', 'lightgreen', 'lightcoral'];
-		var color_index = d % 3;
-		return colors[color_index];
+		//var colors = ['lightblue', 'lightgreen', 'lightcoral'];
+		//var color_index = d % 3;
+		//return colors[color_index];
+		return d.nconflicts ? 'lightcoral' : 'lightblue';
 		});
 
 groups.append("text")
-	.text( function(d) {return d;})
+	.text( function(d) {return d.nconflicts;})
 	.attr("x", function(d) {
-			var row = Math.floor(d / ncols);
-			var col = d % ncols;
+			var row = Math.floor((d.pos-1) / ncols);
+			var col = (d.pos-1) % ncols;
 			return col_to_cx(col);})
 	.attr("y", function(d) {
-			var row = Math.floor(d / ncols);
-			var col = d % ncols;
+			var row = Math.floor((d.pos-1) / ncols);
+			var col = (d.pos-1) % ncols;
 			return row_to_cy(row);})
 	.attr("pointer-events", "none")
 	.attr("font-family", "sans-serif")
@@ -151,6 +156,10 @@ groups.append("text")
 	.attr("fill", "black")
 	.append("tspan")
 	.attr("dy", "6px");
+
+}); // end json data
+
+
 
 
 /*
