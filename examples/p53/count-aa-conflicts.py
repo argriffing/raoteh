@@ -129,10 +129,14 @@ def main(args):
     #print(root)
     #print(leaf_name_pairs)
 
+
     # Translate the tree into a more layout friendly form.
     # Then compute the layout.
+    # Make sure the order is the same.
     root = translate_tree(nx_tree, nx_root)
-    vert, horz, nodes = layout.layout_tree(root)
+    leaves = [leaf for leaf, name in leaf_name_pairs]
+    leaf_to_y = dict((x, x) for x in leaves)
+    vert, horz, nodes = layout.layout_tree(root, leaf_to_y)
     #The vert_out is a sequence of (x, y1, y2) lines.
     #The horz_out is a sequence of (y, x1, x2, handle1, handle2) lines.
     #The nodes_out is a sequence of (x, y, handle) lines.

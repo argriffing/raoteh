@@ -59,6 +59,15 @@ function align_row_to_cy(row) {
 	return row_to_cy(1 + row);
 }
 
+// Helper functions to draw the tree.
+function tree_col_to_cx(col) {
+	var offset = 1 + 16 + 1;
+	return col_to_cx(offset + 14 * (col / 0.551671));
+}
+function tree_row_to_cy(row) {
+	return align_row_to_cy(row);
+}
+
 
 // Make the svg with a given width and height in pixels.
 var svg = d3.select("body").append("svg")
@@ -156,21 +165,42 @@ groups = svg.selectAll(".cellgroup")
 			return (
 				leaf.codon + " " +
 				leaf.residue + " " + leaf.name);});
+
+		// add tree vertical lines
+		svg.selectAll(".tree_vert_line")
+		.data(d.vert_lines)
+		.enter()
+		.append("line")
+		.attr("class", "tree_vert_line")
+		.attr("x1", function(tnode) {return tree_col_to_cx(tnode.x);})
+		.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y1);})
+		.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x);})
+		.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y2);})
+		.attr("stroke-width", 1)
+		.attr("stroke", "black");
+
+		// add tree horizontal lines
+		svg.selectAll(".tree_horz_line")
+		.data(d.horz_lines)
+		.enter()
+		.append("line")
+		.attr("class", "tree_horz_line")
+		.attr("x1", function(tnode) {return tree_col_to_cx(tnode.x1);})
+		.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y);})
+		.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x2);})
+		.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y);})
+		.attr("stroke-width", 1)
+		.attr("stroke", "black");
 		
 		// add tree nodes
 		svg.selectAll(".tree_node")
 		.data(d.nodes)
-		//.data(d.vert_lines)
-		//.data(d.horz_lines)
 		.enter()
 		.append("circle")
 		.attr("class", "tree_node")
 		.attr("r", 5)
-		.attr("cx", function(tnode) {
-			var offset = 1 + 16 + 1
-			return col_to_cx(offset + 14 * (tnode.x / 0.551671));})
-		.attr("cy", function(tnode) {
-			return align_row_to_cy(tnode.y);})
+		.attr("cx", function(tnode) {return tree_col_to_cx(tnode.x);})
+		.attr("cy", function(tnode) {return tree_row_to_cy(tnode.y);})
 		.attr("stroke-width", 2)
 		.attr("stroke", "black")
 		.attr("fill", 'steelblue');
@@ -179,8 +209,11 @@ groups = svg.selectAll(".cellgroup")
 	}) // end mouseover
 	.on("mouseout", function(d) {
 
-		// Remove the tree nodes.
+		// Remove the tree nodes and the vertical lines
+		// and horizontal lines
 		svg.selectAll(".tree_node").data([]).exit().remove();
+		svg.selectAll(".tree_vert_line").data([]).exit().remove();
+		svg.selectAll(".tree_horz_line").data([]).exit().remove();
 
 		// Remove the leaf background rects and leaf labels.
 		svg.selectAll(".leaf_background_rect").data([]).exit().remove();
