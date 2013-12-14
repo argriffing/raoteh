@@ -11,35 +11,13 @@ import argparse
 
 import dendropy
 
-from app_helper import gen_paragraphs
+from app_helper import gen_paragraphs, read_phylip
 
 def pos_int(x):
     x = int(x)
     if x < 1:
         raise ValueError('expected a positive integer')
     return x
-
-def read_phylip(fin):
-    """
-    Yield (taxon name, codons) pairs.
-    @param fin: file open for reading
-    """
-
-    # Get the paragraphs in the most inefficient way possible.
-    # Ignore the first line which is also the first paragraph.
-    paras = list(gen_paragraphs(fin))[1:]
-    if len(paras) != 25:
-        raise Exception('expected p53 alignment of 25 taxa')
-
-    # Each paragraph defines a p53 coding sequence of some taxon.
-    # The first line gives the taxon name.
-    # The rest of the lines are codons.
-    for para in paras:
-        taxon_name = para[0]
-        codons = ' '.join(para[1:]).split()
-        if len(codons) != 393:
-            raise Exception('expected 393 codons')
-        yield taxon_name, codons
 
 
 def read_newick(fin):
