@@ -306,8 +306,14 @@ def accumulate_codon_site_summary(
     # Add the site log likelihood into the bucket.
     builder.add_site_log_likelihood(site, ll)
 
+
 def rsummary(tree, leaf_to_name, edge_to_prob_sum, v, parent):
     """
+    Recursively build a newick-like summary.
+
+    The number associated with each edge is not the branch length
+    but is rather the switching probability.
+
     Parameters
     ----------
     tree : networkx tree
@@ -438,8 +444,15 @@ def main(args):
     total_ll_compound_cont = 0
     total_ll_compound_disc = 0
     cond_adj_total = 0
+
     builder = Builder()
-    for i, codon_column in enumerate(codon_columns):
+
+    if args.ncols is None:
+        selected_codon_columns = codon_columns
+    else:
+        selected_codon_columns = codon_columns[:args.ncols]
+
+    for i, codon_column in enumerate(selected_codon_columns):
 
         # Define the column-specific disease states and the benign states.
         pos = i + 1
@@ -542,9 +555,6 @@ def main(args):
         P_cb_compound_cont = functools.partial(qtop.getp_sylvester_v2,
                 D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
 
-        P_cb_compound_disc = functools.partial(
-                getp_bigt_approx, Q_compound_dense, args.dt)
-
         # Define the map from node to allowed compound states.
         node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
         for name, codon in zip(names, codon_column):
@@ -585,10 +595,17 @@ def main(args):
     s = rsummary(tree, leaf_to_name, edge_to_prob_sum, original_root, None)
     print(s)
 
+    # Write tab separated node data.
+    # TODO the output choices are too hardcoded
+    for row in builder.node_bucket:
+        print(*row, sep='\t')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--ncols', type=int,
+            help='limit the number of summarized columns')
     parser.add_argument('--disease', required=True,
             help='csv file with filtered disease data')
     parser.add_argument('--dt', type=float,
