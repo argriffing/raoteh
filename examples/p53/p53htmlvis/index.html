@@ -31,7 +31,7 @@ var ntaxa = 25
 // Define the logical grid size.
 
 // row header, alignment grid, spacer, tree, tip labels
-var logical_grid_width = 1 + ncols + 1 + 16 + 3;
+var logical_grid_width = 1 + ncols + 1 + 16 + 4;
 
 // codon position notification header at top, 25 taxa
 var logical_grid_height = 1 + ntaxa;
@@ -128,10 +128,10 @@ groups = svg.selectAll(".cellgroup")
 		.append("rect")
 		.attr("class", "leaf_background_rect")
 		.attr("x", function(leaf) {
-			return col_to_cx(logical_grid_width - 1 - 3);})
+			return col_to_cx(logical_grid_width - 1 - 4 - 0.5);})
 		.attr("y", function(leaf) {
 			return align_row_to_cy(leaf.idx - 0.5);})
-		.attr("width", 3*px_cell_width)
+		.attr("width", 4*px_cell_width)
 		.attr("height", px_cell_height)
 		.attr("stroke", "none")
 		.attr("fill", function(leaf) {
@@ -143,7 +143,7 @@ groups = svg.selectAll(".cellgroup")
 		.enter()
 		.append("text")
 		.attr("class", "leaf_label")
-		.attr("x", col_to_cx(logical_grid_width - 1 - 3))
+		.attr("x", col_to_cx(logical_grid_width - 1 - 4))
 		.attr("y", function(leaf) {return align_row_to_cy(leaf.idx);})
 		.attr("pointer-events", "none")
 		.attr("font-family", "monospace")
