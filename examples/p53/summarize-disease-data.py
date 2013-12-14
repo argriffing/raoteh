@@ -4,11 +4,13 @@
 import argparse
 from collections import defaultdict
 
+from app_helper import read_interpreted_disease_data
+
 LETHAL = 'LETHAL'
 BENIGN = 'BENIGN'
 UNKNOWN = 'UNKNOWN'
 
-def read_interpreted_disease_data(fin):
+def get_disease_info(fin):
     """
     Read some filtered disease data.
 
@@ -18,15 +20,7 @@ def read_interpreted_disease_data(fin):
     The possible disease states are BENIGN, LETHAL, or UNKNOWN.
 
     """
-    interpreted_disease_data = []
-    lines = fin.readlines()[1:]
-    for line in lines:
-        if not line.strip():
-            continue
-        codon_pos, aa_residue, status = line.split()
-        codon_pos = int(codon_pos)
-        row = (codon_pos, aa_residue, status)
-        interpreted_disease_data.append(row)
+    interpreted_disease_data = read_interpreted_disease_data(fin)
 
     # Define the set of codon positions.
     pos_set = set()
@@ -56,7 +50,7 @@ def read_interpreted_disease_data(fin):
 
 def main(args):
     with open(args.disease) as fin:
-        pos_set, pos_to_lethal_residues = read_interpreted_disease_data(fin)
+        pos_set, pos_to_lethal_residues = get_disease_info(fin)
     dpat_multiset = defaultdict(int)
     disease_patterns = set()
     for pos in pos_set:
@@ -64,13 +58,15 @@ def main(args):
         disease_patterns.add(disease_pattern)
         dpat_multiset[disease_pattern] += 1
     rows = [(n, pat) for pat, n in dpat_multiset.items()]
+    print 'count\tpattern'
     for n, pat in sorted(rows):
-        print n, ', '.join(pat)
-    print 'number of unique disease patterns:'
+        print n, '\t', ', '.join(pat)
+    print
+    print 'number of unique disease patterns'
     print len(dpat_multiset)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('disease', help='tsv disease data')
+    parser.add_argument('disease', help='tsv disease data input file')
     main(parser.parse_args())
 
