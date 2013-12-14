@@ -31,6 +31,7 @@ UNKNOWN = 'UNKNOWN'
 g_interpreted_disease_filename = 'int1.out'
 g_alignment_filename = 'testseq'
 g_genetic_code_filename = 'universal.code.txt'
+g_pos_handle_p_filename = 'node.data.tsv'
 
 
 #TODO copypasted from summarize-disease-data.py
@@ -148,10 +149,25 @@ def main(args):
             #print(x, y, leaf_to_name[handle])
     #return
 
+    # Read the tsv file that has the node probability data.
+    pos_to_handle_to_p = dict((pos, {}) for pos in range(1, 393+1))
+    with open(g_pos_handle_p_filename) as fin:
+        for line in fin.readlines():
+            line = line.strip()
+            if line:
+                s_pos, s_handle, s_p = line.split()
+                pos = int(s_pos)
+                handle = int(s_handle)
+                p = float(s_p)
+                handle_to_p = pos_to_handle_to_p[pos]
+                handle_to_p[handle] = p
+
     # Construct the list of dicts to convert to json.
     json_dicts = []
     for i in range(393):
         codon_pos = i + 1
+        handle_to_p = pos_to_handle_to_p[codon_pos]
+
         nconflicts = 0
         lethal_residues = pos_to_lethal_residues.get(codon_pos, None)
 
@@ -181,12 +197,16 @@ def main(args):
         # Get horizontal lines.
         json_horz_lines = []
         for y, x1, x2, idx1, idx2 in horz:
-            json_horz_lines.append(dict(y=y, x1=x1, x2=x2))
+            p1 = handle_to_p[idx1]
+            p2 = handle_to_p[idx2]
+            p = max(0, (p1 + p2) / 2)
+            json_horz_lines.append(dict(y=y, x1=x1, x2=x2, p=p))
 
         # Get nodes.
         json_nodes = []
         for x, y, handle in nodes:
-            json_nodes.append(dict(x=x, y=y))
+            p = max(0, handle_to_p[handle])
+            json_nodes.append(dict(x=x, y=y, p=p))
 
         # Append the site info dictionary.
         json_dicts.append(dict(pos=codon_pos, nconflicts=nconflicts,
