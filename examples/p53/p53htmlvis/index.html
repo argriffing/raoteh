@@ -21,13 +21,21 @@ var px_usable_height = px_total_height - 2 * px_svg_border;
 // Define the number of codons
 // and define the organization of codons into a grid.
 var ncodons = 393;
-var nrows = 20;
-var ncols = 20;
+//var nrows = 20;
+//var ncols = 20;
+var nrows = 25
+var ncols = 16
+var ntaxa = 25
 
 
 // Define the logical grid size.
-var logical_grid_width = ncols + 1;
-var logical_grid_height = nrows + 1;
+
+// row header, alignment grid, spacer, tree, tip labels
+var logical_grid_width = 1 + ncols + 1 + 16 + 3;
+
+// codon position notification header at top, 25 taxa
+var logical_grid_height = 1 + ntaxa;
+
 var px_cell_width = px_usable_width / logical_grid_width;
 var px_cell_height = px_usable_height / logical_grid_height;
 
@@ -42,6 +50,7 @@ function row_to_cy(row) {
 	// to be displayed above the grid.
 	return (row + 1 + 0.5) * px_cell_height;
 }
+
 
 // Make the svg with a given width and height in pixels.
 var svg = d3.select("body").append("svg")
