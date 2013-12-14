@@ -156,10 +156,31 @@ groups = svg.selectAll(".cellgroup")
 			return (
 				leaf.codon + " " +
 				leaf.residue + " " + leaf.name);});
+		
+		// add tree nodes
+		svg.selectAll(".tree_node")
+		.data(d.nodes)
+		//.data(d.vert_lines)
+		//.data(d.horz_lines)
+		.enter()
+		.append("circle")
+		.attr("class", "tree_node")
+		.attr("r", 5)
+		.attr("cx", function(tnode) {
+			var offset = 1 + 16 + 1
+			return col_to_cx(offset + 14 * (tnode.x / 0.551671));})
+		.attr("cy", function(tnode) {
+			return align_row_to_cy(tnode.y);})
+		.attr("stroke-width", 2)
+		.attr("stroke", "black")
+		.attr("fill", 'steelblue');
 
 
 	}) // end mouseover
 	.on("mouseout", function(d) {
+
+		// Remove the tree nodes.
+		svg.selectAll(".tree_node").data([]).exit().remove();
 
 		// Remove the leaf background rects and leaf labels.
 		svg.selectAll(".leaf_background_rect").data([]).exit().remove();
