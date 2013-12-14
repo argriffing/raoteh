@@ -11,20 +11,13 @@ import argparse
 
 import dendropy
 
+from app_helper import gen_paragraphs
 
-def gen_paragraphs(lines):
-    para = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            if para:
-                yield para
-                para = []
-        else:
-            para.append(line)
-    if para:
-        yield para
-
+def pos_int(x):
+    x = int(x)
+    if x < 1:
+        raise ValueError('expected a positive integer')
+    return x
 
 def read_phylip(fin):
     """
@@ -113,7 +106,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--site', type=int, required=True,
+    parser.add_argument('--site', type=pos_int, required=True,
             help='codon site (first position is 1)')
     main(parser.parse_args())
 
