@@ -567,7 +567,7 @@ def main(args):
         # NOTE only the continuous non-discretized time model is used.
         P_cb_compound = P_cb_compound_cont
         accumulate_codon_site_summary(
-                tree, node_to_allowed_states, original_root,
+                tree, node_to_allowed_states, root,
                 nstates, ncompound,
                 compound_distn_dense, P_cb_compound,
                 pos, builder)
@@ -577,15 +577,26 @@ def main(args):
 
     # Optionally report information from the builder.
     if args.verbose:
+
         print('edge summary bucket:')
         for row in builder.edge_bucket:
             print(row)
+        print()
+
         print('node summary bucket:')
         for row in builder.node_bucket:
             print(row)
+        print()
+
         print('log likelihood summary bucket:')
         for row in builder.ll_bucket:
             print(row)
+        print()
+
+    # Sum of log likelihoods.
+    print('sum of codon position log likelhoods:')
+    print(sum(ll for pos, ll in builder.ll_bucket))
+    print()
 
     # Write the newick-like string with the branch summary.
     leaf_to_name = dict(leaf_name_pairs)

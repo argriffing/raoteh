@@ -27,6 +27,10 @@ var nrows = 25
 var ncols = 16
 var ntaxa = 25
 
+var tree_color_scale = d3.scale.linear()
+	.domain([0, 1])
+	.range(['lightcoral', 'lightblue']);
+
 
 // Define the logical grid size.
 
@@ -176,8 +180,9 @@ groups = svg.selectAll(".cellgroup")
 		.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y1);})
 		.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x);})
 		.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y2);})
-		.attr("stroke-width", 1)
-		.attr("stroke", "black");
+		.attr("stroke-width", 3)
+		.attr("stroke", function(tnode) {
+			return tree_color_scale(tnode.p);});
 
 		// add tree horizontal lines
 		svg.selectAll(".tree_horz_line")
@@ -189,8 +194,9 @@ groups = svg.selectAll(".cellgroup")
 		.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y);})
 		.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x2);})
 		.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y);})
-		.attr("stroke-width", 1)
-		.attr("stroke", "black");
+		.attr("stroke-width", 3)
+		.attr("stroke", function(tnode) {
+			return tree_color_scale(tnode.p);});
 		
 		// add tree nodes
 		svg.selectAll(".tree_node")
@@ -201,9 +207,9 @@ groups = svg.selectAll(".cellgroup")
 		.attr("r", 5)
 		.attr("cx", function(tnode) {return tree_col_to_cx(tnode.x);})
 		.attr("cy", function(tnode) {return tree_row_to_cy(tnode.y);})
-		.attr("stroke-width", 2)
-		.attr("stroke", "black")
-		.attr("fill", 'steelblue');
+		.attr("stroke", "none")
+		.attr("fill", function(tnode) {
+			return tree_color_scale(tnode.p);});
 
 
 	}) // end mouseover

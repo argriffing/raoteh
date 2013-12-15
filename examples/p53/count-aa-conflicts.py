@@ -191,8 +191,9 @@ def main(args):
 
         # Get vertical lines.
         json_vert_lines = []
-        for x, y1, y2 in vert:
-            json_vert_lines.append(dict(x=x, y1=y1, y2=y2))
+        for x, y1, y2, handle in vert:
+            p = handle_to_p[handle]
+            json_vert_lines.append(dict(x=x, y1=y1, y2=y2, p=p))
 
         # Get horizontal lines.
         json_horz_lines = []

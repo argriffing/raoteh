@@ -31,7 +31,7 @@ def rlayout(root, x, nleaves, leaf_to_y, vert_out, horz_out, nodes_out):
     The leaf_to_y arg maps each leaf to a y coordinate.
 
     The output is similarly picky.
-    The vert_out is a sequence of (x, y1, y2) lines.
+    The vert_out is a sequence of (x, y1, y2, handle) lines.
     The horz_out is a sequence of (y, x1, x2, handle1, handle2) lines.
     The nodes_out is a sequence of (x, y, handle) lines.
 
@@ -59,7 +59,7 @@ def rlayout(root, x, nleaves, leaf_to_y, vert_out, horz_out, nodes_out):
             horz_out.append((node_y, x, node_x, handle, node_handle))
         min_y = min(node_ys)
         max_y = max(node_ys)
-        vert_out.append((x, min_y, max_y))
+        vert_out.append((x, min_y, max_y, handle))
         y = (min_y + max_y) / 2
     else:
         if leaf_to_y:
