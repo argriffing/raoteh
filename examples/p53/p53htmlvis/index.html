@@ -109,10 +109,8 @@ svg.append("text")
 	.attr("font-family", "sans-serif")
 	.attr("font-size", "20px")
 	.attr("text-anchor", "middle")
-	.attr("fill", "black")
-	.append("tspan")
-	.attr("dy", "4px")
-	.text("");
+	.attr("fill", "gray")
+	.text("position ---");
 
 
 // Use the json layout data to draw the tree.
@@ -218,6 +216,7 @@ groups = svg.selectAll(".cellgroup")
 
 		// change codon site position header
 		svg.select(".site_position_header")
+		.attr("fill", "black")
 		.text("position " + (d.pos));
 		//.text(function(d) {return "" + (d+1);});
 		//.text("hello mouse");
@@ -299,7 +298,8 @@ groups = svg.selectAll(".cellgroup")
 
 		// change codon site position header
 		svg.select(".site_position_header")
-		.text("");
+		.attr("fill", "gray")
+		.text("position ---");
 
 	}); // end mouseout
 
