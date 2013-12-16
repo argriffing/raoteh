@@ -126,6 +126,17 @@ def get_layout_json_string(vert, horz, nodes):
     return json.dumps(toplevel, indent=2)
 
 
+def get_static_leaf_json_string(name_codons_list, name_to_leaf):
+    """
+
+    """
+    leaf_info = []
+    for name, codons in name_codons_list:
+        idx = name_to_leaf[name]
+        leaf_info.append(dict(name=name, idx=idx))
+    return json.dumps(leaf_info, indent=2)
+
+
 def get_layout_element_data(vert, horz, nodes, handle_to_p):
     """
     Return lists for json layout with data on branches.
@@ -211,6 +222,11 @@ def main(args):
     with open(args.json_tree_out, 'w') as fout:
         fout.write(json_tree_layout)
 
+    # Write the static (not codon-site-specific) leaf info to a json file.
+    s = get_static_leaf_json_string(name_codons_list, name_to_leaf)
+    with open(args.json_static_leaf_out, 'w') as fout:
+        fout.write(s)
+
     # Read the tsv file that has the node probability data.
     pos_to_handle_to_p = dict((pos, {}) for pos in range(1, 393+1))
     with open(g_pos_handle_p_filename) as fin:
@@ -275,8 +291,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--json-tree-out',
+            default='layout.data.json',
             help='write the json tree data to this file')
     parser.add_argument('--json-sites-out',
+            default='site.data.json',
             help='write the per-site json data to this file')
+    parser.add_argument('--json-static-leaf-out',
+            default='static.leaf.data.json',
+            help='write the static per-leaf json data to this file')
     main(parser.parse_args())
 

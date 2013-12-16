@@ -158,6 +158,47 @@ d3.json("layout.data.json", function(data) {
 });
 
 
+// Use json data to draw the static per-leaf info.
+d3.json("static.leaf.data.json", function(data) {
+
+	// init the leaf background color
+	svg.selectAll(".leaf_background_rect")
+	.data(data)
+	.enter()
+	.append("rect")
+	.attr("class", "leaf_background_rect")
+	.attr("x", function(leaf) {
+		return col_to_cx(logical_grid_width - 1 - 4 - 0.5);})
+	.attr("y", function(leaf) {
+		return align_row_to_cy(leaf.idx - 0.5);})
+	.attr("width", 4*px_cell_width)
+	.attr("height", px_cell_height)
+	.attr("stroke", "none")
+	.attr("fill", "none");
+
+	// init the leaf text
+	svg.selectAll(".leaf_label")
+	.data(data)
+	.enter()
+	.append("text")
+	.attr("class", "leaf_label")
+	.attr("x", col_to_cx(logical_grid_width - 1 - 4))
+	.attr("y", function(leaf) {return align_row_to_cy(leaf.idx);})
+	.attr("pointer-events", "none")
+	.attr("font-family", "monospace")
+	.attr("font-size", "12px")
+	.attr("text-anchor", "start")
+	.attr("fill", "black")
+	.append("tspan")
+	.attr("dy", "4px")
+	.text(function(leaf) {
+		var codon = "---";
+		var residue = "---";
+		var name = leaf.name;
+		return codon + " " + residue + " " + name;});
+});
+
+
 
 // Use json data instead of using the demo grid.
 d3.json("site.data.json", function(data) {
@@ -184,38 +225,18 @@ groups = svg.selectAll(".cellgroup")
 		// change the leaf background colors
 		svg.selectAll(".leaf_background_rect")
 		.data(d.leaf_info)
-		.enter()
-		.append("rect")
-		.attr("class", "leaf_background_rect")
-		.attr("x", function(leaf) {
-			return col_to_cx(logical_grid_width - 1 - 4 - 0.5);})
-		.attr("y", function(leaf) {
-			return align_row_to_cy(leaf.idx - 0.5);})
-		.attr("width", 4*px_cell_width)
-		.attr("height", px_cell_height)
-		.attr("stroke", "none")
 		.attr("fill", function(leaf) {
 			return leaf.disease ? 'lightcoral' : 'lightblue';})
 
 		// change the leaf headers
 		svg.selectAll(".leaf_label")
 		.data(d.leaf_info)
-		.enter()
-		.append("text")
-		.attr("class", "leaf_label")
-		.attr("x", col_to_cx(logical_grid_width - 1 - 4))
-		.attr("y", function(leaf) {return align_row_to_cy(leaf.idx);})
-		.attr("pointer-events", "none")
-		.attr("font-family", "monospace")
-		.attr("font-size", "12px")
-		.attr("text-anchor", "start")
-		.attr("fill", "black")
-		.append("tspan")
-		.attr("dy", "4px")
+		.select('tspan')
 		.text(function(leaf) {
-			return (
-				leaf.codon + " " +
-				leaf.residue + " " + leaf.name);});
+			var codon = leaf.codon;
+			var residue = leaf.residue;
+			var name = leaf.name;
+			return codon + " " + residue + " " + name;});
 
 		// update fill color of tree vertical lines
 		svg.selectAll(".tree_vert_line")
@@ -254,9 +275,23 @@ groups = svg.selectAll(".cellgroup")
 		svg.selectAll(".tree_node")
 		.attr("fill", "gray");
 
+		// change the leaf background colors
+		svg.selectAll(".leaf_background_rect")
+		.attr("fill", "none");
+
+		// change the leaf headers
+		svg.selectAll(".leaf_label")
+		.data(d.leaf_info)
+		.select('tspan')
+		.text(function(leaf) {
+			var codon = "---";
+			var residue = "---";
+			var name = leaf.name;
+			return codon + " " + residue + " " + name;});
+
 		// Remove the leaf background rects and leaf labels.
-		svg.selectAll(".leaf_background_rect").data([]).exit().remove();
-		svg.selectAll(".leaf_label").data([]).exit().remove();
+		//svg.selectAll(".leaf_background_rect").data([]).exit().remove();
+		//svg.selectAll(".leaf_label").data([]).exit().remove();
 
 		// indicate the de-selection by changing the rect style
 		d3.select(this).select(".mainrect")
