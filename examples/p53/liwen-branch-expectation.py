@@ -355,36 +355,19 @@ def rsummary(tree, leaf_to_name, edge_to_prob_sum, v, parent):
         return s + ':' + str(prob_sum)
 
 
-def process_codon_column(pos, codon_column,
+def process_codon_column_helper(
+        pos,
         builder,
-        genetic_code, Q, primary_distn,
-        tree, states, nstates, codon_to_state, root,
-        pos_to_benign_residues, pos_to_lethal_residues,
+        Q, primary_distn,
+        tree, states, nstates, root,
         rho,
         D1, S1,
-        names, name_to_leaf,
+        benign_states, lethal_states, node_to_allowed_states,
         ):
     """
-    This is called once per codon column.
+    Downstream of process_codon_column().
 
     """
-    # Define the column-specific disease states and the benign states.
-    benign_residues = pos_to_benign_residues.get(pos, set())
-    lethal_residues = pos_to_lethal_residues.get(pos, set())
-    benign_states = set()
-    lethal_states = set()
-    for s, r, c in genetic_code:
-        if r in benign_residues:
-            benign_states.add(s)
-        elif r in lethal_residues:
-            lethal_states.add(s)
-        else:
-            raise Exception(
-                    'each amino acid should be considered either '
-                    'benign or lethal in this model, '
-                    'but residue %s at position %s '
-                    'was found to be neither' % (r, pos))
-
     # Define the reference process.
 
     # Define the reference process rate matrix.
@@ -468,14 +451,6 @@ def process_codon_column(pos, codon_column,
     P_cb_compound_cont = functools.partial(qtop.getp_sylvester_v2,
             D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
 
-    # Define the map from node to allowed compound states.
-    node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
-    for name, codon in zip(names, codon_column):
-        leaf = name_to_leaf[name]
-        codon = codon.upper()
-        codon_state = codon_to_state[codon]
-        node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
-
     # Accumulate posterior information about the site.
     # NOTE only the continuous non-discretized time model is used.
     P_cb_compound = P_cb_compound_cont
@@ -484,6 +459,61 @@ def process_codon_column(pos, codon_column,
             nstates, ncompound,
             compound_distn_dense, P_cb_compound,
             pos, builder)
+
+
+def process_codon_column(
+        pos,
+        builder,
+        Q, primary_distn,
+        tree, states, nstates, root,
+        rho,
+        D1, S1,
+        names, name_to_leaf, genetic_code, codon_to_state,
+        pos_to_benign_residues, pos_to_lethal_residues, codon_column,
+        ):
+    """
+    This is called once per codon column.
+
+    """
+    # Define the column-specific disease states and the benign states.
+    benign_residues = pos_to_benign_residues.get(pos, set())
+    lethal_residues = pos_to_lethal_residues.get(pos, set())
+    benign_states = set()
+    lethal_states = set()
+    for s, r, c in genetic_code:
+        if r in benign_residues:
+            benign_states.add(s)
+        elif r in lethal_residues:
+            lethal_states.add(s)
+        else:
+            raise Exception(
+                    'each amino acid should be considered either '
+                    'benign or lethal in this model, '
+                    'but residue %s at position %s '
+                    'was found to be neither' % (r, pos))
+
+    # Define the compound process state space.
+    ncompound = 2 * nstates
+    compound_states = range(ncompound)
+
+    # Define the map from node to allowed compound states.
+    node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
+    for name, codon in zip(names, codon_column):
+        leaf = name_to_leaf[name]
+        codon = codon.upper()
+        codon_state = codon_to_state[codon]
+        node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
+
+    # Process the codon column.
+    process_codon_column_helper(
+            pos,
+            builder,
+            Q, primary_distn,
+            tree, states, nstates, root,
+            rho,
+            D1, S1,
+            benign_states, lethal_states, node_to_allowed_states,
+            )
 
 
 def main(args):
@@ -588,14 +618,14 @@ def main(args):
     for i, codon_column in enumerate(selected_codon_columns):
         pos = i + 1
         process_codon_column(
-                pos, codon_column,
+                pos,
                 builder,
-                genetic_code, Q, primary_distn,
-                tree, states, nstates, codon_to_state, root,
-                pos_to_benign_residues, pos_to_lethal_residues,
+                Q, primary_distn,
+                tree, states, nstates, root,
                 rho,
                 D1, S1,
-                names, name_to_leaf,
+                names, name_to_leaf, genetic_code, codon_to_state,
+                pos_to_benign_residues, pos_to_lethal_residues, codon_column,
                 )
         print(pos)
         sys.stdout.flush()
