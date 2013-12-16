@@ -80,9 +80,12 @@ def translate_tree(nx_tree, nx_root):
 
 def rtranslate_tree(nx_tree, nx_parent, nx_node):
     """
+    Recursively translate a networkx tree into a more elementary format.
+
     The tree is a networkx tree.
     The root is an index.
     All nodes in this tree are represented by integers.
+
     """
     if nx_parent is None:
         blen = None
@@ -95,26 +98,80 @@ def rtranslate_tree(nx_tree, nx_parent, nx_node):
     return (nx_node, blen, child_nodes)
 
 
+def get_layout_json_string(vert, horz, nodes):
+    """
+    Write a tree layout to a json string.
+
+    """
+    # Get vertical lines.
+    vert_lines = []
+    for x, y1, y2, handle in vert:
+        vert_lines.append(dict(x=x, y1=y1, y2=y2))
+
+    # Get horizontal lines.
+    horz_lines = []
+    for y, x1, x2, idx1, idx2 in horz:
+        horz_lines.append(dict(y=y, x1=x1, x2=x2))
+
+    # Get nodes.
+    json_nodes = []
+    for x, y, handle in nodes:
+        json_nodes.append(dict(x=x, y=y))
+
+    # Construct the top level dict.
+    toplevel = dict(
+            vert_lines=vert_lines, horz_lines=horz_lines, nodes=json_nodes)
+
+    # Return the json string.
+    return json.dumps(toplevel, indent=2)
+
+
+def get_layout_element_data(vert, horz, nodes, handle_to_p):
+    """
+    Return lists for json layout with data on branches.
+
+    """
+    # Get vertical lines.
+    vert_lines = []
+    for x, y1, y2, handle in vert:
+        p = handle_to_p[handle]
+        vert_lines.append(p)
+
+    # Get horizontal lines.
+    horz_lines = []
+    for y, x1, x2, idx1, idx2 in horz:
+        p1 = handle_to_p[idx1]
+        p2 = handle_to_p[idx2]
+        p = max(0, (p1 + p2) / 2)
+        horz_lines.append(p)
+
+    # Get nodes.
+    json_nodes = []
+    for x, y, handle in nodes:
+        p = max(0, handle_to_p[handle])
+        json_nodes.append(p)
+
+    return vert_lines, horz_lines, json_nodes
+
+
+
 def main(args):
 
     # Read the interpreted disease data.
     # It returns a map from codon position to lethal residue set.
-    if args.verbose:
-        print('reading interpreted disease data...')
+    print('reading interpreted disease data...')
     with open(g_interpreted_disease_filename) as fin:
         pos_set, pos_to_lethal_residues = get_disease_info(fin)
 
     # Read the codon alignment.
     # It is a list of (taxon_name, codon_list) pairs.
-    if args.verbose:
-        print('reading codon alignment...')
+    print('reading codon alignment...')
     with open(g_alignment_filename) as fin:
         name_codons_list = list(app_helper.read_phylip(fin))
 
     # Read the genetic code.
     # It is a list of (state, residue, codon) triples.
-    if args.verbose:
-        print('reading genetic code...')
+    print('reading genetic code...')
     with open(g_genetic_code_filename) as fin:
         genetic_code = app_helper.read_genetic_code(fin)
     codon_to_residue = dict((c, r) for s, r, c in genetic_code)
@@ -148,6 +205,11 @@ def main(args):
         #if handle in leaf_to_name:
             #print(x, y, leaf_to_name[handle])
     #return
+
+    # Write the layout to a json file.
+    json_tree_layout = get_layout_json_string(vert, horz, nodes)
+    with open(args.json_tree_out, 'w') as fout:
+        fout.write(json_tree_layout)
 
     # Read the tsv file that has the node probability data.
     pos_to_handle_to_p = dict((pos, {}) for pos in range(1, 393+1))
@@ -189,36 +251,32 @@ def main(args):
                 })
             nconflicts += disease
 
-        # Get vertical lines.
-        json_vert_lines = []
-        for x, y1, y2, handle in vert:
-            p = handle_to_p[handle]
-            json_vert_lines.append(dict(x=x, y1=y1, y2=y2, p=p))
-
-        # Get horizontal lines.
-        json_horz_lines = []
-        for y, x1, x2, idx1, idx2 in horz:
-            p1 = handle_to_p[idx1]
-            p2 = handle_to_p[idx2]
-            p = max(0, (p1 + p2) / 2)
-            json_horz_lines.append(dict(y=y, x1=x1, x2=x2, p=p))
-
-        # Get nodes.
-        json_nodes = []
-        for x, y, handle in nodes:
-            p = max(0, handle_to_p[handle])
-            json_nodes.append(dict(x=x, y=y, p=p))
+        # Get per-layout-element data.
+        vert_data, horz_data, node_data = get_layout_element_data(
+                vert, horz, nodes, handle_to_p)
 
         # Append the site info dictionary.
-        json_dicts.append(dict(pos=codon_pos, nconflicts=nconflicts,
-            leaf_info=leaf_info, nodes=json_nodes,
-            vert_lines=json_vert_lines,
-            horz_lines=json_horz_lines))
+        json_dicts.append(dict(
+            pos=codon_pos,
+            nconflicts=nconflicts,
+            leaf_info=leaf_info,
+            vert_data=vert_data,
+            horz_data=horz_data,
+            node_data=node_data,
+            ))
 
-    # Write the json data.
-    print(json.dumps(json_dicts, indent=2))
+    # Write the per-site layout element data to a json file.
+    s = json.dumps(json_dicts, indent=2)
+    with open(args.json_sites_out, 'w') as fout:
+        fout.write(s)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--json-tree-out',
+            help='write the json tree data to this file')
+    parser.add_argument('--json-sites-out',
+            help='write the per-site json data to this file')
     main(parser.parse_args())
+

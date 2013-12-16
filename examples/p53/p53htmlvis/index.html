@@ -7,6 +7,10 @@
 <script src="http://d3js.org/d3.v2.min.js?2.10.0"></script>
 <script>
 
+// layout.data.json
+// site.data.json
+
+
 // This size is used by default.
 var px_total_width = 960;
 var px_total_height = 500;
@@ -21,8 +25,6 @@ var px_usable_height = px_total_height - 2 * px_svg_border;
 // Define the number of codons
 // and define the organization of codons into a grid.
 var ncodons = 393;
-//var nrows = 20;
-//var ncols = 20;
 var nrows = 25
 var ncols = 16
 var ntaxa = 25
@@ -112,8 +114,53 @@ svg.append("text")
 	.attr("dy", "4px")
 	.text("");
 
+
+// Use the json layout data to draw the tree.
+d3.json("layout.data.json", function(data) {
+
+	// add tree vertical lines
+	svg.selectAll(".tree_vert_line")
+	.data(data.vert_lines)
+	.enter()
+	.append("line")
+	.attr("class", "tree_vert_line")
+	.attr("x1", function(tnode) {return tree_col_to_cx(tnode.x);})
+	.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y1);})
+	.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x);})
+	.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y2);})
+	.attr("stroke-width", 3)
+	.attr("stroke", "gray");
+
+	// add tree horizontal lines
+	svg.selectAll(".tree_horz_line")
+	.data(data.horz_lines)
+	.enter()
+	.append("line")
+	.attr("class", "tree_horz_line")
+	.attr("x1", function(tnode) {return tree_col_to_cx(tnode.x1);})
+	.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y);})
+	.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x2);})
+	.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y);})
+	.attr("stroke-width", 3)
+	.attr("stroke", "gray");
+	
+	// add tree nodes
+	svg.selectAll(".tree_node")
+	.data(data.nodes)
+	.enter()
+	.append("circle")
+	.attr("class", "tree_node")
+	.attr("r", 5)
+	.attr("cx", function(tnode) {return tree_col_to_cx(tnode.x);})
+	.attr("cy", function(tnode) {return tree_row_to_cy(tnode.y);})
+	.attr("stroke", "none")
+	.attr("fill", "gray");
+});
+
+
+
 // Use json data instead of using the demo grid.
-d3.json("data.json", function(data) {
+d3.json("site.data.json", function(data) {
 
 groups = svg.selectAll(".cellgroup")
 	//.data(d3.range(0, ncodons))
@@ -170,46 +217,20 @@ groups = svg.selectAll(".cellgroup")
 				leaf.codon + " " +
 				leaf.residue + " " + leaf.name);});
 
-		// add tree vertical lines
+		// update fill color of tree vertical lines
 		svg.selectAll(".tree_vert_line")
-		.data(d.vert_lines)
-		.enter()
-		.append("line")
-		.attr("class", "tree_vert_line")
-		.attr("x1", function(tnode) {return tree_col_to_cx(tnode.x);})
-		.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y1);})
-		.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x);})
-		.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y2);})
-		.attr("stroke-width", 3)
-		.attr("stroke", function(tnode) {
-			return tree_color_scale(tnode.p);});
+		.data(d.vert_data)
+		.attr("stroke", function(p) {return tree_color_scale(p);});
 
-		// add tree horizontal lines
+		// update fill color of tree horizontal lines
 		svg.selectAll(".tree_horz_line")
-		.data(d.horz_lines)
-		.enter()
-		.append("line")
-		.attr("class", "tree_horz_line")
-		.attr("x1", function(tnode) {return tree_col_to_cx(tnode.x1);})
-		.attr("y1", function(tnode) {return tree_row_to_cy(tnode.y);})
-		.attr("x2", function(tnode) {return tree_col_to_cx(tnode.x2);})
-		.attr("y2", function(tnode) {return tree_row_to_cy(tnode.y);})
-		.attr("stroke-width", 3)
-		.attr("stroke", function(tnode) {
-			return tree_color_scale(tnode.p);});
+		.data(d.horz_data)
+		.attr("stroke", function(p) {return tree_color_scale(p);});
 		
-		// add tree nodes
+		// update fill color of tree nodes
 		svg.selectAll(".tree_node")
-		.data(d.nodes)
-		.enter()
-		.append("circle")
-		.attr("class", "tree_node")
-		.attr("r", 5)
-		.attr("cx", function(tnode) {return tree_col_to_cx(tnode.x);})
-		.attr("cy", function(tnode) {return tree_row_to_cy(tnode.y);})
-		.attr("stroke", "none")
-		.attr("fill", function(tnode) {
-			return tree_color_scale(tnode.p);});
+		.data(d.node_data)
+		.attr("fill", function(p) {return tree_color_scale(p);});
 
 
 	}) // end mouseover
@@ -217,9 +238,21 @@ groups = svg.selectAll(".cellgroup")
 
 		// Remove the tree nodes and the vertical lines
 		// and horizontal lines
-		svg.selectAll(".tree_node").data([]).exit().remove();
-		svg.selectAll(".tree_vert_line").data([]).exit().remove();
-		svg.selectAll(".tree_horz_line").data([]).exit().remove();
+		//svg.selectAll(".tree_node").data([]).exit().remove();
+		//svg.selectAll(".tree_vert_line").data([]).exit().remove();
+		//svg.selectAll(".tree_horz_line").data([]).exit().remove();
+
+		// update fill color of tree vertical lines
+		svg.selectAll(".tree_vert_line")
+		.attr("stroke", "gray");
+
+		// update fill color of tree horizontal lines
+		svg.selectAll(".tree_horz_line")
+		.attr("stroke", "gray");
+		
+		// update fill color of tree nodes
+		svg.selectAll(".tree_node")
+		.attr("fill", "gray");
 
 		// Remove the leaf background rects and leaf labels.
 		svg.selectAll(".leaf_background_rect").data([]).exit().remove();
@@ -273,112 +306,8 @@ groups.append("text")
 	.attr("dy", "4px")
 	.text(function(d) {return d.nconflicts;});
 
-}); // end json data
+}); // end site data
 
 
-
-
-/*
-d3.json("sol.json", function(data) {
- 
-
-	// The grouping and the mouse handling seems to work well.
-
-	groups = svg.selectAll(".cellgroup").data(data).enter().append("g")
-		.attr("class", "cellgroup")
-		.attr("pointer-events", "all")
-		.on("mouseover", function(d) {
-	
-		// Do complicated things here!
-
-		// add the primary interaction lines.
-		svg.selectAll(".primaryInteraction").data(d.primaryEdges)
-		.enter()
-		.append("line")
-		.attr("class", "primaryInteraction")
-		.attr("x1", function(dnode) {return w_to_cx(wo + dnode.x1);})
-		.attr("y1", function(dnode) {return k_to_cy(ko + dnode.y1);})
-		.attr("x2", function(dnode) {return w_to_cx(wo + dnode.x2);})
-		.attr("y2", function(dnode) {return k_to_cy(ko + dnode.y2);})
-		.attr("stroke-width", 4)
-		.attr("stroke", "black");
-
-		// add the spatial interaction lines
-		svg.selectAll(".spatialInteraction").data(d.spatialEdges)
-		.enter()
-		.append("line")
-		.attr("class", "spatialInteraction")
-		.attr("x1", function(dnode) {return w_to_cx(wo + dnode.x1);})
-		.attr("y1", function(dnode) {return k_to_cy(ko + dnode.y1);})
-		.attr("x2", function(dnode) {return w_to_cx(wo + dnode.x2);})
-		.attr("y2", function(dnode) {return k_to_cy(ko + dnode.y2);})
-		.attr("stroke-width", 1)
-		.attr("stroke", "red");
-
-		// add the nodes
-		svg.selectAll(".minifig").data(d.nodes)
-		.enter()
-		.append("circle")
-		.attr("class", "minifig")
-		.attr("r", 5)
-		.attr("cx", function(dnode) {return w_to_cx(wo + dnode.x);})
-		.attr("cy", function(dnode) {return k_to_cy(ko + dnode.y);})
-		.attr("stroke-width", 2)
-		.attr("stroke", "black")
-		.attr("fill", function(dnode) {
-			if (dnode.value == 0) {
-				return "white";
-			} else if ((dnode.x + dnode.y) % 2 == 0) {
-				return "darkblue";
-			} else {
-				return "darkred";
-			}});
-
-		// indicate the selection by changing the rect style
-		d3.select(this).select(".mainrect")
-		.attr("stroke", "black")
-		.attr("stroke-width", 1);
-	
-		}) // end mouseover.
-
-		.on("mouseout", function(d) {
-		svg.selectAll(".minifig").data([]).exit().remove();
-		svg.selectAll(".spatialInteraction").data([]).exit().remove();
-		svg.selectAll(".primaryInteraction").data([]).exit().remove();
-
-		// indicate the de-selection by changing the rect style
-		d3.select(this).select(".mainrect")
-		.attr("stroke", "none");
-
-		}); // end on mouseout
-
-	groups.append("rect")
-		.attr("class", "mainrect")
-		.attr("x", function(d) {return w_to_cx(d.n - d.k - 0.5);})
-		.attr("y", function(d) {return k_to_cy(d.k - 0.5);})
-		.attr("width", px_cell_width)
-		.attr("height", px_cell_height)
-		.attr("stroke", "none")
-		.attr("fill", function(d) {
-			var colors = ['lightblue', 'lightgreen', 'lightcoral'];
-			var color_index = d.score % 3;
-			return colors[color_index];
-			});
-
-	groups.append("text")
-		.text( function(d) {return d.score;})
-		.attr("x", function(d) {return w_to_cx(d.n - d.k);})
-		.attr("y", function(d) {return k_to_cy(d.k);})
-		.attr("pointer-events", "none")
-		.attr("font-family", "sans-serif")
-		.attr("font-size", "12px")
-		.attr("text-anchor", "middle")
-		.attr("fill", "black")
-		.append("tspan")
-		.attr("dy", "4px");
- 
-
-}); // end data
-*/
  
 </script>
