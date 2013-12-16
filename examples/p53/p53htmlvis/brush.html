@@ -74,7 +74,7 @@ var area2 = d3.svg.area()
 var svg = d3.select("body").append("svg")
     .attr("width", width + margin.left + margin.right)
     .attr("height", height + margin.top + margin.bottom);
-
+ 
 svg.append("defs").append("clipPath")
     .attr("id", "clip")
   .append("rect")
@@ -87,8 +87,29 @@ var focus = svg.append("g")
 var context = svg.append("g")
     .attr("transform", "translate(" + margin2.left + "," + margin2.top + ")");
 
+var mytext = d3.select("body")
+	.append("p")
+	.attr("class", "probability_text")
+	.text("no probability has been selected");
+
+function wat() {
+	this.setdata = setdata;
+	this.gettext = gettext;
+	function setdata(data) {
+		this.data = data;
+	}
+	function gettext(low_pos, high_pos) {
+		var s_low = this.data[low_pos].cumulative;
+		var s_high = this.data[high_pos].cumulative;
+		var s_diff = s_high - s_low;
+		return "" + s_diff;
+	}
+};
+var w = new wat();
+
+
 //d3.csv("sp500.csv", function(error, data) {
-d3.tsv("cdf.2.3.tsv", function(error, data) {
+var mydata = d3.tsv("cdf.2.3.tsv", function(error, data) {
 
   data.forEach(function(d) {
 	d.pos = +d.pos;
@@ -133,12 +154,35 @@ d3.tsv("cdf.2.3.tsv", function(error, data) {
     .selectAll("rect")
       .attr("y", -6)
       .attr("height", height2 + 7);
+
+  mytext.datum(data)
+	  .text("loaded data e.g. " + data[0].pos + " " + data[0].cumulative);
+
+  w.setdata(data);
+
 });
 
 function brushed() {
-  x.domain(brush.empty() ? x2.domain() : brush.extent());
-  focus.select("path").attr("d", area);
-  focus.select(".x.axis").call(xAxis);
+
+	// my stuff here
+	
+	// get the extent, convert to integer data offsets
+	var ext = brush.extent();
+	var idx_low = Math.round(ext[0]) - 1;
+	var idx_high = Math.round(ext[1]) - 1;
+
+	var s = w.gettext(idx_low, idx_high);
+	mytext.text(s);
+
+	//var p = mydata[idx_high].cumulative - mydata[idx_low].cumulative
+	//mytext.text(""+p);
+	//mytext.text("" + mydata)
+
+	// old stuff after here
+
+	x.domain(brush.empty() ? x2.domain() : brush.extent());
+	focus.select("path").attr("d", area);
+	focus.select(".x.axis").call(xAxis);
 }
 
 </script>
