@@ -81,6 +81,12 @@ BENIGN = 'BENIGN'
 LETHAL = 'LETHAL'
 UNKNOWN = 'UNKNOWN'
 
+def print_tree_summary(tree):
+    print('number of nodes:', len(tree))
+    print('number of leaves:', tree.degree().values().count(1))
+    print('number of branches:', tree.size())
+    print('total branch length:', tree.size(weight='weight'))
+
 def sorted_pair(a, b):
     """
     Utility function.
@@ -349,6 +355,137 @@ def rsummary(tree, leaf_to_name, edge_to_prob_sum, v, parent):
         return s + ':' + str(prob_sum)
 
 
+def process_codon_column(pos, codon_column,
+        builder,
+        genetic_code, Q, primary_distn,
+        tree, states, nstates, codon_to_state, root,
+        pos_to_benign_residues, pos_to_lethal_residues,
+        rho,
+        D1, S1,
+        names, name_to_leaf,
+        ):
+    """
+    This is called once per codon column.
+
+    """
+    # Define the column-specific disease states and the benign states.
+    benign_residues = pos_to_benign_residues.get(pos, set())
+    lethal_residues = pos_to_lethal_residues.get(pos, set())
+    benign_states = set()
+    lethal_states = set()
+    for s, r, c in genetic_code:
+        if r in benign_residues:
+            benign_states.add(s)
+        elif r in lethal_residues:
+            lethal_states.add(s)
+        else:
+            raise Exception(
+                    'each amino acid should be considered either '
+                    'benign or lethal in this model, '
+                    'but residue %s at position %s '
+                    'was found to be neither' % (r, pos))
+
+    # Define the reference process.
+
+    # Define the reference process rate matrix.
+    Q_reference = nx.DiGraph()
+    for sa, sb in Q.edges():
+        weight = Q[sa][sb]['weight']
+        if sa in benign_states and sb in benign_states:
+            Q_reference.add_edge(sa, sb, weight=weight)
+
+    # Define the column-specific initial state distribution.
+    reference_weights = {}
+    for s in range(nstates):
+        if (s in primary_distn) and (s in benign_states):
+            reference_weights[s] = primary_distn[s]
+    reference_distn = _util.get_normalized_dict_distn(reference_weights)
+
+    # Convert to dense representations of the reference process.
+    Q_reference_dense = _density.rate_matrix_to_numpy_array(
+            Q_reference, nodelist=states)
+    reference_distn_dense = _density.dict_to_numpy_array(
+            reference_distn, nodelist=states)
+
+    # Define the diagonal associated with switching processes.
+    L = np.array(
+            [rho if s in benign_states else 0 for s in range(nstates)],
+            dtype=float)
+
+    # Define the compound process.
+
+    # Define the compound process state space.
+    ncompound = 2 * nstates
+    compound_states = range(ncompound)
+
+    # Initialize the column-specific compound rate matrix.
+    Q_compound = nx.DiGraph()
+    
+    # Add block-diagonal entries of the default process component
+    # of the compound process.
+    for sa, sb in Q.edges():
+        weight = Q[sa][sb]['weight']
+        Q_compound.add_edge(nstates + sa, nstates + sb, weight=weight)
+
+    # Add block-diagonal entries of the reference process component
+    # of the compound process.
+    for sa, sb in Q.edges():
+        weight = Q[sa][sb]['weight']
+        if sb in benign_states:
+            Q_compound.add_edge(sa, sb, weight=weight)
+
+    # Add off-block-diagonal entries directed from the reference
+    # to the default process.
+    for s in range(nstates):
+        Q_compound.add_edge(s, nstates + s, weight=rho)
+
+    # Define the column-specific initial state distribution.
+    compound_weights = {}
+    for s in range(ncompound):
+        if (s in primary_distn) and (s in benign_states):
+            compound_weights[s] = primary_distn[s]
+    compound_distn = _util.get_normalized_dict_distn(compound_weights)
+
+    # Convert to dense representations.
+    Q_compound_dense = _density.rate_matrix_to_numpy_array(
+            Q_compound, nodelist=compound_states)
+    compound_distn_dense = _density.dict_to_numpy_array(
+            compound_distn, nodelist=compound_states)
+
+    # End compound process definition.
+
+    # Define the t -> P callbacks for the true process
+    # or for a time-discretized process, depending on cmdline flags.
+
+    # Define an SD decomposition of the reference process.
+    D0 = reference_distn_dense
+    S0 = qtop.dot_square_diag(Q_reference_dense, qtop.pseudo_reciprocal(D0))
+
+    # Define the decompositions.
+    # Define the callbacks that converts branch length to prob matrix.
+    sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
+    A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
+    P_cb_compound_cont = functools.partial(qtop.getp_sylvester_v2,
+            D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
+
+    # Define the map from node to allowed compound states.
+    node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
+    for name, codon in zip(names, codon_column):
+        leaf = name_to_leaf[name]
+        codon = codon.upper()
+        codon_state = codon_to_state[codon]
+        node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
+
+    # Accumulate posterior information about the site.
+    # NOTE only the continuous non-discretized time model is used.
+    P_cb_compound = P_cb_compound_cont
+    accumulate_codon_site_summary(
+            tree, node_to_allowed_states, root,
+            nstates, ncompound,
+            compound_distn_dense, P_cb_compound,
+            pos, builder)
+
+
 def main(args):
 
     # Pick some parameters.
@@ -402,11 +539,7 @@ def main(args):
     root = name_to_leaf['Has']
 
     # print a summary of the tree
-    degree = tree.degree()
-    print('number of nodes:', len(tree))
-    print('number of leaves:', degree.values().count(1))
-    print('number of branches:', tree.size())
-    print('total branch length:', tree.size(weight='weight'))
+    print_tree_summary(tree)
     print()
 
     # Read the alignment.
@@ -453,125 +586,17 @@ def main(args):
         selected_codon_columns = codon_columns[:args.ncols]
 
     for i, codon_column in enumerate(selected_codon_columns):
-
-        # Define the column-specific disease states and the benign states.
         pos = i + 1
-        benign_residues = pos_to_benign_residues.get(pos, set())
-        lethal_residues = pos_to_lethal_residues.get(pos, set())
-        benign_states = set()
-        lethal_states = set()
-        for s, r, c in genetic_code:
-            if r in benign_residues:
-                benign_states.add(s)
-            elif r in lethal_residues:
-                lethal_states.add(s)
-            else:
-                raise Exception(
-                        'each amino acid should be considered either '
-                        'benign or lethal in this model, '
-                        'but residue %s at position %s '
-                        'was found to be neither' % (r, pos))
-
-        # Define the reference process.
-
-        # Define the reference process rate matrix.
-        Q_reference = nx.DiGraph()
-        for sa, sb in Q.edges():
-            weight = Q[sa][sb]['weight']
-            if sa in benign_states and sb in benign_states:
-                Q_reference.add_edge(sa, sb, weight=weight)
-
-        # Define the column-specific initial state distribution.
-        reference_weights = {}
-        for s in range(nstates):
-            if (s in primary_distn) and (s in benign_states):
-                reference_weights[s] = primary_distn[s]
-        reference_distn = _util.get_normalized_dict_distn(reference_weights)
-
-        # Convert to dense representations of the reference process.
-        Q_reference_dense = _density.rate_matrix_to_numpy_array(
-                Q_reference, nodelist=states)
-        reference_distn_dense = _density.dict_to_numpy_array(
-                reference_distn, nodelist=states)
-
-        # Define the diagonal associated with switching processes.
-        L = np.array(
-                [rho if s in benign_states else 0 for s in range(nstates)],
-                dtype=float)
-
-        # Define the compound process.
-
-        # Define the compound process state space.
-        ncompound = 2 * nstates
-        compound_states = range(ncompound)
-
-        # Initialize the column-specific compound rate matrix.
-        Q_compound = nx.DiGraph()
-        
-        # Add block-diagonal entries of the default process component
-        # of the compound process.
-        for sa, sb in Q.edges():
-            weight = Q[sa][sb]['weight']
-            Q_compound.add_edge(nstates + sa, nstates + sb, weight=weight)
-
-        # Add block-diagonal entries of the reference process component
-        # of the compound process.
-        for sa, sb in Q.edges():
-            weight = Q[sa][sb]['weight']
-            if sb in benign_states:
-                Q_compound.add_edge(sa, sb, weight=weight)
-
-        # Add off-block-diagonal entries directed from the reference
-        # to the default process.
-        for s in range(nstates):
-            Q_compound.add_edge(s, nstates + s, weight=rho)
-
-        # Define the column-specific initial state distribution.
-        compound_weights = {}
-        for s in range(ncompound):
-            if (s in primary_distn) and (s in benign_states):
-                compound_weights[s] = primary_distn[s]
-        compound_distn = _util.get_normalized_dict_distn(compound_weights)
-
-        # Convert to dense representations.
-        Q_compound_dense = _density.rate_matrix_to_numpy_array(
-                Q_compound, nodelist=compound_states)
-        compound_distn_dense = _density.dict_to_numpy_array(
-                compound_distn, nodelist=compound_states)
-
-        # End compound process definition.
-
-        # Define the t -> P callbacks for the true process
-        # or for a time-discretized process, depending on cmdline flags.
-
-        # Define an SD decomposition of the reference process.
-        D0 = reference_distn_dense
-        S0 = qtop.dot_square_diag(Q_reference_dense, qtop.pseudo_reciprocal(D0))
-
-        # Define the decompositions.
-        # Define the callbacks that converts branch length to prob matrix.
-        sylvester_decomp = qtop.decompose_sylvester_v2(S0, S1, D0, D1, L)
-        A0, B0, A1, B1, L, lam0, lam1, XQ = sylvester_decomp
-        P_cb_compound_cont = functools.partial(qtop.getp_sylvester_v2,
-                D0, A0, B0, A1, B1, L, lam0, lam1, XQ)
-
-        # Define the map from node to allowed compound states.
-        node_to_allowed_states = dict((n, set(compound_states)) for n in tree)
-        for name, codon in zip(names, codon_column):
-            leaf = name_to_leaf[name]
-            codon = codon.upper()
-            codon_state = codon_to_state[codon]
-            node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
-
-        # Accumulate posterior information about the site.
-        # NOTE only the continuous non-discretized time model is used.
-        P_cb_compound = P_cb_compound_cont
-        accumulate_codon_site_summary(
-                tree, node_to_allowed_states, root,
-                nstates, ncompound,
-                compound_distn_dense, P_cb_compound,
-                pos, builder)
-
+        process_codon_column(
+                pos, codon_column,
+                builder,
+                genetic_code, Q, primary_distn,
+                tree, states, nstates, codon_to_state, root,
+                pos_to_benign_residues, pos_to_lethal_residues,
+                rho,
+                D1, S1,
+                names, name_to_leaf,
+                )
         print(pos)
         sys.stdout.flush()
 
@@ -612,6 +637,7 @@ def main(args):
         print(*row, sep='\t')
 
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verbose', action='store_true')
@@ -621,5 +647,11 @@ if __name__ == '__main__':
             help='csv file with filtered disease data')
     parser.add_argument('--dt', type=float,
             help='discretize the tree with this maximum branchlet length')
+    parser.add_argument('--prior-switch-tsv-out',
+            help='write prior per-branch switching probabilities '
+                'to this file')
+    parser.add_argument('--posterior-switch-tsv-out',
+            help='write posterior per-site per-branch switching probabilities '
+                'to this file')
     main(parser.parse_args())
 
