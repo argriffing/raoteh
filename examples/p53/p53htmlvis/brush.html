@@ -31,6 +31,8 @@ path {
 // plain is the focus
 // 2 is the context
 
+
+
 var margin = {top: 10, right: 10, bottom: 100, left: 40},
     margin2 = {top: 430, right: 10, bottom: 20, left: 40},
     width = 960 - margin.left - margin.right,
@@ -95,6 +97,7 @@ var mytext = d3.select("body")
 	.attr("class", "probability_text")
 	.text("no probability has been selected");
 
+
 function wat() {
 	this.setdata = setdata;
 	this.gettext = gettext;
@@ -107,11 +110,28 @@ function wat() {
 		var s_diff = s_high - s_low;
 		return "" + s_diff;
 	}
-};
+}
 var w = new wat();
+
+
+function stashprobs() {
+	this.setdata = setdata;
+	function setdata(data) {
+		this.data = data;
+	}
+}
+var stash = new stashprobs();
+
 
 var tree_x = d3.scale.linear().domain([0, 2]).range([0, width]);
 var tree_y = d3.scale.linear().domain([0, 25]).range([0, height]);
+
+var branch_color_scale = d3.scale.linear().domain([0, 0.2]).range([
+		'lightcoral', 'lightblue']);
+
+var branch_color_b = d3.scale.linear().domain([-0.2, 0, 0.2]).range([
+		'red', 'white', 'blue']);
+//.clamp();
 
 // Use the json layout data to draw the tree.
 d3.json("layout.data.json", function(data) {
@@ -156,8 +176,23 @@ d3.json("layout.data.json", function(data) {
 });
 
 
+// Load some branch specific data.
+// This includes prior probabilities and cumulative probabilities.
+d3.json("horz.prob.data.json", function(error, data) {
+
+	data.forEach(function(d) {
+		d.prior = +d.prior;
+		//d.cumulative = +d.cumulative;
+	});
+	
+	// Associate this data with the 
+	stash.setdata(data);
+});
+
+
+
 //d3.csv("sp500.csv", function(error, data) {
-var mydata = d3.tsv("cdf.2.3.tsv", function(error, data) {
+d3.tsv("cdf.2.3.tsv", function(error, data) {
 
   data.forEach(function(d) {
 	d.pos = +d.pos;
@@ -222,9 +257,23 @@ function brushed() {
 	var s = w.gettext(idx_low, idx_high);
 	mytext.text(s);
 
-	//var p = mydata[idx_high].cumulative - mydata[idx_low].cumulative
-	//mytext.text(""+p);
-	//mytext.text("" + mydata)
+
+	// Change the color of the horizontal tree lines,
+	// according to the stashed data.
+	svg.selectAll(".tree_horz_line")
+	.data(stash.data)
+	//.attr("stroke", function(d) {return branch_color_scale(d.prior);});
+	.attr("stroke", function(d) {
+			var p_prior = d.prior;
+			var n = idx_high - idx_low + 1;
+			var p_posterior = (
+				d.cumulative_posterior[idx_high+1] -
+				d.cumulative_posterior[idx_low]) / n;
+			var log_ratio = Math.log(p_prior / p_posterior);
+			return branch_color_b(log_ratio);});
+			//return branch_color_scale(d.prior);});
+
+
 
 	// old stuff after here
 
