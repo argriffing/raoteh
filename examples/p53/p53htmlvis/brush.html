@@ -28,6 +28,9 @@ path {
 <script src="http://d3js.org/d3.v3.min.js"></script>
 <script>
 
+// plain is the focus
+// 2 is the context
+
 var margin = {top: 10, right: 10, bottom: 100, left: 40},
     margin2 = {top: 430, right: 10, bottom: 20, left: 40},
     width = 960 - margin.left - margin.right,
@@ -107,6 +110,51 @@ function wat() {
 };
 var w = new wat();
 
+var tree_x = d3.scale.linear().domain([0, 2]).range([0, width]);
+var tree_y = d3.scale.linear().domain([0, 25]).range([0, height]);
+
+// Use the json layout data to draw the tree.
+d3.json("layout.data.json", function(data) {
+
+	// add tree vertical lines
+	svg.selectAll(".tree_vert_line")
+	.data(data.vert_lines)
+	.enter()
+	.append("line")
+	.attr("class", "tree_vert_line")
+	.attr("x1", function(tnode) {return tree_x(tnode.x);})
+	.attr("y1", function(tnode) {return tree_y(tnode.y1);})
+	.attr("x2", function(tnode) {return tree_x(tnode.x);})
+	.attr("y2", function(tnode) {return tree_y(tnode.y2);})
+	.attr("stroke-width", 3)
+	.attr("stroke", "gray");
+
+	// add tree horizontal lines
+	svg.selectAll(".tree_horz_line")
+	.data(data.horz_lines)
+	.enter()
+	.append("line")
+	.attr("class", "tree_horz_line")
+	.attr("x1", function(tnode) {return tree_x(tnode.x1);})
+	.attr("y1", function(tnode) {return tree_y(tnode.y);})
+	.attr("x2", function(tnode) {return tree_x(tnode.x2);})
+	.attr("y2", function(tnode) {return tree_y(tnode.y);})
+	.attr("stroke-width", 3)
+	.attr("stroke", "gray");
+	
+	// add tree nodes
+	svg.selectAll(".tree_node")
+	.data(data.nodes)
+	.enter()
+	.append("circle")
+	.attr("class", "tree_node")
+	.attr("r", 5)
+	.attr("cx", function(tnode) {return tree_x(tnode.x);})
+	.attr("cy", function(tnode) {return tree_y(tnode.y);})
+	.attr("stroke", "none")
+	.attr("fill", "gray");
+});
+
 
 //d3.csv("sp500.csv", function(error, data) {
 var mydata = d3.tsv("cdf.2.3.tsv", function(error, data) {
@@ -125,19 +173,19 @@ var mydata = d3.tsv("cdf.2.3.tsv", function(error, data) {
   x2.domain(x.domain());
   y2.domain(y.domain());
 
-  focus.append("path")
-      .datum(data)
-      .attr("clip-path", "url(#clip)")
-      .attr("d", area);
+  //focus.append("path")
+      //.datum(data)
+      //.attr("clip-path", "url(#clip)")
+      //.attr("d", area);
 
-  focus.append("g")
-      .attr("class", "x axis")
-      .attr("transform", "translate(0," + height + ")")
-      .call(xAxis);
+  //focus.append("g")
+      //.attr("class", "x axis")
+      //.attr("transform", "translate(0," + height + ")")
+      //.call(xAxis);
 
-  focus.append("g")
-      .attr("class", "y axis")
-      .call(yAxis);
+  //focus.append("g")
+      //.attr("class", "y axis")
+      //.call(yAxis);
 
   context.append("path")
       .datum(data)
