@@ -48,7 +48,7 @@ def rtranslate_tree(nx_tree, nx_parent, nx_node):
     return (nx_node, blen, child_nodes)
 
 
-def get_element_data(horz, handle_pair_to_prior, handle_pair_to_post):
+def get_horz_element_data(horz, handle_pair_to_prior, handle_pair_to_post):
     """
     Deal with handle pairs.
 
@@ -62,6 +62,18 @@ def get_element_data(horz, handle_pair_to_prior, handle_pair_to_post):
         d = dict(prior=prior, cumulative_posterior=post)
         toplevel.append(d)
     return toplevel
+
+
+def get_node_element_data(nodes, handle_pair_to_prior, handle_pair_to_post):
+    toplevel = []
+    for x, y, idx1, idx2 in nodes:
+        k = sorted_pair(idx1, idx2)
+        prior = handle_pair_to_prior[k]
+        post = handle_pair_to_post[k]
+        d = dict(prior=prior, cumulative_posterior=post)
+        toplevel.append(d)
+    return toplevel
+
 
 
 def get_posterior_cumulative_probs(fin):
@@ -121,8 +133,11 @@ def main():
         prior_probs = get_prior_probs(fin)
     with open(g_posterior_switch_filename) as fin:
         posterior_cumulative_probs = get_posterior_cumulative_probs(fin)
-    toplevel = get_element_data(
+    horz_data = get_horz_element_data(
             horz, prior_probs, posterior_cumulative_probs)
+    node_data = get_node_element_data(
+            nodes, prior_probs, posterior_cumulative_probs)
+    toplevel = dict(horz_data=horz_data, node_data=node_data)
     with open(g_json_out_filename, 'w') as fout:
         print(json.dumps(toplevel, indent=2), file=fout)
 

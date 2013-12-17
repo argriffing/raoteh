@@ -33,7 +33,7 @@ def rlayout(root, x, nleaves, leaf_to_y, vert_out, horz_out, nodes_out):
     The output is similarly picky.
     The vert_out is a sequence of (x, y1, y2, handle) lines.
     The horz_out is a sequence of (y, x1, x2, handle1, handle2) lines.
-    The nodes_out is a sequence of (x, y, handle) lines.
+    The nodes_out is a sequence of (x, y, handle, other_handle) lines.
 
     The returned value is (x, y, n) giving the x and y location of the root
     and the number of leaves n under the root.
@@ -54,8 +54,8 @@ def rlayout(root, x, nleaves, leaf_to_y, vert_out, horz_out, nodes_out):
             node_ys.append(node_y)
             nleaves += node_n
             n += node_n
-            nodes_out.append((x, node_y, handle))
-            nodes_out.append((node_x, node_y, node_handle))
+            nodes_out.append((x, node_y, handle, node_handle))
+            nodes_out.append((node_x, node_y, node_handle, handle))
             horz_out.append((node_y, x, node_x, handle, node_handle))
         min_y = min(node_ys)
         max_y = max(node_ys)
