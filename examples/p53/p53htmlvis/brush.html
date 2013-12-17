@@ -284,7 +284,7 @@ function colorme(d, idx_low, idx_high) {
 		d.cumulative_posterior[idx_low]) / n;
 	var log_ratio = Math.log(p_posterior / p_prior);
 	var eps = 1e-8;
-	if (p_prior < eps || p_posterior < eps) {
+	if (p_prior < eps && p_posterior < eps) {
 		log_ratio = 0;
 	}
 	return branch_color_b(log_ratio);
