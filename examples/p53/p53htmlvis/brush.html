@@ -130,7 +130,7 @@ var branch_color_scale = d3.scale.linear().domain([0, 0.2]).range([
 		'lightcoral', 'lightblue']);
 
 var branch_color_b = d3.scale.linear().domain([-1.0, 0.0, 1.0]).range([
-		'red', 'white', 'blue']);
+		'blue', 'lightgray', 'red']);
 //.clamp();
 
 // Use the json layout data to draw the tree.
@@ -255,7 +255,8 @@ function brushed() {
 	var idx_high = Math.round(ext[1]) - 1;
 
 	var s = w.gettext(idx_low, idx_high);
-	mytext.text(s);
+	//mytext.text(s);
+	mytext.text((idx_low+1) + " -- " + (idx_high+1));
 
 
 	// Change the color of the horizontal tree lines,
@@ -269,7 +270,7 @@ function brushed() {
 			var p_posterior = (
 				d.cumulative_posterior[idx_high+1] -
 				d.cumulative_posterior[idx_low]) / n;
-			var log_ratio = Math.log(p_prior / p_posterior);
+			var log_ratio = Math.log(p_posterior / p_prior);
 			return branch_color_b(log_ratio);});
 			//return branch_color_scale(d.prior);});
 
