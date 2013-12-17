@@ -650,63 +650,70 @@ def main(args):
                 pos, na, nb, p = row
                 print(na, nb, p, sep='\t', file=fout)
 
+    # Compute posterior switching probabilities per site per branch.
+    # This uses alignment and disease information.
+    if args.posterior_switch_tsv_out is not None:
 
-    if args.prior_switch_tsv_out is not None:
-        with open(args.prior_switch_tsv_out) as fout:
-            pass
+        # Analyze as many codon alignment columns as requested.
+        if args.ncols is None:
+            selected_codon_columns = codon_columns
+        else:
+            selected_codon_columns = codon_columns[:args.ncols]
+        builder = Builder()
+        for i, codon_column in enumerate(selected_codon_columns):
+            pos = i + 1
+            process_codon_column(
+                    pos,
+                    builder,
+                    Q, primary_distn,
+                    tree, states, nstates, root,
+                    rho,
+                    D1, S1,
+                    names, name_to_leaf, genetic_code, codon_to_state,
+                    pos_to_benign_residues, pos_to_lethal_residues,
+                    codon_column,
+                    )
 
-    builder = Builder()
+            # Show some progress.
+            print(pos)
+            sys.stdout.flush()
 
-    if args.ncols is None:
-        selected_codon_columns = codon_columns
-    else:
-        selected_codon_columns = codon_columns[:args.ncols]
+        # Summarize the posterior switch output by writing a tsv file.
+        with open(args.posterior_switch_tsv_out, 'w') as fout:
+            for row in builder.edge_bucket:
+                print(*row, sep='\t', file=fout)
 
-    for i, codon_column in enumerate(selected_codon_columns):
-        pos = i + 1
-        process_codon_column(
-                pos,
-                builder,
-                Q, primary_distn,
-                tree, states, nstates, root,
-                rho,
-                D1, S1,
-                names, name_to_leaf, genetic_code, codon_to_state,
-                pos_to_benign_residues, pos_to_lethal_residues, codon_column,
-                )
-        print(pos)
-        sys.stdout.flush()
 
     # Optionally report information from the builder.
-    if args.verbose:
+    #if args.verbose:
 
-        print('edge summary bucket:')
-        for row in builder.edge_bucket:
-            print(row)
-        print()
+        #print('edge summary bucket:')
+        #for row in builder.edge_bucket:
+            #print(row)
+        #print()
 
-        print('node summary bucket:')
-        for row in builder.node_bucket:
-            print(row)
-        print()
+        #print('node summary bucket:')
+        #for row in builder.node_bucket:
+            #print(row)
+        #print()
 
-        print('log likelihood summary bucket:')
-        for row in builder.ll_bucket:
-            print(row)
-        print()
+        #print('log likelihood summary bucket:')
+        #for row in builder.ll_bucket:
+            #print(row)
+        #print()
 
     # Sum of log likelihoods.
-    print('sum of codon position log likelhoods:')
-    print(sum(ll for pos, ll in builder.ll_bucket))
-    print()
+    #print('sum of codon position log likelhoods:')
+    #print(sum(ll for pos, ll in builder.ll_bucket))
+    #print()
 
     # Write the newick-like string with the branch summary.
-    leaf_to_name = dict(leaf_name_pairs)
-    edge_to_prob_sum = defaultdict(float)
-    for site, na, nb, edge_switch_prob in builder.edge_bucket:
-        edge_to_prob_sum[sorted_pair(na, nb)] += edge_switch_prob
-    s = rsummary(tree, leaf_to_name, edge_to_prob_sum, original_root, None)
-    print(s)
+    #leaf_to_name = dict(leaf_name_pairs)
+    #edge_to_prob_sum = defaultdict(float)
+    #for site, na, nb, edge_switch_prob in builder.edge_bucket:
+        #edge_to_prob_sum[sorted_pair(na, nb)] += edge_switch_prob
+    #s = rsummary(tree, leaf_to_name, edge_to_prob_sum, original_root, None)
+    #print(s)
 
     # Write tab separated node data.
     # TODO the output choices are too hardcoded
@@ -729,6 +736,7 @@ if __name__ == '__main__':
             help='write prior per-branch switching probabilities '
                 'to this file')
     parser.add_argument('--posterior-switch-tsv-out',
+            default='posterior.switch.data.tsv',
             help='write posterior per-site per-branch switching probabilities '
                 'to this file')
     main(parser.parse_args())
