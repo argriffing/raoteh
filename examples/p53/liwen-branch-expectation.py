@@ -504,7 +504,7 @@ def process_codon_column(
         codon_state = codon_to_state[codon]
         node_to_allowed_states[leaf] = {codon_state, nstates + codon_state}
 
-    # Process the codon column.
+    # Continue processing the codon column.
     process_codon_column_helper(
             pos,
             builder,
@@ -606,7 +606,54 @@ def main(args):
     print('computing log likelihood...')
     total_ll_compound_cont = 0
     total_ll_compound_disc = 0
-    cond_adj_total = 0
+
+    # Compute prior switching probabilities per branch.
+    # This does not use alignment or disease information.
+    if args.prior_switch_tsv_out is not None:
+
+        # Every codon state is benign.
+        # No codon state is lethal.
+        benign_states = set(states)
+        lethal_states = set()
+
+        # For the root node, all reference process states are allowed
+        # but no default process state is allowed.
+        # For non-root nodes, every state is allowed, including all
+        # reference and all default process states.
+        reference_states = set(states)
+        default_states = set(s+nstates for s in states)
+        node_to_allowed_states = dict()
+        for node in tree:
+            if node == root:
+                allowed_states = reference_states
+            else:
+                allowed_states = reference_states | default_states
+            node_to_allowed_states[node] = allowed_states
+
+        # Build the summary using the per-site builder object,
+        # even though we are doing something that is not site-specific.
+        builder = Builder()
+        pos = None
+        process_codon_column_helper(
+                pos,
+                builder,
+                Q, primary_distn,
+                tree, states, nstates, root,
+                rho,
+                D1, S1,
+                benign_states, lethal_states, node_to_allowed_states,
+                )
+
+        # Summarize the prior switch output by writing to a tsv file.
+        with open(args.prior_switch_tsv_out, 'w') as fout:
+            for row in builder.edge_bucket:
+                pos, na, nb, p = row
+                print(na, nb, p, sep='\t', file=fout)
+
+
+    if args.prior_switch_tsv_out is not None:
+        with open(args.prior_switch_tsv_out) as fout:
+            pass
 
     builder = Builder()
 
@@ -663,8 +710,8 @@ def main(args):
 
     # Write tab separated node data.
     # TODO the output choices are too hardcoded
-    for row in builder.node_bucket:
-        print(*row, sep='\t')
+    #for row in builder.node_bucket:
+        #print(*row, sep='\t')
 
 
 
@@ -678,6 +725,7 @@ if __name__ == '__main__':
     parser.add_argument('--dt', type=float,
             help='discretize the tree with this maximum branchlet length')
     parser.add_argument('--prior-switch-tsv-out',
+            default='prior.switch.data.tsv',
             help='write prior per-branch switching probabilities '
                 'to this file')
     parser.add_argument('--posterior-switch-tsv-out',
