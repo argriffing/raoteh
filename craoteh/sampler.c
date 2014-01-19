@@ -4,19 +4,7 @@
  * related to the human genetics of cancer.
  */
 
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <gsl/gsl_rng.h>
 
-int read_rate_matrix(FILE *fin)
-{
-  //
-}
-
-int main(int argc, char **argv)
-{
   /* Read the options, or rather use a control file.
    * - tree, using python csr format;
    *   http://docs.scipy.org/doc/scipy/reference/generated/
@@ -37,75 +25,20 @@ int main(int argc, char **argv)
    *   - set of allowed primary states
    *   - for each tolerance class, the set of allowed tolerance states
    */
-  return 0;
+
+
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <gsl/gsl_rng.h>
+
+int read_primary_rate_matrix(FILE *fin)
+{
 }
 
-
-int play_with_gsl()
+int main(int argc, char **argv)
 {
-  const gsl_rng_type * T;
-  gsl_rng * r;
-
-  int i, n = 10;
-
-  gsl_rng_env_setup();
-
-  T = gsl_rng_default;
-  r = gsl_rng_alloc (T);
-
-  for (i = 0; i < n; i++) 
-    {
-      double u = gsl_rng_uniform (r);
-      printf ("%.5f\n", u);
-    }
-
-  gsl_rng_free (r);
-
   return 0;
 }
-
-
-int play_with_getopt(int argc, char **argv)
-{
-  int aflag = 0;
-  int bflag = 0;
-  char *cvalue = NULL;
-  int index;
-  int c;
-
-   opterr = 0;
- 
-   while ((c = getopt (argc, argv, "abc:")) != -1)
-     switch (c)
-       {
-       case 'a':
-         aflag = 1;
-         break;
-       case 'b':
-         bflag = 1;
-         break;
-       case 'c':
-         cvalue = optarg;
-         break;
-       case '?':
-         if (optopt == 'c')
-           fprintf (stderr, "Option -%c requires an argument.\n", optopt);
-         else if (isprint (optopt))
-           fprintf (stderr, "Unknown option `-%c'.\n", optopt);
-         else
-           fprintf (stderr,
-                    "Unknown option character `\\x%x'.\n",
-                    optopt);
-         return 1;
-       default:
-         abort ();
-       }
- 
-   printf ("aflag = %d, bflag = %d, cvalue = %s\n",
-           aflag, bflag, cvalue);
- 
-   for (index = optind; index < argc; index++)
-     printf ("Non-option argument %s\n", argv[index]);
-   return 0;
- }
 
