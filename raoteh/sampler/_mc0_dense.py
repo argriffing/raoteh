@@ -18,9 +18,7 @@ import pyfelscore
 from raoteh.sampler import _density
 
 from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_first_element, get_arbitrary_tip,
-        get_normalized_ndarray_distn)
+        StructuralZeroProb, NumericalZeroProb, get_normalized_ndarray_distn)
 
 
 __all__ = []

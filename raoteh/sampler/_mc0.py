@@ -10,13 +10,8 @@ from collections import defaultdict
 import numpy as np
 import networkx as nx
 
-import pyfelscore
-
 from raoteh.sampler._util import (
-        StructuralZeroProb, NumericalZeroProb,
-        get_first_element, get_arbitrary_tip,
-        get_normalized_dict_distn,
-        )
+        StructuralZeroProb, NumericalZeroProb, get_normalized_dict_distn)
 
 
 __all__ = []
