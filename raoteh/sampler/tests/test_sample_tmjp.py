@@ -80,7 +80,7 @@ def test_get_feasible_history():
     assert_equal(len(tolerance_trajectories), ctm.nparts)
 
 
-@decorators.slow
+#@decorators.slow
 def test_tmjp_monte_carlo_rao_teh_differential_entropy():
     # In this test, we look at conditional expected log likelihoods.
     # These are computed in two ways.
@@ -875,7 +875,7 @@ def get_simulated_data(ctm, sample_disease_data=False):
     return ret
 
 
-@decorators.slow
+#@decorators.slow
 def test_sample_tmjp_v1():
     # Compare summaries of samples from the product space
     # of the compound process to summaries of samples that uses
